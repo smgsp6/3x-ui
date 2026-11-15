@@ -151,6 +151,7 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
+          fetch-depth: 0
       # Build only from a clean checkout; no .env, db or Secret is available.
       # No registry login, image push, deploy or production credentials.
       - name: Recheck build-context privacy against audited baseline
