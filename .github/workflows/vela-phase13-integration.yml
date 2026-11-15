@@ -1,0 +1,64 @@
+name: Vela phase 13 archive integration audit
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [vela-dev]
+    paths:
+      - "vela-development/integration/**"
+      - ".github/workflows/vela-phase13-integration.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vela-phase13-audit-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout source without persisted GitHub credentials
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Check branch and pinned audit baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${GITHUB_REF_NAME}" = vela-dev
+          test "$(git rev-list --count 5297fd3c8495d80fab97ae511553fa545c69e913..HEAD --)" -ge 8
+          git merge-base --is-ancestor 5297fd3c8495d80fab97ae511553fa545c69e913 HEAD
+          test "$(head -n 1 go.mod)" = 'module github.com/mhsanaei/3x-ui/v3'
+      - name: Verify archived source and extract into scratch directory
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 vela-development/integration/phase13_gate.py verify-archive \
+            vela-development/archive/vela-phase12-dev-preview.zip \
+            "${RUNNER_TEMP}/vela-phase12-verified"
+          echo "Verified archive file count:"
+          find "${RUNNER_TEMP}/vela-phase12-verified" -type f | wc -l
+          echo "Archive root entries:"
+          find "${RUNNER_TEMP}/vela-phase12-verified" -mindepth 1 -maxdepth 1 -printf '%f\n' | sort
+      - name: Review application script structure without executing it
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile "${RUNNER_TEMP}/vela-phase12-verified/apply_to_repo.py"
+          echo "Patch entrypoint and modification functions:"
+          grep -nE '^(def |class |if __name__|\s+subprocess\.|\s+os\.system)' "${RUNNER_TEMP}/vela-phase12-verified/apply_to_repo.py" | head -100
+          echo "References to baseline/repository identity:"
+          grep -nE '5297fd3c|smgsp6/3x-ui|--check|git status' "${RUNNER_TEMP}/vela-phase12-verified/apply_to_repo.py" | head -55
+      - name: Check candidate files with phase-12 privacy checker
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile "${RUNNER_TEMP}/vela-phase12-verified/deploy/vela/privacy_audit.py"
+          python3 -m py_compile "${RUNNER_TEMP}/vela-phase12-verified/deploy/vela/git_history_audit.py"
+          echo "Privacy scanner entrypoints:"
+          grep -nE '^def |^if __name__' "${RUNNER_TEMP}/vela-phase12-verified/deploy/vela/privacy_audit.py" | head -60
+          echo "Archive review finished; no source changes or Docker images published."
