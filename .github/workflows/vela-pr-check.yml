@@ -43,8 +43,28 @@ jobs:
           fetch-depth: 0
       - name: Strict delta privacy check against immutable upstream baseline
         run: python3 vela-development/integration/baseline_privacy_gate.py
-      - name: Recheck tracked private files
-        run: bash deploy/vela/security-check.sh .
+      - name: Reject tracked runtime secrets and private files (development gate)
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import pathlib
+          import subprocess
+          paths = subprocess.check_output(["git", "ls-files", "-z"]).decode().split("\\0")
+          invalid = []
+          for name in filter(None, paths):
+              parts = pathlib.PurePosixPath(name).parts
+              base = parts[-1].lower()
+              if base == ".env.example" or base.endswith(".env.example"):
+                  continue
+              if base == ".env" or base.startswith(".env.") or base.endswith((".key", ".p12", ".pfx", ".sqlite", ".sqlite3", ".db", ".db-wal", ".db-shm")):
+                  invalid.append(name)
+              if any(p.lower() in {"secrets", "backups", "failed-updates", "pgdata"} for p in parts[:-1]):
+                  invalid.append(name)
+          if invalid:
+              raise SystemExit(f"BLOCK: {len(invalid)} prohibited tracked runtime files")
+          print("No prohibited runtime-data paths tracked")
+          PY
 
   integration:
     name: React build, full Go tests and executable
