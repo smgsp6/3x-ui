@@ -99,7 +99,20 @@ jobs:
               fi
               sleep 1
             done
-            test "$ready" -eq 1
+            if [ "$ready" -ne 1 ]; then
+              process=absent
+              if docker exec vela-persist-smoke sh -c 'pidof x-ui >/dev/null' >/dev/null 2>&1; then
+                process=present
+              fi
+              db_exists=no
+              if test -e "$scratch/x-ui.db"; then db_exists=yes; fi
+              db_nonempty=no
+              if test -s "$scratch/x-ui.db"; then db_nonempty=yes; fi
+              files_count="$(find "$scratch" -maxdepth 1 -type f | wc -l | tr -d ' ')"
+              state="$(docker inspect -f '{{.State.Status}}' vela-persist-smoke)"
+              echo "Synthetic persistence probe blocked: container=$state, process=$process, db_exists=$db_exists, db_nonempty=$db_nonempty, file_count=$files_count (names/contents suppressed)" >&2
+              exit 1
+            fi
             test "$(docker inspect -f '{{.State.Running}}' vela-persist-smoke)" = true
           }
           run_panel
