@@ -90,11 +90,11 @@ def main():
         time.sleep(1)
     else:
         raise AssertionError("real HTTPS Mini App health did not become ready")
-    print("01/08 isolated HTTPS health 204 and local TLS certificate verified")
+    print("01/10 isolated HTTPS health 204 and local TLS certificate verified")
 
     status, _, _ = http("/panel/api/openapi.json")
     require(status == 401, "unauthenticated panel API must reject requests")
-    print("02/08 anonymous admin API rejected")
+    print("02/10 anonymous admin API rejected")
 
     original_csrf = csrf_token()
     require(any(c.secure for c in jar), "Mini App cookie must have Secure flag")
@@ -102,12 +102,12 @@ def main():
             "Mini App session cookie must be HttpOnly")
     status, _, _ = login(good)
     require(status == 403, "missing CSRF token must block signed Mini App auth")
-    print("03/08 secure browser cookie and login CSRF enforced")
+    print("03/10 secure browser cookie and login CSRF enforced")
 
     tampered = good.replace("Synthetic", "Impersonator", 1)
     status, _, _ = login(tampered, original_csrf)
     require(status == 401, "changed Telegram initData must fail HMAC")
-    print("04/08 altered Telegram signature rejected")
+    print("04/10 altered Telegram signature rejected")
 
     other = signed_init_data(token, 1002, now)
     status, _, _ = login(other, original_csrf)
@@ -115,14 +115,14 @@ def main():
     stale = signed_init_data(token, ADMIN_ID, now - 900)
     status, _, _ = login(stale, original_csrf)
     require(status == 401, "replayed expired Telegram initData accepted")
-    print("05/08 unauthorized ID and expired signature rejected")
+    print("05/10 unauthorized ID and expired signature rejected")
 
     status, body, _ = login(good, original_csrf)
     require(status == 200 and json.loads(body).get("success") is True,
             "signed allowlisted Telegram admin failed to login")
     status, _, _ = http("/panel/api/openapi.json")
     require(status == 200, "authenticated Mini App admin cannot access API")
-    print("06/08 signed admin logged in and accessed real guarded panel API")
+    print("06/10 signed admin logged in and accessed real guarded panel API")
 
     refreshed_csrf = csrf_token()
     require(refreshed_csrf != original_csrf, "privilege change retained old CSRF")
@@ -131,11 +131,11 @@ def main():
     status, body, _ = login(good, refreshed_csrf)
     require(status == 200 and json.loads(body).get("success") is True,
             "fresh CSRF after login did not work")
-    print("07/08 CSRF rotates on session privilege change")
+    print("07/10 CSRF rotates on session privilege change")
 
     status, _, _ = http("/panel/api/openapi.json")
     require(status == 200, "post-login API access unexpectedly lost")
-    print("08/08 HTTPS session remained functional; synthetic smoke PASS")
+    print("08/10 HTTPS session remained functional; synthetic smoke PASS")
 
 if __name__ == "__main__":
     try:
