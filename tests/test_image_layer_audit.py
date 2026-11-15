@@ -100,7 +100,7 @@ class ImageLayerTests(unittest.TestCase):
         count, checked, violations = audit.audit_image_save(stream, diagnostics)
         self.assertEqual(count, 1)
         self.assertEqual(violations, 2)
-        self.assertEqual(diagnostics, {'private_path': 1, 'layer_content': 1, 'pem_nonelf': 1})
+        self.assertEqual(diagnostics, {'private_path': 1, 'layer_content': 1, 'pem_nonelf': 1, 'pem_header_no_footer_within_bound': 1, 'source_other_content': 1})
         self.assertNotIn(synthetic_name, str(diagnostics))
         self.assertNotIn('FAKE-ONLY', str(diagnostics))
 
