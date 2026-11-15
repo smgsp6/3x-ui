@@ -3,8 +3,11 @@ package session
 import (
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"testing"
 
+	"github.com/mhsanaei/3x-ui/v3/internal/database"
+	"github.com/mhsanaei/3x-ui/v3/internal/database/dbtest"
 	"github.com/mhsanaei/3x-ui/v3/internal/database/model"
 
 	"github.com/gin-contrib/sessions"
@@ -74,4 +77,93 @@ func TestSetLoginUserReplacesThePreLoginCSRFToken(t *testing.T) {
 	if planted == "" || afterLogin == "" || afterLogin == planted {
 		t.Fatalf("CSRF token before login %q, after login %q; want a fresh token", planted, afterLogin)
 	}
+}
+
+ // TestMiniAppRevocationCannotResurrectOldCookies verifies actual signed Gin
+ // cookies and the migrated SQLite admin. All identities and state are local.
+func TestMiniAppRevocationCannotResurrectOldCookies(t *testing.T) {
+	t.Setenv("XUI_TG_MINIAPP_ENABLED", "true")
+	t.Setenv("XUI_TG_MINIAPP_ADMIN_IDS", "1001")
+	dbtest.InitDB(t, filepath.Join(t.TempDir(), "x-ui.db"))
+
+	var admin model.User
+	if err := database.GetDB().First(&admin).Error; err != nil {
+		t.Fatal(err)
+	}
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(sessions.Sessions(sessionCookieName, cookie.NewStore([]byte("01234567890123456789012345678901"))))
+	router.GET("/login", func(c *gin.Context) {
+		if err := SetTelegramMiniAppLoginUser(c, &admin, 1001); err != nil {
+			c.Status(http.StatusForbidden)
+			return
+		}
+		c.Status(http.StatusNoContent)
+	})
+	router.GET("/protected", func(c *gin.Context) {
+		if IsLogin(c) {
+			c.Status(http.StatusNoContent)
+		} else {
+			c.Status(http.StatusUnauthorized)
+		}
+	})
+	router.GET("/rotate", func(c *gin.Context) {
+		if err := SetLoginUser(c, &admin); err != nil {
+			c.Status(http.StatusForbidden)
+			return
+		}
+		c.Status(http.StatusNoContent)
+	})
+	request := func(path string, sessionCookie *http.Cookie) (*httptest.ResponseRecorder, *http.Cookie) {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		if sessionCookie != nil {
+			req.AddCookie(sessionCookie)
+		}
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		for _, c := range rec.Result().Cookies() {
+			if c.Name == sessionCookieName {
+				return rec, c
+			}
+		}
+		return rec, nil
+	}
+	checkStatus := func(want int, rec *httptest.ResponseRecorder) {
+		t.Helper()
+		if rec.Code != want {
+			t.Fatalf("HTTP status = %d, want %d", rec.Code, want)
+		}
+	}
+
+	login, originalCookie := request("/login", nil)
+	checkStatus(http.StatusNoContent, login)
+	if originalCookie == nil {
+		t.Fatal("signed admin session cookie was not set")
+	}
+	authorized, _ := request("/protected", originalCookie)
+	checkStatus(http.StatusNoContent, authorized)
+
+	t.Setenv("XUI_TG_MINIAPP_ADMIN_IDS", "1002")
+	revoked, _ := request("/protected", originalCookie)
+	checkStatus(http.StatusUnauthorized, revoked)
+
+	// Even replaying a copy of the original signed cookie must not work
+	// after an observed allowlist change has rolled the process nonce.
+	t.Setenv("XUI_TG_MINIAPP_ADMIN_IDS", "1001")
+	resurrected, _ := request("/protected", originalCookie)
+	checkStatus(http.StatusUnauthorized, resurrected)
+
+	fresh, freshCookie := request("/login", nil)
+	checkStatus(http.StatusNoContent, fresh)
+	if freshCookie == nil {
+		t.Fatal("fresh login after reauthorization did not set a cookie")
+	}
+	rotated, rotatedCookie := request("/rotate", freshCookie)
+	checkStatus(http.StatusNoContent, rotated)
+	if rotatedCookie == nil {
+		t.Fatal("credential rotation lost the Mini App session")
+	}
+	allowed, _ := request("/protected", rotatedCookie)
+	checkStatus(http.StatusNoContent, allowed)
 }

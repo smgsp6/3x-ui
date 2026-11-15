@@ -1,8 +1,13 @@
 package session
 
 import (
+	"crypto/rand"
+	"crypto/subtle"
+	"encoding/base64"
 	"encoding/gob"
 	"net/http"
+	"os"
+	"sync"
 	"time"
 
 	"github.com/mhsanaei/3x-ui/v3/internal/database"
@@ -19,8 +24,36 @@ const (
 	loginEpochKey     = "LOGIN_EPOCH"
 	apiAuthUserKey    = "api_auth_user"
 	telegramMiniAppUserKey = "TELEGRAM_MINIAPP_USER_ID"
+	telegramMiniAppPolicyKey = "TELEGRAM_MINIAPP_POLICY_NONCE"
 	sessionCookieName = "3x-ui"
 )
+
+// A Mini App cookie is bound to this process and the configured allowlist.
+// Changing the allowlist invalidates existing cookies; restarting also issues
+// a fresh nonce. Never reuse an old signed cookie after an admin revocation.
+// This intentionally does not support load-balanced panel replicas sharing a
+// cookie store without a shared revocation mechanism.
+var miniAppPolicy = struct {
+	sync.Mutex
+	allowlist string
+	nonce     string
+}{}
+
+func miniAppPolicyNonce() string {
+	miniAppPolicy.Lock()
+	defer miniAppPolicy.Unlock()
+	allowlist := os.Getenv("XUI_TG_MINIAPP_ADMIN_IDS")
+	if miniAppPolicy.nonce == "" || miniAppPolicy.allowlist != allowlist {
+		var random [32]byte
+		if _, err := rand.Read(random[:]); err != nil {
+			miniAppPolicy.nonce = ""
+			return "" // fail closed if secure randomness is unavailable
+		}
+		miniAppPolicy.allowlist = allowlist
+		miniAppPolicy.nonce = base64.RawURLEncoding.EncodeToString(random[:])
+	}
+	return miniAppPolicy.nonce
+}
 
 func init() {
 	gob.Register(model.User{})
@@ -33,18 +66,26 @@ func SetLoginUser(c *gin.Context, user *model.User) error {
 	s := sessions.Default(c)
     // Credential rotation from within Mini App must retain the signed Telegram
     // identity. A legacy caller cannot mint a Vela session via this function.
-    var tgID int64
-    if tgminiapp.Enabled() {
-        id, ok := s.Get(telegramMiniAppUserKey).(int64)
-        if !ok || !tgminiapp.AllowedUserID(id) { return http.ErrNoCookie }
-        tgID = id
-    }
+	var tgID int64
+	var policyNonce string
+	if tgminiapp.Enabled() {
+		id, ok := s.Get(telegramMiniAppUserKey).(int64)
+		policyNonce = miniAppPolicyNonce()
+		if !ok || !tgminiapp.AllowedUserID(id) || policyNonce == "" ||
+			s.Get(telegramMiniAppPolicyKey) != policyNonce {
+			return http.ErrNoCookie
+		}
+		tgID = id
+	}
 	// Anyone can mint the anonymous session this request carried and plant it in a browser,
 	// so nothing in it, the CSRF token above all, outlives the privilege change.
 	s.Clear()
 	s.Set(loginUserKey, user.Id)
 	s.Set(loginEpochKey, user.LoginEpoch)
-    if tgminiapp.Enabled() { s.Set(telegramMiniAppUserKey, tgID) }
+	if tgminiapp.Enabled() {
+		s.Set(telegramMiniAppUserKey, tgID)
+		s.Set(telegramMiniAppPolicyKey, policyNonce)
+	}
 	return s.Save()
 }
 
@@ -54,12 +95,17 @@ func SetTelegramMiniAppLoginUser(c *gin.Context, user *model.User, telegramID in
     if user == nil || telegramID <= 0 || !tgminiapp.AllowedUserID(telegramID) {
         return http.ErrNoCookie
     }
-    s := sessions.Default(c)
-    s.Clear()
-    s.Set(loginUserKey, user.Id)
-    s.Set(loginEpochKey, user.LoginEpoch)
-    s.Set(telegramMiniAppUserKey, telegramID)
-    return s.Save()
+	policyNonce := miniAppPolicyNonce()
+	if policyNonce == "" {
+		return http.ErrNoCookie
+	}
+	s := sessions.Default(c)
+	s.Clear()
+	s.Set(loginUserKey, user.Id)
+	s.Set(loginEpochKey, user.LoginEpoch)
+	s.Set(telegramMiniAppUserKey, telegramID)
+	s.Set(telegramMiniAppPolicyKey, policyNonce)
+	return s.Save()
 }
 
 func SetAPIAuthUser(c *gin.Context, user *model.User) {
@@ -76,10 +122,23 @@ func GetLoginUser(c *gin.Context) *model.User {
 		}
 	}
 	s := sessions.Default(c)
-    if tgminiapp.Enabled() {
-        telegramID, ok := s.Get(telegramMiniAppUserKey).(int64)
-        if !ok || !tgminiapp.AllowedUserID(telegramID) { return nil }
-    }
+	if tgminiapp.Enabled() {
+		telegramID, ok := s.Get(telegramMiniAppUserKey).(int64)
+		nonce, hasNonce := s.Get(telegramMiniAppPolicyKey).(string)
+		currentNonce := miniAppPolicyNonce()
+		if !ok || !tgminiapp.AllowedUserID(telegramID) || !hasNonce ||
+			currentNonce == "" || subtle.ConstantTimeCompare([]byte(nonce), []byte(currentNonce)) != 1 {
+			// Retire a formerly authenticated browser cookie; do not destroy
+			// a new anonymous session's CSRF token during Mini App login.
+			if s.Get(loginUserKey) != nil || s.Get(telegramMiniAppUserKey) != nil {
+				s.Clear()
+				if err := s.Save(); err != nil {
+					logger.Warning("session: failed to retire revoked Mini App cookie:", err)
+				}
+			}
+			return nil
+		}
+	}
     obj := s.Get(loginUserKey)
 	if obj == nil {
 		return nil
