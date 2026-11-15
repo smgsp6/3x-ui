@@ -110,6 +110,7 @@
     "saveQr": "Simpan QR"
   },
   "menu": {
+    "certificates": "Manajemen Sertifikat",
     "theme": "Tema",
     "dashboard": "Ikhtisar",
     "inbounds": "Inbound",

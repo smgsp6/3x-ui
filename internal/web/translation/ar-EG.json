@@ -110,6 +110,7 @@
     "saveQr": "حفظ QR"
   },
   "menu": {
+    "certificates": "إدارة الشهادات",
     "theme": "الثيم",
     "dashboard": "نظرة عامة",
     "inbounds": "الواردات",

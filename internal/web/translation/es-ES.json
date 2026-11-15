@@ -110,6 +110,7 @@
     "saveQr": "Guardar QR"
   },
   "menu": {
+    "certificates": "Gestión de certificados",
     "theme": "Tema",
     "dashboard": "Estado del Sistema",
     "inbounds": "Entradas",

@@ -110,6 +110,7 @@
     "saveQr": "儲存 QR 碼"
   },
   "menu": {
+    "certificates": "憑證管理",
     "theme": "主題",
     "dashboard": "系統狀態",
     "inbounds": "入站",

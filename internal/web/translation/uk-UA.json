@@ -110,6 +110,7 @@
     "saveQr": "Зберегти QR"
   },
   "menu": {
+    "certificates": "Керування сертифікатами",
     "theme": "Тема",
     "dashboard": "Огляд",
     "inbounds": "Вхідні",

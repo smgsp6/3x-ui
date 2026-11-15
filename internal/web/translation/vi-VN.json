@@ -110,6 +110,7 @@
     "saveQr": "Lưu QR"
   },
   "menu": {
+    "certificates": "Quản lý chứng chỉ",
     "theme": "Chủ đề",
     "dashboard": "Trạng thái hệ thống",
     "inbounds": "Inbound",

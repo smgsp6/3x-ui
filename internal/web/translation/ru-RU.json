@@ -110,6 +110,7 @@
     "saveQr": "Сохранить QR"
   },
   "menu": {
+    "certificates": "Управление сертификатами",
     "theme": "Тема",
     "dashboard": "Дашборд",
     "inbounds": "Входящие",

@@ -110,6 +110,7 @@
     "saveQr": "QR を保存"
   },
   "menu": {
+    "certificates": "証明書管理",
     "theme": "テーマ",
     "dashboard": "ダッシュボード",
     "inbounds": "インバウンド",

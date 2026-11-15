@@ -110,6 +110,7 @@
     "saveQr": "Uložiť QR kód"
   },
   "menu": {
+    "certificates": "Správa certifikátov",
     "theme": "Vzhľad",
     "dashboard": "Prehľad",
     "inbounds": "Vstupy",

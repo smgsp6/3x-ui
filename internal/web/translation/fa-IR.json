@@ -110,6 +110,7 @@
     "saveQr": "ذخیره QR"
   },
   "menu": {
+    "certificates": "مدیریت گواهی‌ها",
     "theme": "تم",
     "dashboard": "نمای کلی",
     "inbounds": "ورودی‌ها",

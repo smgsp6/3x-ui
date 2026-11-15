@@ -110,6 +110,7 @@
     "saveQr": "QR'ı kaydet"
   },
   "menu": {
+    "certificates": "Sertifika Yönetimi",
     "theme": "Tema",
     "dashboard": "Genel Bakış",
     "inbounds": "Gelen Bağlantılar",

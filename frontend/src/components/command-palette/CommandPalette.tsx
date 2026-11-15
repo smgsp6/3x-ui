@@ -75,6 +75,7 @@ export const PALETTE_KEYWORDS: Record<string, string[]> = {
     'masque',
   ],
   '/clients': ['clients', 'users', 'sub', 'traffic', 'quota'],
+  '/certificates': ['certificates', 'certificate', 'ssl', 'tls', 'expiry', 'renewal', '证书', '到期'],
   '/groups': ['groups', 'tags', 'batch'],
   '/nodes': ['nodes', 'servers', 'cluster', 'remote nodes'],
   '/hosts': ['hosts', 'sni', 'domains'],
