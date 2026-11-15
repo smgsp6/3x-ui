@@ -76,6 +76,40 @@ jobs:
             exit 1
           fi
           echo "Panel process and isolated TCP listener verified without exposing a port"
+      - name: Verify SQLite persistence across two isolated container recreations
+        shell: bash
+        run: |
+          set -euo pipefail
+          scratch="$(mktemp -d)"
+          chmod 700 "$scratch"
+          trap 'docker rm -f vela-persist-smoke >/dev/null 2>&1 || true; rm -rf "$scratch"' EXIT
+          run_panel() {
+            docker run --detach --name vela-persist-smoke --network none \
+              --cap-drop ALL --security-opt no-new-privileges \
+              --mount "type=bind,src=$scratch,dst=/etc/x-ui" \
+              --tmpfs /tmp:rw,nosuid,size=16m \
+              --tmpfs /var/log/x-ui:rw,nosuid,size=16m \
+              -e XUI_ENABLE_FAIL2BAN=false -e XUI_DB_TYPE=sqlite \
+              vela-boot-smoke:local >/dev/null
+            ready=0
+            for i in $(seq 1 30); do
+              if docker exec vela-persist-smoke sh -c 'pidof x-ui >/dev/null && test -s /etc/x-ui/x-ui.db' >/dev/null 2>&1; then
+                ready=1
+                break
+              fi
+              sleep 1
+            done
+            test "$ready" -eq 1
+            test "$(docker inspect -f '{{.State.Running}}' vela-persist-smoke)" = true
+          }
+          run_panel
+          test -s "$scratch/x-ui.db"
+          test "$(stat -c %a "$scratch/x-ui.db")" = 600
+          docker rm -f vela-persist-smoke >/dev/null
+          run_panel
+          test -s "$scratch/x-ui.db"
+          test "$(stat -c %a "$scratch/x-ui.db")" = 600
+          echo "Synthetic SQLite database survived container recreation with private permissions"
       - name: Enforce strict image-layer privacy gate (expected to block until fully cleared)
         shell: bash
         run: |
