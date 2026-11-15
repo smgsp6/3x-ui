@@ -9,6 +9,8 @@ on:
       - "frontend/**"
       - "go.mod"
       - "go.sum"
+      - "deploy/vela/ci_elf_marker_inspect.py"
+      - "tests/test_vela_elf_marker_inspect.py"
       - ".github/workflows/vela-build-smoke.yml"
 
 permissions:
@@ -60,6 +62,10 @@ jobs:
         run: go test ./internal/web -run TestRouteRegistryContract -count=1
       - name: Build Go panel binary only into runner scratch
         run: go build -trimpath -o "${RUNNER_TEMP}/vela-build-smoke" ./main.go
+      - name: Test non-disclosing ELF marker inspector
+        run: python3 -m unittest discover -s tests -p test_vela_elf_marker_inspect.py -v
+      - name: Inspect disposable compiled panel ELF without printing contents
+        run: python3 deploy/vela/ci_elf_marker_inspect.py "${RUNNER_TEMP}/vela-build-smoke"
       - name: Ensure build binary exists without publishing it
         shell: bash
         run: |
