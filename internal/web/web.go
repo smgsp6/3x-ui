@@ -38,6 +38,7 @@ import (
 	"github.com/mhsanaei/3x-ui/v3/internal/web/service/email"
 	"github.com/mhsanaei/3x-ui/v3/internal/web/service/panel"
 	"github.com/mhsanaei/3x-ui/v3/internal/web/service/tgbot"
+	"github.com/mhsanaei/3x-ui/v3/internal/web/service/tgminiapp"
 	"github.com/mhsanaei/3x-ui/v3/internal/web/websocket"
 	"github.com/mhsanaei/3x-ui/v3/internal/xray"
 
@@ -213,13 +214,16 @@ func (s *Server) initRouter() (*gin.Engine, error) {
 	sessionOptions := sessions.Options{
 		Path:     basePath,
 		HttpOnly: true,
-		Secure:   directHTTPS,
+		Secure:   directHTTPS || tgminiapp.Enabled(),
 		SameSite: http.SameSiteLaxMode,
 	}
 	if sessionMaxAge, err := s.settingService.GetSessionMaxAge(); err == nil && sessionMaxAge > 0 {
 		sessionOptions.MaxAge = sessionMaxAge * 60 // minutes -> seconds
 	}
-	store.Options(sessionOptions)
+    if tgminiapp.Enabled() && (sessionOptions.MaxAge == 0 || sessionOptions.MaxAge > 8*60*60) {
+        sessionOptions.MaxAge = 8 * 60 * 60 // limit long-lived Mini App admin sessions
+    }
+    store.Options(sessionOptions)
 	engine.Use(sessions.Sessions("3x-ui", store))
 	engine.Use(func(c *gin.Context) {
 		c.Set("base_path", basePath)
@@ -262,6 +266,7 @@ func (s *Server) initRouter() (*gin.Engine, error) {
 	g.GET("/service-worker.js", controller.ServePWAServiceWorker)
 	g.GET("/icons/:name", controller.ServePWAIcon)
 
+	controller.NewMiniAppController(g)
 	s.index = controller.NewIndexController(g)
 	s.panel = controller.NewXUIController(g)
 	s.api = controller.NewAPIController(g)
@@ -601,7 +606,10 @@ func (s *Server) start(restartXray bool, startTgBot bool) (err error) {
 			logger.Info("Using XUI_PORT override for web panel port:", port)
 		}
 	}
-	listenAddr := net.JoinHostPort(listen, strconv.Itoa(port))
+if tgminiapp.Enabled() {
+        listen = "127.0.0.1" // HTTPS reverse proxy is required
+    }
+    listenAddr := net.JoinHostPort(listen, strconv.Itoa(port))
 	listener, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", listenAddr)
 	if err != nil {
 		return err
@@ -613,6 +621,11 @@ func (s *Server) start(restartXray bool, startTgBot bool) (err error) {
 			c := &tls.Config{
 				Certificates: []tls.Certificate{cert},
 			}
+            if tgminiapp.Enabled() {
+                reloader := tgminiapp.NewTLSCertificateReloader(certFile, keyFile, cert)
+                c.GetCertificate = reloader.GetCertificate
+                c.Certificates = nil // callback is used even when SNI is absent
+            }
 			// Opt-in node mTLS: when a trust CA is configured, request and verify
 			// client certs (VerifyClientCertIfGiven keeps browsers working). With
 			// no CA the listener is unchanged.
@@ -630,9 +643,13 @@ func (s *Server) start(restartXray bool, startTgBot bool) (err error) {
 			listener = network.NewAutoHttpsListener(listener)
 			listener = tls.NewListener(listener, c)
 			logger.Info("Web server running HTTPS on", listener.Addr())
-		} else {
-			logger.Error("Error loading certificates:", err)
-			logger.Info("Web server running HTTP on", listener.Addr())
+            } else {
+                if tgminiapp.Enabled() {
+                    _ = listener.Close()
+                    return fmt.Errorf("Vela TLS material is invalid; refusing silent HTTP downgrade")
+                }
+                logger.Error("Error loading certificates:", err)
+                logger.Info("Web server running HTTP on", listener.Addr())
 		}
 	} else {
 		logger.Info("Web server running HTTP on", listener.Addr())
@@ -768,8 +785,34 @@ func (s *Server) start(restartXray bool, startTgBot bool) (err error) {
 		}
 	}
 
+    if startTgBot && tgminiapp.CertAlertsEnabled() {
+        _, addErr := s.cron.AddFunc("0 0 9 * * *", func() {
+            webCert, err1 := s.settingService.GetCertFile()
+            webKey, err2 := s.settingService.GetKeyFile()
+            subCert, err3 := s.settingService.GetSubCertFile()
+            subKey, err4 := s.settingService.GetSubKeyFile()
+            if err1 != nil || err2 != nil || err3 != nil || err4 != nil {
+                logger.Warning("Vela certificate monitor: settings unavailable")
+                return
+            }
+            now := time.Now()
+            statuses := []tgminiapp.CertificateStatus{
+                tgminiapp.InspectCertificate("panel", webCert, webKey, now),
+                tgminiapp.InspectCertificate("subscription", subCert, subKey, now),
+            }
+            _, notifyErr := tgminiapp.SendCertificateAlerts(now, statuses, func(chatID int64, body string) bool {
+                return s.tgbotService.SendMsgToTgbot(chatID, body) != 0
+            })
+            if notifyErr != nil {
+                // Never log paths, tokens, private IDs or domains.
+                logger.Warning("Vela certificate monitor: notification state unavailable")
+            }
+        })
+        if addErr != nil { logger.Warning("Vela certificate monitor: scheduler unavailable") }
+    }
+
 	isDiscordEnabled, err := s.settingService.GetDiscordBotEnable()
-	if (err == nil) && isDiscordEnabled && s.discordGateway != nil {
+    if (err == nil) && isDiscordEnabled && s.discordGateway != nil {
 		_ = s.discordGateway.Start(s.ctx)
 	}
 

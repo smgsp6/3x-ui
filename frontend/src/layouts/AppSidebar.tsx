@@ -36,13 +36,14 @@ import { useAllSettings } from '@/api/queries/useAllSettings';
 import { useCommandPalette } from '@/components/command-palette/useCommandPalette';
 import { PANEL_ROUTES } from '@/routes/panelRoutes';
 import './AppSidebar.css';
+import velaMark from '@/assets/vela-mark.png';
 
 const DONATE_URL = 'https://donate.sanaei.dev/';
 // The palette listens for Ctrl as well as Cmd, so the chip must not show a
 // Mac glyph to the Linux and Windows operators who are most of this panel's.
 const SHORTCUT_MODIFIER = /Mac|iPhone|iPad|iPod/.test(navigator.userAgent) ? '⌘' : 'Ctrl';
 const DOCS_URL = 'https://docs.sanaei.dev/';
-const REPO_URL = 'https://github.com/MHSanaei/3x-ui';
+const REPO_URL = 'https://github.com/smgsp6/3x-ui';
 const LOGOUT_KEY = '__logout__';
 const RAIL_WIDTH = 72;
 const SIDER_WIDTH = 220;
@@ -367,7 +368,7 @@ export default function AppSidebar() {
       >
         <div className="sider-brand">
           <div className="brand-block">
-            <span className="brand-text">{railCollapsed ? '3X' : '3X-UI'}</span>
+            <span className="brand-text"><img src={velaMark} alt="" width={26} height={26} style={{ borderRadius: 7, marginRight: 6, verticalAlign: 'middle' }} />{!railCollapsed && 'Vela'}</span>
           </div>
           {!railCollapsed && (
             <div className="brand-actions">
@@ -455,7 +456,7 @@ export default function AppSidebar() {
       >
         <div className="drawer-header">
           <div className="brand-block">
-            <span className="drawer-brand">3X-UI</span>
+            <span className="drawer-brand">Vela</span>
           </div>
           <div className="drawer-header-actions">
             <DocsButton ariaLabel={t('menu.docs') || 'Documentation'} />

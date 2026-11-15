@@ -1,0 +1,464 @@
+#!/usr/bin/env bash
+# Vela local lifecycle manager. Source-only preview; not a production installer.
+# Never executes arbitrary remote shell scripts. Published images MUST be digest-pinned.
+set -Eeuo pipefail
+umask 077
+
+ROOT=${VELA_HOME:-/opt/vela}
+[[ "$ROOT" = /* && "$ROOT" != / && "$ROOT" != */../* && "$ROOT" != */.. ]] || { echo 'VELA_HOME 必须是安全的绝对路径' >&2; exit 2; }
+[[ -d "$ROOT" && ! -L "$ROOT" ]] || { echo "VELA_HOME 不存在或为符号链接: $ROOT" >&2; exit 2; }
+ROOT=$(cd -- "$ROOT" && pwd -P)
+# The CLI may run as root; refuse a writable-by-other-users installation
+# directory so a local account cannot replace the lock or update metadata.
+root_mode=$(stat -c %a -- "$ROOT")
+[[ $((8#$root_mode & 8#022)) -eq 0 ]] || { echo 'VELA_HOME 不能允许组或其他用户写入' >&2; exit 2; }
+COMPOSE="$ROOT/compose.yml"
+ENVFILE="$ROOT/.env"
+CURRENT="$ROOT/image.ref"
+SEQUENCE_FILE="$ROOT/release.sequence"
+LOCK="$ROOT/.vela.lock"
+PENDING="$ROOT/.pending-update"
+cmd=${1:-help}
+# A release key must be established out-of-band by the Vela maintainer. This
+# literal intentionally prevents EVERY production update until a reviewed
+# signing key and its fingerprint are embedded in a released CLI.
+RELEASE_KEY_SHA256='UNCONFIGURED-RELEASE-SIGNING-KEY'
+RELEASE_PUBLIC_KEY="$ROOT/release-public.pem"
+[[ -f "$COMPOSE" && ! -L "$COMPOSE" && -f "$ENVFILE" && ! -L "$ENVFILE" ]] || { echo '缺少 Vela compose.yml / .env' >&2; exit 2; }
+# If power fails MID-RESTORE, some data directories may be temporarily
+# absent. Permit ONLY `recover` with an existing journal to reconstruct them.
+for item in db cert acme; do
+  data="$ROOT/$item"
+  [[ ! -L "$data" && ( ! -e "$data" || -d "$data" ) ]] || { echo "不安全的数据目录: $item" >&2; exit 2; }
+  if [[ ! -d "$data" && ( "$cmd" != recover || ! -f "$PENDING" ) ]]; then
+    echo "Vela 数据目录不存在: $item" >&2; exit 2
+  fi
+done
+[[ -f "$ROOT/secrets/vela_bot_token" && ! -L "$ROOT/secrets/vela_bot_token" ]] || { echo '缺少本地 Bot Token Secret 文件' >&2; exit 2; }
+
+msg() { printf '[Vela] %s\n' "$*"; }
+die() { printf '[Vela ERROR] %s\n' "$*" >&2; exit 1; }
+require() { command -v "$1" >/dev/null 2>&1 || die "缺少命令: $1"; }
+image_valid() { [[ "$1" =~ ^ghcr\.io/smgsp6/3x-ui@sha256:[a-f0-9]{64}$ ]]; }
+check_secret() {
+  local file=$1 mode
+  [[ -f "$file" && ! -L "$file" ]] || die "不安全的文件: $file"
+  mode=$(stat -c %a -- "$file")
+  [[ $((8#$mode & 8#077)) -eq 0 ]] || die "权限过宽: $file; 需要 0600 或更严格"
+}
+
+# An interrupted upgrade is a hard stop before touching Docker. Keep the
+# identical check after acquiring flock below to close the race with an upgrade
+# that may create the journal concurrently.
+if [[ -L "$PENDING" ]]; then die '升级记录是符号链接，拒绝操作'; fi
+if [[ -e "$PENDING" && ! -f "$PENDING" ]]; then die '升级记录类型不安全'; fi
+if [[ -f "$PENDING" && "$cmd" != recover && "$cmd" != logs && "$cmd" != help && "$cmd" != -h && "$cmd" != --help ]]; then
+  die '发现中断的升级！先执行 vela recover，确认数据完整后再继续。'
+fi
+
+# A missing/unsafe anti-rollback floor is a local safety failure. Refuse the
+# operation BEFORE invoking Docker, even to query the daemon's version.
+if [[ "$cmd" == update ]]; then
+  [[ ! -L "$SEQUENCE_FILE" ]] || die '版本序号文件不安全'
+  [[ -f "$SEQUENCE_FILE" ]] || die '缺少发行版本序号；请先核对已安装版本，禁止盲目更新'
+fi
+
+require docker
+require flock
+require tar
+require stat
+check_secret "$ENVFILE"
+check_secret "$ROOT/secrets/vela_bot_token"
+docker compose version >/dev/null || die '没有安装 Docker Compose V2'
+
+# Exclusive maintenance lock: no concurrent update / backup / rollback.
+[[ ! -L "$LOCK" && ( ! -e "$LOCK" || -f "$LOCK" ) ]] || die '维护锁文件类型不安全'
+exec 9>"$LOCK"
+flock -n 9 || die '另一个 Vela 维护操作正在运行'
+
+compose() {
+  local image=$1
+  image_valid "$image" || die '拒绝非仓库 ghcr.io/smgsp6/3x-ui 的镜像，或没有 sha256 Digest 的镜像'
+  VELA_IMAGE="$image" VELA_HOME="$ROOT" docker compose --project-directory "$ROOT" --env-file "$ENVFILE" -f "$COMPOSE" "${@:2}"
+}
+current_image() {
+  [[ -f "$CURRENT" && ! -L "$CURRENT" ]] || die '缺少当前镜像摘要 image.ref'
+  local image
+  image=$(<"$CURRENT")
+  image_valid "$image" || die '本地 image.ref 不是已固定 SHA256 的 Vela 镜像'
+  printf '%s' "$image"
+}
+# Signed release anti-rollback floor. Missing is permitted only when starting
+# from a manually provisioned baseline; once set, an earlier signed release
+# cannot silently replace it. Kept outside the Docker volume and never sourced.
+release_sequence() {
+  # A missing floor must not silently enable replay of old signed releases.
+  # The reviewed installer must initialize this file (even when baseline is 0).
+  [[ -e "$SEQUENCE_FILE" || -L "$SEQUENCE_FILE" ]] || die '缺少发行版本序号；请先核对已安装版本，禁止盲目更新'
+  [[ -f "$SEQUENCE_FILE" && ! -L "$SEQUENCE_FILE" ]] || die '版本序号文件不安全'
+  local value
+  value=$(<"$SEQUENCE_FILE")
+  [[ "$value" =~ ^(0|[1-9][0-9]{0,15})$ ]] || die '版本序号文件损坏或超出范围'
+  (( value <= 9007199254740991 )) || die '版本序号超出安全范围'
+  printf '%s' "$value"
+}
+write_release_sequence() {
+  local value=$1 tmp
+  [[ "$value" =~ ^(0|[1-9][0-9]{0,15})$ ]] || die '拒绝写入非法发行序号'
+  (( value <= 9007199254740991 )) || die '拒绝写入超出范围的发行序号'
+  [[ ! -L "$SEQUENCE_FILE" && ( ! -e "$SEQUENCE_FILE" || -f "$SEQUENCE_FILE" ) ]] || die '发行序号文件不安全'
+  tmp=$(mktemp "$ROOT/.release.sequence.XXXXXX")
+  printf '%s\n' "$value" > "$tmp"
+  chmod 600 "$tmp"
+  mv -f -- "$tmp" "$SEQUENCE_FILE"
+}
+
+# A durable, non-executable upgrade record. We NEVER source it as shell code.
+# The record is created before stopping the old service, so an abrupt reboot
+# leaves enough state for a controlled operator-initiated recovery.
+safe_archive_path() {
+  local archive=$1 name
+  name=$(basename -- "$archive")
+  [[ "$archive" == "$ROOT/backups/$name" && "$name" =~ ^vela-[0-9]{8}T[0-9]{6}Z-[0-9]+\.tar\.gz$ && -f "$archive" && ! -L "$archive" ]]
+}
+write_pending() {
+  local old=$1 candidate=$2 archive=$3 previous_seq=$4 tmp
+  [[ "$previous_seq" =~ ^(0|[1-9][0-9]{0,15})$ ]] || die '恢复记录中的发行序号非法'
+  image_valid "$old" && image_valid "$candidate" || die '非法的待恢复镜像摘要'
+  if [[ -n "$archive" ]]; then
+    safe_archive_path "$archive" || die '待恢复归档路径非法'
+  fi
+  tmp=$(mktemp "$ROOT/.pending-update.XXXXXX")
+  printf '%s\n%s\n%s\n%s\n' "$old" "$candidate" "$archive" "$previous_seq" > "$tmp"
+  chmod 600 "$tmp"
+  mv -f -- "$tmp" "$PENDING"
+}
+read_pending() {
+  [[ -f "$PENDING" && ! -L "$PENDING" ]] || die '找不到安全的升级恢复记录'
+  local -a lines
+  mapfile -t lines < "$PENDING"
+  # Historical preview journals had 3 lines; accept them ONLY for recovery.
+  [[ ${#lines[@]} -eq 3 || ${#lines[@]} -eq 4 ]] || die '升级恢复记录损坏，禁止自动恢复'
+  PENDING_OLD=${lines[0]}
+  PENDING_CANDIDATE=${lines[1]}
+  PENDING_ARCHIVE=${lines[2]}
+  PENDING_PREVIOUS_SEQUENCE=${lines[3]:-0}
+  [[ "$PENDING_PREVIOUS_SEQUENCE" =~ ^(0|[1-9][0-9]{0,15})$ ]] || die '升级恢复序号非法'
+  image_valid "$PENDING_OLD" && image_valid "$PENDING_CANDIDATE" || die '升级恢复记录中的镜像摘要非法'
+  if [[ -n "$PENDING_ARCHIVE" ]]; then
+    safe_archive_path "$PENDING_ARCHIVE" || die '升级恢复记录中的备份非法'
+  fi
+}
+write_current_image() {
+  local image=$1 tmp
+  image_valid "$image" || die '拒绝无 Digest 的镜像'
+  tmp=$(mktemp "$ROOT/.image.ref.XXXXXX")
+  printf '%s\n' "$image" >"$tmp"
+  chmod 600 "$tmp"
+  mv -f -- "$tmp" "$CURRENT"
+}
+was_running() {
+  [[ "$(docker inspect -f '{{.State.Running}}' vela_panel 2>/dev/null || true)" == true ]]
+}
+# Never source .env as shell code. Use only the validated HTTPS URL path for
+# health checks; deployments with a custom webBasePath are not necessarily /.
+health_path() {
+  python3 - "$ENVFILE" <<'PYTHON'
+import sys
+from urllib.parse import urlsplit
+url = None
+for line in open(sys.argv[1], encoding='utf-8'):
+    if line.startswith('XUI_TG_MINIAPP_URL='):
+        if url is not None: sys.exit('duplicate Mini App URL')
+        url = line.rstrip('\n').split('=', 1)[1].strip('"\'')
+if not url: sys.exit('missing Mini App URL')
+u = urlsplit(url)
+if u.scheme != 'https' or not u.hostname or u.username or u.password or u.query or u.fragment:
+    sys.exit('Mini App URL must be public HTTPS without query or fragment')
+path = u.path or '/'
+if not path.startswith('/') or any(c in path for c in '\r\n'):
+    sys.exit('invalid health path')
+print(path)
+PYTHON
+}
+# Match the explicit port passed into the Vela container. Never execute
+# the .env file as Shell; reject duplicate or nonnumeric values.
+health_port() {
+  python3 - "$ENVFILE" <<'PYTHON'
+import sys
+port = None
+for line in open(sys.argv[1], encoding='utf-8'):
+    if line.startswith('XUI_PORT='):
+        if port is not None: sys.exit('duplicate XUI_PORT')
+        port = line.split('=', 1)[1].strip().strip('"\'')
+port = port or '2053'
+if not port.isascii() or not port.isdecimal() or int(port) < 1 or int(port) > 65535:
+    sys.exit('invalid XUI_PORT')
+print(int(port))
+PYTHON
+}
+health() {
+  local attempt attempts=${VELA_HEALTH_ATTEMPTS:-15} retry_delay=${VELA_HEALTH_RETRY_SECS:-2} target port
+  target=$(health_path) || die 'Mini App HTTPS URL 不合法，无法执行健康检查'
+  port=$(health_port) || die '无效管理端口，无法执行健康检查'
+  target="${target%/}/tg-miniapp/health"
+  [[ "$attempts" =~ ^[0-9]{1,2}$ && "$attempts" -ge 1 && "$attempts" -le 60 ]] || die '非法健康检查次数'
+  [[ "$retry_delay" =~ ^[0-9]{1,2}$ ]] || die '非法重试间隔'
+  for attempt in $(seq 1 "$attempts"); do
+    if [[ "$(docker inspect -f '{{.State.Running}}' vela_panel 2>/dev/null || true)" == true ]] \
+      && docker exec -e "VELA_HEALTH_PATH=$target" -e "VELA_HEALTH_PORT=$port" vela_panel /bin/sh -c 'curl -ksS --connect-timeout 2 --max-time 4 -o /dev/null -w "%{http_code}" "https://127.0.0.1:${VELA_HEALTH_PORT}${VELA_HEALTH_PATH}" | grep -Eq "^204$" || curl -sS --connect-timeout 2 --max-time 4 -o /dev/null -w "%{http_code}" "http://127.0.0.1:${VELA_HEALTH_PORT}${VELA_HEALTH_PATH}" | grep -Eq "^204$"' >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep "$retry_delay"
+  done
+  return 1
+}
+# Reject unsafe archive entries BEFORE extraction. This is deliberately more
+# restrictive than GNU tar's defaults because rollback often runs as root.
+# Legitimate symlinks inside acme/cert may require manual relocation if they
+# point outside the backup roots; never follow them during automatic recovery.
+verify_backup_archive() {
+  local archive=$1
+  python3 - "$archive" <<'PYTHON'
+import posixpath, sys, tarfile
+try:
+    with tarfile.open(sys.argv[1], 'r:gz') as tar:
+        members = tar.getmembers()
+        if not members:
+            raise ValueError('empty backup archive')
+        seen = set()
+        for entry in members:
+            name = entry.name.rstrip('/')
+            if not name or name.startswith('/') or '\\' in name or name in seen:
+                raise ValueError('invalid archive path')
+            seen.add(name)
+            pieces = name.split('/')
+            if pieces[0] not in {'db', 'cert', 'acme'} or any(p in {'', '.', '..'} for p in pieces):
+                raise ValueError('path outside expected data roots')
+            if entry.isfile() or entry.isdir():
+                continue
+            if entry.issym() or entry.islnk():
+                target = entry.linkname
+                if not target or target.startswith('/') or '\\' in target:
+                    raise ValueError('unsafe symlink')
+                # A tar hardlink is relative to the archive root; a symlink
+                # is relative to its containing directory.
+                dest = posixpath.normpath(posixpath.join(
+                    posixpath.dirname(name) if entry.issym() else '', target))
+                if dest == '..' or dest.startswith('../') or dest.split('/')[0] != pieces[0]:
+                    raise ValueError('link escapes its data directory')
+                continue
+            raise ValueError('unsupported special file in backup')
+except (ValueError, tarfile.TarError, OSError) as exc:
+    sys.exit(f'Unsafe or unreadable Vela backup archive: {exc}')
+PYTHON
+}
+# Backup includes databases and certificate/ACME state but intentionally not the
+# Bot token (a separate secret). Stop the process first to ensure SQLite consistency.
+backup_locked() {
+  local old=$1 keep_stopped=${2:-false} stamp archive
+  stamp=$(date -u +%Y%m%dT%H%M%SZ)-$$
+  [[ ! -L "$ROOT/backups" ]] || die '拒绝将备份写入符号链接目录'
+  mkdir -p "$ROOT/backups"
+  [[ -d "$ROOT/backups" && ! -L "$ROOT/backups" ]] || die '备份路径不是安全目录'
+  chmod 700 "$ROOT/backups"
+  archive="$ROOT/backups/vela-$stamp.tar.gz"
+  local active=false
+  if was_running; then active=true; fi
+  if [[ "$active" == true ]]; then compose "$old" stop -t 40 || die '停止数据库写入失败，不会备份'; fi
+  # Always restart even when tar fails. Avoid preserving a stopped service.
+  if ! tar -C "$ROOT" -czf "$archive" -- db cert acme; then
+    rm -f -- "$archive"
+    [[ "$active" != true ]] || compose "$old" start || true
+    die '备份创建失败'
+  fi
+  chmod 600 "$archive"
+  # Do not deploy a candidate until the backup can be read. This checks archive
+  # integrity, not application/database consistency (the process was stopped).
+  if ! tar -tzf "$archive" >/dev/null || ! verify_backup_archive "$archive"; then
+    rm -f -- "$archive"
+    [[ "$active" != true ]] || compose "$old" start || true
+    die '备份完整性/路径安全检查失败，更新已中止'
+  fi
+  # A standalone backup should bring the old process back immediately.
+  # An upgrade MUST leave the old process stopped until the replacement is up:
+  # otherwise writes made after the snapshot disappear on rollback.
+  if [[ "$active" == true && "$keep_stopped" != true ]]; then
+    compose "$old" start || die "备份已保存至 $archive，但服务重启失败，需人工处理"
+  fi
+  msg "一致性备份完成：$archive"
+  printf '%s\n' "$archive"
+}
+
+# Restore is deliberately only used for the archive this process just created.
+# A failed candidate's data is kept for investigation rather than destroyed.
+restore_after_failed_update() {
+  local old=$1 archive=$2 stamp
+  safe_archive_path "$archive" && verify_backup_archive "$archive" || die '备份不可信，禁止自动恢复；请人工检查'
+  stamp=$(date -u +%Y%m%dT%H%M%SZ)-$$
+  compose "$old" stop -t 40 || true
+  [[ ! -L "$ROOT/failed-updates" ]] || die '拒绝使用符号链接故障数据目录'
+  mkdir -p "$ROOT/failed-updates/$stamp"
+  for item in db cert acme; do
+    if [[ -d "$ROOT/$item" ]]; then
+      mv -- "$ROOT/$item" "$ROOT/failed-updates/$stamp/$item" || die '隔离故障数据失败：请人工恢复'
+    fi
+    # Missing directories are expected when a previous recovery was killed
+    # after moving some paths; the trusted backup will reconstruct all three.
+  done
+  if ! tar -C "$ROOT" -xzf "$archive"; then
+    die "备份恢复失败；快照保留在 $archive，故障数据在 $ROOT/failed-updates/$stamp"
+  fi
+  write_current_image "$old"
+  # Restore the signed sequence floor to the version corresponding to the
+  # restored image; a future genuinely newer signed release remains possible.
+  if [[ ${PENDING_PREVIOUS_SEQUENCE+x} ]]; then
+    write_release_sequence "$PENDING_PREVIOUS_SEQUENCE"
+  fi
+  compose "$old" up -d --force-recreate || die '恢复旧镜像失败，需人工处理'
+  health || die '旧镜像启动后健康检查失败；请检查日志'
+  msg "已恢复旧镜像和更新前的数据。故障候选数据位于 $ROOT/failed-updates/$stamp"
+}
+
+if [[ -L "$PENDING" ]]; then die '升级记录是符号链接，拒绝操作'; fi
+if [[ -e "$PENDING" && ! -f "$PENDING" ]]; then die '升级记录类型不安全'; fi
+# Never start a second upgrade or create a new snapshot while there is an
+# unresolved upgrade: that would overwrite the only known-good restore point.
+if [[ -f "$PENDING" && "$cmd" != recover && "$cmd" != logs && "$cmd" != help && "$cmd" != -h && "$cmd" != --help ]]; then
+  die '发现中断的升级！先执行 vela recover，确认数据完整后再继续。'
+fi
+case "$cmd" in
+  status)
+    old=$(current_image)
+    msg "当前已锁定镜像：$old"
+    compose "$old" ps
+    # Do a single non-mutating probe; not all nodes may be online at startup.
+    if VELA_HEALTH_ATTEMPTS=1 VELA_HEALTH_RETRY_SECS=0 health; then
+      msg 'Vela 本地基础健康检查通过（不代表客户端、节点及 Telegram 实测）'
+    else
+      die 'Vela 本地健康检查失败；请查看 vela logs'
+    fi
+    ;;
+  logs)
+    old=$(current_image)
+    compose "$old" logs --tail 150 --no-color vela
+    ;;
+  doctor)
+    old=$(current_image)
+    require python3
+    health_path >/dev/null || die 'Mini App URL 解析失败'
+    compose "$old" config --quiet
+    msg '配置结构和镜像 Digest 有效；这不能代替服务和 Telegram 实机测试'
+    ;;
+  backup)
+    old=$(current_image)
+    backup_locked "$old"
+    ;;
+  recover)
+    read_pending
+    msg '检测到未完成的升级记录，准备恢复旧镜像。请确认本机没有其他人工修改。'
+    if [[ -z "$PENDING_ARCHIVE" ]]; then
+      # The record was created before quiescing the old service. No candidate
+      # was started, so the old database is still the authoritative copy.
+      write_current_image "$PENDING_OLD"
+      write_release_sequence "$PENDING_PREVIOUS_SEQUENCE"
+      compose "$PENDING_OLD" up -d --force-recreate || die '恢复原容器失败，升级记录保留'
+      health || die '恢复原容器后健康检查失败，升级记录保留'
+    else
+      restore_after_failed_update "$PENDING_OLD" "$PENDING_ARCHIVE"
+    fi
+    rm -f -- "$PENDING"
+    msg '升级恢复完成。请检查数据库、客户端及节点状态后再更新。'
+    ;;
+  update)
+    old=$(current_image)
+    old_sequence=$(release_sequence)
+    require curl
+    require python3
+    require openssl
+    require sha256sum
+    # Fail closed until the maintainer pins a real, audited Ed25519 public key.
+    [[ "$RELEASE_KEY_SHA256" =~ ^[a-f0-9]{64}$ ]] || die 'Vela 发布签名公钥尚未启用；禁止从未经签名验证的清单升级'
+    [[ -f "$RELEASE_PUBLIC_KEY" && ! -L "$RELEASE_PUBLIC_KEY" ]] || die '缺少本地 Vela 发行签名公钥'
+    pubmode=$(stat -c %a -- "$RELEASE_PUBLIC_KEY")
+    [[ $((8#$pubmode & 8#022)) -eq 0 ]] || die '发行签名公钥文件权限不安全'
+    public_hash=$(sha256sum -- "$RELEASE_PUBLIC_KEY")
+    [[ "${public_hash%% *}" == "$RELEASE_KEY_SHA256" ]] || die '发行签名公钥指纹与已审核版本不符'
+    # Stable channel is controlled ONLY by this fork; it must identify the
+    # exact ghcr.io/smgsp6/3x-ui image digest. No latest/mutable tags allowed.
+    manifest_url='https://raw.githubusercontent.com/smgsp6/3x-ui/main/deploy/vela/stable.json'
+    manifest=$(mktemp "$ROOT/.manifest.XXXXXX")
+    signature=$(mktemp "$ROOT/.manifest-sig.XXXXXX")
+    trap 'rm -f -- "${manifest:-}" "${signature:-}"' EXIT
+    curl --proto '=https' --tlsv1.2 -fsSL --max-time 15 --max-filesize 65536 -o "$manifest" "$manifest_url" || die '无法获取 Vela 发布清单'
+    curl --proto '=https' --tlsv1.2 -fsSL --max-time 15 --max-filesize 4096 -o "$signature" "${manifest_url}.sig" || die '缺少 Vela 发布清单的独立签名'
+    # A signed statement binds the exact JSON bytes to an offline maintainer
+    # key. Do not download the public key from the same channel as the manifest.
+    openssl pkeyutl -verify -pubin -inkey "$RELEASE_PUBLIC_KEY" -rawin -in "$manifest" -sigfile "$signature" >/dev/null 2>&1 || die 'Vela 发布清单签名不合法；禁止更新'
+    release_details=$(python3 - "$manifest" <<'PY'
+import json, re, sys
+with open(sys.argv[1], encoding='utf-8') as f:
+    release=json.load(f)
+image=release.get('image', '')
+sequence=release.get('releaseSequence')
+if (release.get('repository') != 'smgsp6/3x-ui'
+        or release.get('channel') != 'stable'
+        or not isinstance(image, str)
+        or not re.fullmatch(r'ghcr\.io/smgsp6/3x-ui@sha256:[a-f0-9]{64}', image)
+        or type(sequence) is not int or not (1 <= sequence <= 9007199254740991)):
+    sys.exit('reject invalid stable manifest or non-monotonic sequence')
+print(image)
+print(sequence)
+PY
+    ) || die '发布清单格式、镜像来源或发行序号不正确'
+    candidate=${release_details%%$'\n'*}
+    candidate_sequence=${release_details##*$'\n'}
+    if (( candidate_sequence < old_sequence )); then
+      die '检测到低于已安装版本的旧签名发布清单；拒绝降级或重放'
+    fi
+    if (( candidate_sequence == old_sequence )) && [[ "$candidate" != "$old" ]]; then
+      die '相同发行序号指向不同镜像；拒绝更新'
+    fi
+    if [[ "$candidate" == "$old" ]]; then
+      if (( candidate_sequence > old_sequence )); then write_release_sequence "$candidate_sequence"; fi
+      msg '当前已是已审核的最新稳定版本'; exit 0
+    fi
+    compose "$candidate" pull || die '镜像拉取失败，不会停止旧服务'
+    # Persist the old/candidate image before stopping any write traffic.
+    # If a crash happens during backup, 'vela recover' starts the old service.
+    write_pending "$old" "$candidate" "" "$old_sequence"
+    # Do not upgrade without an actual backup and a tested rollback path.
+    if ! backupoutput=$(backup_locked "$old" true); then
+      # backup_locked attempts to restart the old container on failure.
+      # Keep the journal in case the restart also failed or was interrupted.
+      die '备份失败，取消更新；请检查服务状态，必要时运行 vela recover'
+    fi
+    archive=$(printf '%s\n' "$backupoutput" | tail -n 1)
+    write_pending "$old" "$candidate" "$archive" "$old_sequence"
+    if compose "$candidate" up -d --force-recreate && health; then
+      write_current_image "$candidate"
+      write_release_sequence "$candidate_sequence"
+      rm -f -- "$PENDING"
+      msg '候选镜像初步健康检查通过。仍需检查节点同步、订阅和 Telegram 操作。'
+      msg "更新前备份：$archive"
+    else
+      msg '升级健康检查失败，开始恢复旧镜像和旧数据库。'
+      restore_after_failed_update "$old" "$archive"
+      rm -f -- "$PENDING"
+      exit 1
+    fi
+    ;;
+  help|-h|--help)
+    cat <<'HELP'
+Vela 维护命令（开发预览；尚未发布 stable.json，也未通过 Docker 实机测试）
+  vela status    查看当前镜像、容器状态和 Vela 本地健康检查
+  vela logs      显示最近 150 行本机容器日志（可能含敏感信息，请勿公开粘贴）
+  vela doctor    检查 Compose/摘要/配置
+  vela backup    短暂停机，备份 SQLite、证书、ACME 状态
+  vela update    验证离线签名、单调版本序号和镜像 Digest；备份、升级、检查，失败恢复
+  vela recover   从意外中断的升级记录中恢复旧镜像和本地备份（须人工触发）
+注意：不会运行 MHSanaei/3x-ui 的 update.sh；不会上传任何服务器私密数据。
+HELP
+    ;;
+  *) die "未知命令：$cmd" ;;
+esac

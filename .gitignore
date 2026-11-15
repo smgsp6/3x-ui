@@ -44,3 +44,18 @@ docker-compose.override.yml
 
 # Ignore .env (Environment Variables) file
 .env
+.env.*
+!.env.example
+# Vela: never stage local databases, credentials, ACME accounts or certificates
+secrets/
+.secrets/
+cert/
+acme/
+db/
+pgdata/
+*.key
+*.p12
+*.pfx
+*.pem
+__pycache__/
+.pytest_cache/

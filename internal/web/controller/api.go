@@ -8,6 +8,7 @@ import (
 	"github.com/mhsanaei/3x-ui/v3/internal/web/middleware"
 	"github.com/mhsanaei/3x-ui/v3/internal/web/service/panel"
 	"github.com/mhsanaei/3x-ui/v3/internal/web/service/tgbot"
+	"github.com/mhsanaei/3x-ui/v3/internal/web/service/tgminiapp"
 	"github.com/mhsanaei/3x-ui/v3/internal/web/session"
 
 	"github.com/gin-gonic/gin"
@@ -59,7 +60,10 @@ func (a *APIController) checkAPIAuth(c *gin.Context) {
 		c.Next()
 		return
 	}
-	if matchedScope != "" {
+    // In Mini App mode, legacy unrestricted API tokens are not an alternate login.
+    // Scoped monitor and node-sync tokens remain available to existing nodes.
+    if tgminiapp.Enabled() && matchedScope == model.ApiScopeAdmin { matchedScope = "" }
+    if matchedScope != "" {
 		setAuthenticated(matchedScope)
 		c.Next()
 		return
@@ -170,7 +174,9 @@ func (a *APIController) enforceTokenScope(c *gin.Context) {
 			c.Next()
 			return
 		}
-	case model.ApiScopeNodeAdmin:
+    case model.ApiScopeNodeAdmin:
+        // Legacy node-admin update runs upstream update.sh; forbidden for Vela.
+        if tgminiapp.Enabled() && rel == "/server/updatePanel" { deny(); return }
 		if scopeAllows(nodeSyncScopeAllow, rel, c.Request.Method) || scopeAllows(nodeAdminScopeAllow, rel, c.Request.Method) {
 			c.Next()
 			return
@@ -203,6 +209,7 @@ func (a *APIController) initRouter(g *gin.RouterGroup) {
 	api.Use(middleware.CSRFMiddleware(getRemoteIp))
 
 	api.GET("/openapi.json", ServeOpenAPISpec)
+	NewCertificateStatusController(api)
 
 	// Inbounds API
 	inbounds := api.Group("/inbounds")
@@ -239,5 +246,6 @@ func (a *APIController) initRouter(g *gin.RouterGroup) {
 
 // BackuptoTgbot sends a backup of the panel data to Telegram bot admins.
 func (a *APIController) BackuptoTgbot(c *gin.Context) {
+    if tgminiapp.Enabled() { c.AbortWithStatus(http.StatusForbidden); return }
 	a.Tgbot.SendBackupToAdmins()
 }

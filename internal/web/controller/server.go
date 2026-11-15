@@ -16,6 +16,7 @@ import (
 	"github.com/mhsanaei/3x-ui/v3/internal/web/global"
 	"github.com/mhsanaei/3x-ui/v3/internal/web/service"
 	"github.com/mhsanaei/3x-ui/v3/internal/web/service/panel"
+	"github.com/mhsanaei/3x-ui/v3/internal/web/service/tgminiapp"
 	"github.com/mhsanaei/3x-ui/v3/internal/web/websocket"
 
 	"github.com/gin-gonic/gin"
@@ -216,6 +217,9 @@ func (a *ServerController) installXray(c *gin.Context) {
 // updater) overrides it for this run. The response's runId identifies this
 // update for a later getUpdateStatus poll.
 func (a *ServerController) updatePanel(c *gin.Context) {
+    // The upstream updater fetches a mutable remote shell script. This would
+    // replace Vela with upstream 3x-ui; Vela publishes verified Docker images instead.
+    if tgminiapp.Enabled() { c.AbortWithStatus(http.StatusForbidden); return }
 	devParam := c.PostForm("dev")
 	var runID int64
 	var err error

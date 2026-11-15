@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"net/http"
+	"strings"
 
 	"github.com/mhsanaei/3x-ui/v3/internal/logger"
 	"github.com/mhsanaei/3x-ui/v3/internal/web/session"
@@ -25,6 +26,17 @@ func SecurityHeadersMiddleware(directHTTPS bool) gin.HandlerFunc {
 		}
 		c.Next()
 	}
+}
+
+// AllowTelegramMiniAppSDK relaxes CSP ONLY for the official Mini App
+// bootstrap page. It does not allow arbitrary inline scripts or HTML Widgets.
+func AllowTelegramMiniAppSDK(c *gin.Context) {
+    policy := c.Writer.Header().Get("Content-Security-Policy")
+    const original = "script-src 'self' "
+    if strings.Contains(policy, original) {
+        c.Header("Content-Security-Policy", strings.Replace(policy, original,
+            "script-src 'self' https://telegram.org ", 1))
+    }
 }
 
 func newCSPNonce() string {

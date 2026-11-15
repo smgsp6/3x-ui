@@ -2,6 +2,7 @@ package tgbot
 
 import (
 	"github.com/mymmrac/telego"
+	"github.com/mhsanaei/3x-ui/v3/internal/web/service/tgminiapp"
 	tu "github.com/mymmrac/telego/telegoutil"
 )
 
@@ -35,8 +36,18 @@ const (
 
 // homeRows is the admin's menu: four categories and a refresh, one row per
 // subject, so every subject is one tap deeper and nothing is more than two away.
-func (t *Tgbot) homeRows() [][]telego.InlineKeyboardButton {
-	return [][]telego.InlineKeyboardButton{
+func (t *Tgbot) homeRows(chatID int64) [][]telego.InlineKeyboardButton {
+    rows := [][]telego.InlineKeyboardButton{}
+    // WebApp inline buttons are only valid in private chats. Never show
+    // this admin entry point in groups, topics or public conversations.
+    if chatID > 0 && tgminiapp.AllowedUserID(chatID) {
+        if appURL := tgminiapp.MiniAppURL(); appURL != "" {
+            rows = append(rows, tu.InlineKeyboardRow(
+                tu.InlineKeyboardButton("🚀 打开 Vela").WithWebApp(tu.WebAppInfo(appURL)),
+            ))
+        }
+    }
+    rows = append(rows, [][]telego.InlineKeyboardButton{
 		tu.InlineKeyboardRow(
 			t.btn("tgbot.buttons.catServer", cbCatServer),
 			t.btn("tgbot.buttons.catClients", cbCatClients),
@@ -48,7 +59,8 @@ func (t *Tgbot) homeRows() [][]telego.InlineKeyboardButton {
 		tu.InlineKeyboardRow(
 			t.btn("tgbot.buttons.refresh", cbHome),
 		),
-	}
+	}...)
+    return rows
 }
 
 // categoryRows is one menu subject's own rows.
@@ -76,13 +88,16 @@ func (t *Tgbot) categoryRows(category string) [][]telego.InlineKeyboardButton {
 			home,
 		}
 	case "maintenance":
-		return [][]telego.InlineKeyboardButton{
-			tu.InlineKeyboardRow(t.btn("tgbot.buttons.dbBackup", cbBackup)),
+		rows := [][]telego.InlineKeyboardButton{}
+		if !tgminiapp.Enabled() {
+			rows = append(rows, tu.InlineKeyboardRow(t.btn("tgbot.buttons.dbBackup", cbBackup)))
+		}
+		return append(rows,
 			tu.InlineKeyboardRow(t.btn("tgbot.buttons.getBanLogs", cbBanLogs)),
 			tu.InlineKeyboardRow(t.btn("tgbot.buttons.restartXray", cbRestartXry)),
 			tu.InlineKeyboardRow(t.btn("tgbot.buttons.ResetAllTraffics", cbResetAll)),
 			home,
-		}
+		)
 	}
 	return [][]telego.InlineKeyboardButton{home}
 }

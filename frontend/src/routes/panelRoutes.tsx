@@ -8,6 +8,7 @@ import {
   ExportOutlined,
   GlobalOutlined,
   ImportOutlined,
+  SafetyCertificateOutlined,
   SettingOutlined,
   SwapOutlined,
   TagsOutlined,
@@ -22,6 +23,7 @@ const GroupsPage = lazy(() => import('@/pages/groups/GroupsPage'));
 const NodesPage = lazy(() => import('@/pages/nodes/NodesPage'));
 const HostsPage = lazy(() => import('@/pages/hosts/HostsPage'));
 const SettingsPage = lazy(() => import('@/pages/settings/SettingsPage'));
+const CertificatesPage = lazy(() => import('@/pages/certificates/CertificatesPage'));
 const XrayPage = lazy(() => import('@/pages/xray/XrayPage'));
 const ApiDocsPage = lazy(() => import('@/pages/api-docs/ApiDocsPage'));
 const SponsorsPage = lazy(() => import('@/pages/sponsors/SponsorsPage'));
@@ -39,6 +41,7 @@ export const PANEL_ROUTES: PanelRoute[] = [
   { path: '/', titleKey: 'menu.dashboard', icon: DashboardOutlined, component: IndexPage },
   { path: '/inbounds', titleKey: 'menu.inbounds', icon: ImportOutlined, component: InboundsPage },
   { path: '/clients', titleKey: 'menu.clients', icon: TeamOutlined, component: ClientsPage },
+  { path: '/certificates', titleKey: 'menu.certificates', icon: SafetyCertificateOutlined, component: CertificatesPage },
   { path: '/groups', titleKey: 'menu.groups', icon: TagsOutlined, component: GroupsPage },
   { path: '/nodes', titleKey: 'menu.nodes', icon: ClusterOutlined, component: NodesPage },
   { path: '/hosts', titleKey: 'menu.hosts', icon: GlobalOutlined, component: HostsPage },

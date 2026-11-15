@@ -15,6 +15,7 @@ import (
 	"github.com/mhsanaei/3x-ui/v3/internal/logger"
 	"github.com/mhsanaei/3x-ui/v3/internal/util/common"
 	"github.com/mhsanaei/3x-ui/v3/internal/web/service"
+	"github.com/mhsanaei/3x-ui/v3/internal/web/service/tgminiapp"
 	"github.com/mhsanaei/3x-ui/v3/internal/xray"
 )
 
@@ -31,6 +32,8 @@ func (t *Tgbot) reportHeader(runTime string) string {
 // SendReport sends the periodic report as ONE message per admin: a report that
 // arrived as a pile left every part but the last one undismissable.
 func (t *Tgbot) SendReport() {
+    // Enabling a Mini App must not also opt in to legacy periodic reports.
+    if tgminiapp.Enabled() { return }
 	if !t.IsRunning() {
 		return
 	}
@@ -106,6 +109,7 @@ func (t *Tgbot) backupSummary() string {
 // SendBackupToAdmins sends the database and, when it exists, the generated Xray
 // config to admin chats. A failed DB read is reported, not sent silently.
 func (t *Tgbot) SendBackupToAdmins() {
+    if tgminiapp.Enabled() { return } // disable automatic and API-triggered exports
 	if !t.IsRunning() {
 		return
 	}

@@ -1,0 +1,16 @@
+# Development-only overlay, NOT a production Compose deployment.
+# Keep the token in a local file that is not tracked in Git.
+services:
+  3xui:
+    environment:
+      XUI_TG_MINIAPP_ENABLED: "true"
+      XUI_TG_MINIAPP_ADMIN_IDS: "${XUI_TG_MINIAPP_ADMIN_IDS:?Set your Telegram numeric ID}"
+      XUI_TG_MINIAPP_URL: "${XUI_TG_MINIAPP_URL:?Set your public HTTPS URL}"
+      XUI_TG_MINIAPP_BOT_TOKEN_FILE: /run/secrets/vela_bot_token
+      XUI_TG_CERT_ALERT_ENABLED: "${XUI_TG_CERT_ALERT_ENABLED:-false}"
+      XUI_TG_CERT_ALERT_STATE_FILE: /etc/x-ui/vela-cert-alerts.json
+    secrets:
+      - vela_bot_token
+secrets:
+  vela_bot_token:
+    file: "${VELA_BOT_TOKEN_FILE:?Set path to untracked 0600 token file}"

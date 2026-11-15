@@ -640,6 +640,7 @@ func (s *SettingService) SetTgBotChatId(chatIds string) error {
 }
 
 func (s *SettingService) GetTgbotEnabled() (bool, error) {
+    if strings.EqualFold(strings.TrimSpace(os.Getenv("XUI_TG_MINIAPP_ENABLED")), "true") { return true, nil }
 	return s.getBool("tgBotEnable")
 }
 

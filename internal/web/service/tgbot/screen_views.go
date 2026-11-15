@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/mhsanaei/3x-ui/v3/internal/logger"
+	"github.com/mhsanaei/3x-ui/v3/internal/web/service/tgminiapp"
 	"github.com/mhsanaei/3x-ui/v3/internal/util/common"
 	"github.com/mhsanaei/3x-ui/v3/internal/xray"
 
@@ -28,7 +29,7 @@ func (t *Tgbot) screenHome(chatID, userID int64, delivery ...screenDelivery) {
 		return
 	}
 	body := t.homeSummary()
-	t.renderScreen(chatID, t.newScreen("main", body, t.homeRows()...), delivery...)
+	t.renderScreen(chatID, t.newScreen("main", body, t.homeRows(chatID)...), delivery...)
 }
 
 // screenClientHome is a client's own entry point: its usage, then links and QR.
@@ -251,6 +252,10 @@ func (t *Tgbot) screenCommands(chatID int64, isAdmin bool) {
 // sendBackupScreen delivers the backup and summary as ONE message (file plus
 // caption); a summary too long for a caption is sent after the file.
 func (t *Tgbot) sendBackupScreen(chatID int64) {
+    if tgminiapp.Enabled() {
+        t.sendNotice(chatID, "🔒 Vela 禁止通过 Telegram 传输数据库与 Xray 私密配置。请使用本地 vela backup。")
+        return
+    }
 	dbData, err := t.serverService.GetDb()
 	if err != nil {
 		logger.Error("Error in getting db backup:", err)

@@ -8,6 +8,7 @@ import (
 	"github.com/mhsanaei/3x-ui/v3/internal/database"
 	"github.com/mhsanaei/3x-ui/v3/internal/database/model"
 	"github.com/mhsanaei/3x-ui/v3/internal/logger"
+	"github.com/mhsanaei/3x-ui/v3/internal/web/service/tgminiapp"
 
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-gonic/gin"
@@ -17,6 +18,7 @@ const (
 	loginUserKey      = "LOGIN_USER"
 	loginEpochKey     = "LOGIN_EPOCH"
 	apiAuthUserKey    = "api_auth_user"
+	telegramMiniAppUserKey = "TELEGRAM_MINIAPP_USER_ID"
 	sessionCookieName = "3x-ui"
 )
 
@@ -29,12 +31,35 @@ func SetLoginUser(c *gin.Context, user *model.User) error {
 		return nil
 	}
 	s := sessions.Default(c)
+    // Credential rotation from within Mini App must retain the signed Telegram
+    // identity. A legacy caller cannot mint a Vela session via this function.
+    var tgID int64
+    if tgminiapp.Enabled() {
+        id, ok := s.Get(telegramMiniAppUserKey).(int64)
+        if !ok || !tgminiapp.AllowedUserID(id) { return http.ErrNoCookie }
+        tgID = id
+    }
 	// Anyone can mint the anonymous session this request carried and plant it in a browser,
 	// so nothing in it, the CSRF token above all, outlives the privilege change.
 	s.Clear()
 	s.Set(loginUserKey, user.Id)
 	s.Set(loginEpochKey, user.LoginEpoch)
+    if tgminiapp.Enabled() { s.Set(telegramMiniAppUserKey, tgID) }
 	return s.Save()
+}
+
+// SetTelegramMiniAppLoginUser binds a signed Telegram identity to the same
+// normal panel user session; changing the admin allowlist revokes access.
+func SetTelegramMiniAppLoginUser(c *gin.Context, user *model.User, telegramID int64) error {
+    if user == nil || telegramID <= 0 || !tgminiapp.AllowedUserID(telegramID) {
+        return http.ErrNoCookie
+    }
+    s := sessions.Default(c)
+    s.Clear()
+    s.Set(loginUserKey, user.Id)
+    s.Set(loginEpochKey, user.LoginEpoch)
+    s.Set(telegramMiniAppUserKey, telegramID)
+    return s.Save()
 }
 
 func SetAPIAuthUser(c *gin.Context, user *model.User) {
@@ -51,7 +76,11 @@ func GetLoginUser(c *gin.Context) *model.User {
 		}
 	}
 	s := sessions.Default(c)
-	obj := s.Get(loginUserKey)
+    if tgminiapp.Enabled() {
+        telegramID, ok := s.Get(telegramMiniAppUserKey).(int64)
+        if !ok || !tgminiapp.AllowedUserID(telegramID) { return nil }
+    }
+    obj := s.Get(loginUserKey)
 	if obj == nil {
 		return nil
 	}

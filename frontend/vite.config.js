@@ -235,6 +235,7 @@ export default defineConfig({
       input: {
         index: path.resolve(import.meta.dirname, 'index.html'),
         login: path.resolve(import.meta.dirname, 'login.html'),
+        miniapp: path.resolve(import.meta.dirname, 'miniapp.html'),
         subpage: path.resolve(import.meta.dirname, 'subpage.html'),
       },
       output: {

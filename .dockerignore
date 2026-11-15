@@ -8,3 +8,25 @@ pgdata
 x-ui/
 *.db
 *.dump
+# Vela: private operator data must never enter Docker build context
+.env
+.env.*
+**/.env
+**/.env.*
+secrets/
+**/secrets/
+acme/
+**/acme/
+backups/
+**/backups/
+failed-updates/
+**/failed-updates/
+*.db-wal
+*.db-shm
+*.key
+*.p12
+*.pfx
+**/*private*.pem
+**/__pycache__/
+*.pyc
+.pytest_cache/

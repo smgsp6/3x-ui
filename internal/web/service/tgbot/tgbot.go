@@ -23,6 +23,7 @@ import (
 	"github.com/mhsanaei/3x-ui/v3/internal/web/global"
 	"github.com/mhsanaei/3x-ui/v3/internal/web/locale"
 	"github.com/mhsanaei/3x-ui/v3/internal/web/service"
+	"github.com/mhsanaei/3x-ui/v3/internal/web/service/tgminiapp"
 
 	"github.com/mymmrac/telego"
 	ta "github.com/mymmrac/telego/telegoapi"
@@ -334,14 +335,32 @@ func (t *Tgbot) Start(i18nFS embed.FS) error {
 	t.SetHostname()
 
 	// Get Telegram bot token
-	tgBotToken, err := t.settingService.GetTgBotToken()
+	tgBotToken := ""
+    if tgminiapp.Enabled() {
+        tgBotToken = tgminiapp.BotToken() // Never read the legacy DB token in Vela mode
+    } else {
+        tgBotToken, err = t.settingService.GetTgBotToken()
+    }
+    if tgBotToken == "" && err == nil {
+        err = fmt.Errorf("Vela Bot token Secret missing or invalid")
+    }
 	if err != nil || tgBotToken == "" {
 		logger.Warning("Failed to get Telegram bot token:", err)
 		return err
 	}
 
 	// Get Telegram bot chat ID(s)
-	tgBotID, err := t.settingService.GetTgBotChatId()
+	tgBotID := ""
+    if tgminiapp.Enabled() {
+        // Fail closed before parsing Telegram chat IDs, which normally accepts
+        // negative group IDs; Vela requires positive private user IDs only.
+        if _, allowlistErr := tgminiapp.AdminUserIDs(); allowlistErr != nil {
+            return fmt.Errorf("Vela Bot admin allowlist invalid")
+        }
+        tgBotID = os.Getenv("XUI_TG_MINIAPP_ADMIN_IDS")
+    } else {
+        tgBotID, err = t.settingService.GetTgBotChatId()
+    }
 	if err != nil {
 		logger.Warning("Failed to get Telegram bot chat ID:", err)
 		return err

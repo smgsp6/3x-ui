@@ -1,0 +1,115 @@
+package tgminiapp
+
+// TLSCertificateReloader watches the panel's configured on-disk certificate
+// pair and swaps it into future handshakes once BOTH files form a valid pair.
+// Incomplete/non-matching ACME renewals never replace the last working pair.
+// It does not issue certificates, start shell commands, or disclose paths.
+
+import (
+	"bytes"
+	"crypto/tls"
+	"crypto/x509"
+	"errors"
+	"os"
+	"slices"
+	"sync"
+	"time"
+)
+
+const maxTLSPEMBytes = 2 << 20
+const tlsRefreshInterval = 30 * time.Second
+
+// TLSCertificateReloader keeps a pointer to an immutable certificate. Returning
+// pointers to mutated tls.Certificate structs would race with TLS handshakes.
+type TLSCertificateReloader struct {
+	mu        sync.Mutex
+	certPath  string
+	keyPath   string
+	current   *tls.Certificate
+	nextCheck time.Time
+}
+
+func NewTLSCertificateReloader(certPath, keyPath string, initial tls.Certificate) *TLSCertificateReloader {
+	// Both paths come from existing panel settings, not from an HTTP payload.
+	return &TLSCertificateReloader{certPath: certPath, keyPath: keyPath, current: &initial, nextCheck: time.Now().Add(tlsRefreshInterval)}
+}
+
+func safeLoadTLSKeyPair(certPath, keyPath string) (*tls.Certificate, error) {
+	if certPath == "" || keyPath == "" {
+		return nil, errors.New("missing TLS certificate configuration")
+	}
+	for _, path := range []string{certPath, keyPath} {
+		info, err := os.Stat(path)
+		if err != nil || !info.Mode().IsRegular() || info.Size() <= 0 || info.Size() > maxTLSPEMBytes {
+			return nil, errors.New("TLS certificate material unavailable")
+		}
+	}
+	// Go verifies that the public certificate matches the private key.
+	// If renewal is half-written, return an error without changing current.
+	cert, err := tls.LoadX509KeyPair(certPath, keyPath)
+	if err != nil || len(cert.Certificate) == 0 {
+		return nil, errors.New("TLS certificate material invalid")
+	}
+	leaf, err := x509.ParseCertificate(cert.Certificate[0])
+	if err != nil || time.Now().Before(leaf.NotBefore) || !time.Now().Before(leaf.NotAfter) {
+		return nil, errors.New("TLS certificate is not currently valid")
+	}
+	// The client will validate the issuer, SAN, and chain. This preflight
+	// deliberately checks time validity without claiming CA trust.
+	return &cert, nil
+}
+
+// Keeps all previously served DNS/IP SAN identities on automatic renewal.
+// A deliberate hostname replacement requires operator review and restart.
+func keepsCertificateIdentity(oldLeaf, candidate *x509.Certificate) bool {
+	for _, name := range oldLeaf.DNSNames {
+		if !slices.Contains(candidate.DNSNames, name) {
+			return false
+		}
+	}
+	for _, oldIP := range oldLeaf.IPAddresses {
+		found := false
+		for _, newIP := range candidate.IPAddresses {
+			if oldIP.Equal(newIP) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+	if len(oldLeaf.DNSNames) == 0 && len(oldLeaf.IPAddresses) == 0 &&
+		oldLeaf.Subject.CommonName != candidate.Subject.CommonName {
+		return false
+	}
+	return true
+}
+
+// currentAt is separated from TLS to permit deterministic offline rotation
+// tests. It polls at most once per interval, not once per network request.
+func (r *TLSCertificateReloader) currentAt(now time.Time) *tls.Certificate {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if !now.Before(r.nextCheck) {
+		r.nextCheck = now.Add(tlsRefreshInterval)
+		if candidate, err := safeLoadTLSKeyPair(r.certPath, r.keyPath); err == nil {
+			if !bytes.Equal(candidate.Certificate[0], r.current.Certificate[0]) {
+				// Prevent accidental replacement with an older, shorter-lived
+				// certificate; a deliberate manual change can still restart.
+				newLeaf, _ := x509.ParseCertificate(candidate.Certificate[0])
+				oldLeaf, oldErr := x509.ParseCertificate(r.current.Certificate[0])
+				if oldErr == nil && !newLeaf.NotAfter.Before(oldLeaf.NotAfter) && keepsCertificateIdentity(oldLeaf, newLeaf) {
+					r.current = candidate
+				}
+			}
+		}
+	}
+	return r.current
+}
+
+// GetCertificate implements tls.Config.GetCertificate. In Vela mode the
+// config must set Certificates=nil, so SNI-less clients also use the reloader.
+func (r *TLSCertificateReloader) GetCertificate(_ *tls.ClientHelloInfo) (*tls.Certificate, error) {
+	return r.currentAt(time.Now()), nil
+}

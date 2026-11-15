@@ -11,6 +11,7 @@ import (
 	"github.com/mhsanaei/3x-ui/v3/internal/web/service"
 	"github.com/mhsanaei/3x-ui/v3/internal/web/service/panel"
 	"github.com/mhsanaei/3x-ui/v3/internal/web/service/tgbot"
+	"github.com/mhsanaei/3x-ui/v3/internal/web/service/tgminiapp"
 	"github.com/mhsanaei/3x-ui/v3/internal/web/session"
 
 	"github.com/gin-gonic/gin"
@@ -82,11 +83,20 @@ func (a *IndexController) index(c *gin.Context) {
 		c.Redirect(http.StatusTemporaryRedirect, c.GetString("base_path")+"panel/")
 		return
 	}
-	serveDistPage(c, "login.html")
+    if tgminiapp.Enabled() {
+        middleware.AllowTelegramMiniAppSDK(c)
+        serveDistPage(c, "miniapp.html")
+        return
+    }
+    serveDistPage(c, "login.html")
 }
 
 // login handles user authentication and session creation.
 func (a *IndexController) login(c *gin.Context) {
+    if tgminiapp.Enabled() {
+        c.AbortWithStatus(http.StatusNotFound)
+        return
+    }
 	var form LoginForm
 
 	if err := c.ShouldBind(&form); err != nil {

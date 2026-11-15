@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/mhsanaei/3x-ui/v3/internal/logger"
+	"github.com/mhsanaei/3x-ui/v3/internal/web/service/tgminiapp"
 
 	"github.com/mymmrac/telego"
 	tu "github.com/mymmrac/telego/telegoutil"
@@ -132,6 +133,7 @@ func (t *Tgbot) dropNoticeFor(chatID int64, msgID int) {
 // sendBackupFile uploads a file with its summary as caption. It has no hide button:
 // that button deletes the message, and this may be the admin's only copy.
 func (t *Tgbot) sendBackupFile(chatID int64, data []byte, name, caption string) bool {
+    if tgminiapp.Enabled() { return false } // raw DB and Xray config stay local
 	if liveBot() == nil || data == nil {
 		return false
 	}

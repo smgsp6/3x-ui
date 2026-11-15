@@ -1,0 +1,42 @@
+# Vela candidate runtime. Requires a reviewed, pinned image digest.
+# Host networking keeps arbitrary Xray TCP/UDP inbounds reachable without
+# enumerating all user-defined ports. The Go panel is loopback-bound in Vela mode.
+# IMPORTANT: the Fail2ban capabilities have host-level firewall implications.
+services:
+  vela:
+    image: ${VELA_IMAGE:?Set a reviewed image pinned with sha256}
+    container_name: vela_panel
+    network_mode: host
+    restart: unless-stopped
+    init: true
+    stop_grace_period: 40s
+    security_opt:
+      - no-new-privileges:true
+    cap_add:
+      # Original 3x-ui's Fail2ban integration requires access to firewall rules.
+      # Do not enable Docker privileged mode or mount /var/run/docker.sock.
+      - NET_ADMIN
+      - NET_RAW
+    environment:
+      TZ: ${TZ:-Asia/Tokyo}
+      XUI_IN_DOCKER: 'true'
+      XUI_DB_TYPE: sqlite
+      # Match the health checker; no accidental dependence on upstream DB port.
+      XUI_PORT: ${XUI_PORT:-2053}
+      XUI_ENABLE_FAIL2BAN: 'true'
+      XUI_TG_MINIAPP_ENABLED: 'true'
+      XUI_TG_MINIAPP_ADMIN_IDS: ${XUI_TG_MINIAPP_ADMIN_IDS:?Admin Telegram numeric IDs required}
+      XUI_TG_MINIAPP_URL: ${XUI_TG_MINIAPP_URL:?HTTPS Mini App URL required}
+      XUI_TG_MINIAPP_BOT_TOKEN_FILE: /run/secrets/vela_bot_token
+      # Opt-in only; reminders include purpose and days, not DNS/IP/path.
+      XUI_TG_CERT_ALERT_ENABLED: ${XUI_TG_CERT_ALERT_ENABLED:-false}
+      XUI_TG_CERT_ALERT_STATE_FILE: /etc/x-ui/vela-cert-alerts.json
+    volumes:
+      - ${VELA_HOME:?VELA_HOME required}/db:/etc/x-ui
+      - ${VELA_HOME}/cert:/root/cert
+      - ${VELA_HOME}/acme:/root/.acme.sh
+    secrets:
+      - vela_bot_token
+secrets:
+  vela_bot_token:
+    file: ${VELA_HOME:?VELA_HOME required}/secrets/vela_bot_token

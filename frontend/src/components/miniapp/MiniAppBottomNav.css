@@ -1,0 +1,20 @@
+.tg-app-bottom-nav {display:none}
+@media(max-width:760px){
+  .tg-app-bottom-nav {display:flex;position:fixed;z-index:1005;bottom:0;left:0;right:0;height:calc(70px + env(safe-area-inset-bottom,0px));padding:6px 10px env(safe-area-inset-bottom,0px);background:var(--ant-color-bg-container,#fff);border-top:1px solid var(--ant-color-border-secondary,#e7edf5);box-shadow:0 -12px 36px rgba(20,46,80,.08)}
+  .tg-bottom-item {flex:1;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:5px;border:0;background:transparent;color:var(--ant-color-text-secondary,#8b97a8);font:inherit;font-size:11px;min-width:0;cursor:pointer}
+  .tg-bottom-item>.anticon {font-size:21px}
+  .tg-bottom-item.active {color:var(--ant-color-primary,#368fff);font-weight:700}
+  #content-layout {padding-bottom:calc(80px + env(safe-area-inset-bottom,0px))!important}
+}
+@media(max-width:760px){
+  /* Keep the full upstream navigation accessible from "更多", but don't show
+     a second hamburger and rail on top of Vela's app navigation. */
+  body:has(.tg-app-bottom-nav) .ant-sidebar>.ant-layout-sider {display:none!important}
+  body:has(.tg-app-bottom-nav) .ant-sidebar>.drawer-handle {display:none!important}
+  body:has(.tg-app-bottom-nav) .ant-sidebar {width:0!important;min-width:0!important}
+  .tg-app-bottom-nav {z-index:1100;border-radius:19px 19px 0 0;backdrop-filter:blur(16px)}
+  .vela-more-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+  .vela-more-entry{display:flex;align-items:center;justify-content:center;flex-direction:column;gap:10px;min-height:94px;border:1px solid var(--ant-color-border-secondary,#e7edf5);border-radius:17px;background:var(--ant-color-bg-container,#fff);color:var(--ant-color-text,#25354b);font:inherit;font-size:12px;text-align:center;cursor:pointer}
+  .vela-more-entry-icon{display:grid;place-items:center;width:38px;height:38px;border-radius:12px;background:var(--ant-color-primary-bg,#e9f3ff);color:var(--ant-color-primary,#3989e0);font-size:19px}
+  .vela-more-entry:focus-visible,.tg-bottom-item:focus-visible {outline:2px solid var(--ant-color-primary,#3989e0);outline-offset:2px}
+}
