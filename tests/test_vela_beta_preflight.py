@@ -46,6 +46,28 @@ class BetaGateTests(unittest.TestCase):
     def test_valid_isolated_layout(self):
         gate.validate(self.home, self.template)
 
+    def test_runtime_example_style_does_not_require_duplicate_home(self):
+        # The CLI already exports VELA_HOME for Compose. Copying the sample
+        # env into an isolated synthetic directory must not require an extra
+        # VELA_HOME line just to pass the read-only static preflight.
+        sample = (SOURCE.parent / 'runtime.env.example').read_text(encoding='utf-8')
+        self.assertNotIn('VELA_HOME=', sample)
+        sample = sample.replace('https://vela.example.com/',
+                                'https://admin.vela-safe-domain.org/app/')
+        self.put('.env', sample)
+        gate.validate(self.home, self.template)
+
+    def test_documentation_placeholder_url_never_passes(self):
+        sample = (SOURCE.parent / 'runtime.env.example').read_text(encoding='utf-8')
+        self.put('.env', sample)
+        self.assert_refused('placeholder')
+
+    def test_optional_home_override_must_still_match(self):
+        self.put('.env', self.default.replace(f'VELA_HOME={self.home}\\n', ''))
+        gate.validate(self.home, self.template)
+        self.put('.env', self.default.replace(str(self.home), '/opt/unreviewed'))
+        self.assert_refused('VELA_HOME')
+
     def test_duplicate_admin_key_refused(self):
         self.put('.env', self.default + 'XUI_TG_MINIAPP_ADMIN_IDS=1002\n')
         self.assert_refused('duplicate')
@@ -67,6 +89,9 @@ class BetaGateTests(unittest.TestCase):
             'https://admin.vela-safe-domain.org/?token=x',
             'https://a:b@admin.vela-safe-domain.org/',
             'https://admin.vela-safe-domain.org:99999/',
+            'https://vela.example.com/',
+            'https://preview.example.net/',
+            'https://panel.example.org/',
         ):
             with self.subTest(value=value):
                 self.put('.env', self.default.replace(

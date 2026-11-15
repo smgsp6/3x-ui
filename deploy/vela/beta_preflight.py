@@ -90,7 +90,13 @@ def validate_url(value: str) -> None:
         raise PreflightFailure("invalid Telegram HTTPS hostname")
     if "." not in host or host.startswith(".") or host.endswith(".") or ".." in host:
         raise PreflightFailure("invalid public Telegram hostname")
-    if host == "localhost" or host.endswith((".localhost", ".local", ".test", ".invalid", ".example")) or host in {"example.com", "example.net", "example.org"}:
+    # All example.com/net/org subdomains are documentation placeholders too.
+    # The published runtime.env.example uses vela.example.com; accepting that
+    # value would incorrectly approve an unreachable Mini App for personal beta.
+    reserved_domains = ("example.com", "example.net", "example.org")
+    if (host == "localhost" or
+            host.endswith((".localhost", ".local", ".test", ".invalid", ".example")) or
+            any(host == domain or host.endswith("." + domain) for domain in reserved_domains)):
         raise PreflightFailure("placeholder or local Telegram hostname")
     try:
         ipaddress.ip_address(host)
@@ -107,8 +113,11 @@ def validate(home: Path, template: Path | None = None) -> None:
         raise PreflightFailure("VELA_HOME must be absolute")
     verify_path(home, "home", private=True)
     env = parse_env(home / ".env")
-    if env.get("VELA_HOME") != str(home):
-        raise PreflightFailure("VELA_HOME missing or differs from inspected directory")
+    # The maintenance CLI passes VELA_HOME as a process environment variable.
+    # The shipped runtime.env.example intentionally omits it. The inspected
+    # absolute path is authoritative; still refuse any conflicting .env value.
+    if "VELA_HOME" in env and env["VELA_HOME"] != str(home):
+        raise PreflightFailure("VELA_HOME differs from inspected directory")
     if env.get("XUI_TG_MINIAPP_ENABLED", "true") != "true":
         raise PreflightFailure("Telegram Mini App must be enabled")
     if env.get("XUI_DB_TYPE", "sqlite") != "sqlite":
