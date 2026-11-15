@@ -101,3 +101,15 @@ python3 /path/to/vela-phase12/apply_to_repo.py .
 - 项目仍为开发预览，GitHub 未写入，生产签名密钥和发布镜像仍未建立。
 
 - 第十二阶段实际离线结果：原有 73 项 Python 测试和新 3 项契约测试分别运行，通过 **76/76**；Go 独立安全模块 Race 和 vet 通过。见 `docs/PHASE12-TEST-REPORT.md`。完全没有验证真实 Docker 和 Telegram。
+
+## 10. 第十三阶段实际 GitHub 集成（2026-11-15 更新）
+
+本节比前面在 GitHub 上传之前留下的“403 / 未写入”记录更新，**以本节为准**。
+
+- 唯一开发分支仍是 `smgsp6/3x-ui:vela-dev`，`main` 仍为原始基线 `5297fd3c8495d80fab97ae511553fa545c69e913`。
+- 第十二阶段源码包已在 GitHub Actions 临时工作树中验证完整性（79 个文件、固定 SHA256），执行原有 `apply_to_repo.py --check` 和正式补丁应用。Vela 真实源码的 92 个变更于提交 `66a527523591a6aad9aa0932c73b1e7ea9fad781` 写入 `vela-dev`，并用 GitHub API 验证 `internal/web/controller/miniapp.go` 存在。
+- 原 ZIP 包里的独立工作流 `.github/workflows/vela-pr-check.yml` 因 GitHub Actions token 不具备 workflows 修改权限而单独由已连接的 GitHub 工具提交；完整构建工作流已启用，在 `vela-dev` 上运行。
+- 原始上游基线包含 4 个现有源码中 PEM 字符串扫描告警和 24 个历史私钥格式扫描告警。开发 CI 现在使用固定原版 Blob SHA 和基线扫描结果对比，要求**不增加**告警。不能将此视作正式发布所需的零风险历史审计。
+- ZIP 中的原始 `apply_to_repo.py` 已补充到仓库根目录，以支持旧开发包的回归测试；CI 对它实施第十二阶段固定 SHA256 校验。
+- 已有 GitHub Actions 初步通过了源码隐私基线差异、Git 运行时私密文件检查、前端 TypeScript 类型检查；完整 React 单测、Go 全量测试、Python 离线回归与 Docker 构建要以最新 CI 的实际最终结论为准，不能预先宣称通过。
+- 本阶段没有修改线上服务器、发布 Docker 镜像或生成正式一键安装脚本。签名生产发行密钥尚不存在，`vela update` 仍故意禁止生产升级。
