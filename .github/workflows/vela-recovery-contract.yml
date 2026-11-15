@@ -1,0 +1,39 @@
+name: Vela real SQLite recovery lifecycle contract (isolated)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [vela-dev]
+    paths:
+      - "deploy/vela/vela"
+      - "tests/test_maintenance_cli.py"
+      - ".github/workflows/vela-recovery-contract.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: vela-recovery-contract-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  recovery:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Read-only source checkout with historical privacy baseline
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Verify no new confidential material is present
+        run: python3 vela-development/integration/baseline_privacy_gate.py
+      - name: Check shell syntax
+        run: bash -n deploy/vela/vela
+      - name: Exercise signed-manifest, recovery journal and REAL SQLite rollback tests
+        run: python3 -m unittest discover -s tests -p test_maintenance_cli.py -v
+      - name: Enforce temporary-data-only recovery scope
+        run: |
+          git diff --exit-code
+          git status --porcelain
+          echo "Completed on synthetic SQLite; no Docker daemon, release or customer data used."
