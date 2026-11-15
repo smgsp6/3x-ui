@@ -64,8 +64,14 @@ jobs:
         run: go build -trimpath -o "${RUNNER_TEMP}/vela-build-smoke" ./main.go
       - name: Test non-disclosing ELF marker inspector
         run: python3 -m unittest discover -s tests -p test_vela_elf_marker_inspect.py -v
-      - name: Inspect disposable compiled panel ELF without printing contents
-        run: python3 deploy/vela/ci_elf_marker_inspect.py "${RUNNER_TEMP}/vela-build-smoke"
+      - name: Build stripped Go panel with production-like flags
+        run: go build -trimpath -ldflags="-w -s" -o "${RUNNER_TEMP}/vela-build-stripped" ./main.go
+      - name: Inspect both disposable Go ELFs without printing contents
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 deploy/vela/ci_elf_marker_inspect.py "${RUNNER_TEMP}/vela-build-smoke"
+          python3 deploy/vela/ci_elf_marker_inspect.py "${RUNNER_TEMP}/vela-build-stripped"
       - name: Ensure build binary exists without publishing it
         shell: bash
         run: |

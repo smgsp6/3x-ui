@@ -67,6 +67,12 @@ def classify(data):
         labels = {label for left, right, label in parts if left <= hit.start() < right}
         label = sorted(labels)[0] if len(labels) == 1 else "unmapped_or_ambiguous"
         counts[label] += 1
+        # A normal PEM block starts a new line immediately after its header.
+        # This reports an observed byte property only, never the byte itself.
+        if data[hit.end():hit.end() + 1] in (b"\n", b"\r"):
+            counts["followed_by_newline"] += 1
+        else:
+            counts["not_followed_by_newline"] += 1
         footer = hit.group().replace(b"BEGIN", b"END", 1)
         if footer in data[hit.end():min(len(data), hit.end() + 128 * 1024)]:
             counts["paired_header_within_bound"] += 1
@@ -87,7 +93,8 @@ def main():
         return 2
     for key in ("readonly_constants", "writable_data", "machine_code",
                 "other_or_unknown", "unmapped_or_ambiguous",
-                "paired_header_within_bound", "unpaired_header_within_bound"):
+                "paired_header_within_bound", "unpaired_header_within_bound",
+                "followed_by_newline", "not_followed_by_newline"):
         print(f"ELF_MARKER_CLASS {key}={counters.get(key, 0)}")
     print("DIAGNOSTIC ONLY: the strict Docker layer privacy gate remains mandatory")
     return 0

@@ -28,7 +28,8 @@ class ELFMarkerInventoryTests(unittest.TestCase):
         counters = mod.classify(fake_elf(header))
         self.assertEqual(counters["readonly_constants"], 1)
         self.assertEqual(counters["unpaired_header_within_bound"], 1)
-        self.assertEqual(sum(counters.values()), 2)
+        self.assertEqual(counters["not_followed_by_newline"], 1)
+        self.assertEqual(sum(counters.values()), 3)
         self.assertNotIn("PRIVATE KEY", repr(counters))
 
     def test_header_and_footer_both_reported(self):
@@ -37,6 +38,7 @@ class ELFMarkerInventoryTests(unittest.TestCase):
         c = mod.classify(fake_elf(header + b"\nNOT_A_REAL_KEY\n" + footer))
         self.assertEqual(c["readonly_constants"], 1)
         self.assertEqual(c["paired_header_within_bound"], 1)
+        self.assertEqual(c["not_followed_by_newline"], 1)
 
     def test_non_file_backed_bss_is_accepted(self):
         header = b"-----BEGIN " + b"PRIVATE KEY-----"
