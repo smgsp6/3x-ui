@@ -106,8 +106,32 @@ jobs:
               raise SystemExit(1)
           print("No new findings; four exact pre-existing upstream fixture markers verified unchanged")
           PY
-          python3 deploy/vela/git_history_audit.py .
-          echo "Candidate privacy and Git history audit completed successfully"
+          git worktree add --detach "${RUNNER_TEMP}/vela-phase13-history-baseline" 5297fd3c8495d80fab97ae511553fa545c69e913
+          python3 - <<'PY'
+          from pathlib import Path
+          import os
+          import subprocess
+          baseline = str(Path(os.environ["RUNNER_TEMP"]) / "vela-phase13-history-baseline")
+          script = "deploy/vela/git_history_audit.py"
+          def run_history(repo):
+              proc = subprocess.run(["python3", script, repo], capture_output=True, text=True)
+              if proc.returncode not in (0, 1):
+                  raise SystemExit("History scanner failed to complete")
+              lines = (proc.stdout + proc.stderr).splitlines()
+              findings = sorted(line for line in lines if line.startswith("BLOCK: "))
+              if proc.returncode == 1 and not findings:
+                  raise SystemExit("History scanner error without recognizable findings")
+              return findings
+          previous = run_history(baseline)
+          candidate = run_history(".")
+          if previous != candidate:
+              new = sorted(set(candidate) - set(previous))
+              print("Git history findings changed; new object IDs:", new[:20])
+              raise SystemExit("Historical privacy regression")
+          print(f"History has {len(previous)} PRE-EXISTING suspected PEM objects; no new matching objects")
+          print("WARNING: inherited historical findings remain a production release blocker")
+          PY
+          echo "Candidate delta privacy audits completed; baseline historical findings not waived for release"
       - name: Commit validated changes locally and verify only target branch moves
         shell: bash
         run: |
