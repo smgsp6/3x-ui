@@ -140,6 +140,50 @@ class ImageLayerTests(unittest.TestCase):
         self.assertEqual(diagnostics.get('source_os_content_paired'), 1)
         self.assertEqual(diagnostics.get('pem_unparseable_or_encrypted'), 1)
 
+    @staticmethod
+    def _synthetic_go_elf(payload):
+        import struct
+        blob = bytearray(512 + len(payload))
+        blob[:6] = b'\x7fELF\x02\x01'
+        struct.pack_into('<Q', blob, 40, 128)
+        struct.pack_into('<HHH', blob, 58, 64, 3, 1)
+        names = b'\x00.shstrtab\x00.rodata\x00'
+        blob[64:64 + len(names)] = names
+        struct.pack_into('<IIQQQQIIQQ', blob, 128 + 64, 1, 3, 0, 0, 64, len(names), 0, 0, 1, 0)
+        struct.pack_into('<IIQQQQIIQQ', blob, 128 + 128, 11, 1, 0, 0, 512, len(payload), 0, 0, 1, 0)
+        blob[512:] = payload
+        return bytes(blob)
+
+    def test_only_bare_go_rodata_format_constant_not_treated_as_key(self):
+        marker = b'-----BEGIN ' + b'PRIVATE KEY-----'
+        program = self._synthetic_go_elf(marker + b'Go-runtime-constant')
+        counts = {}
+        result = audit.audit_image_save(image_bytes([{'app/x-ui': program}]), counts)
+        self.assertEqual(result[2], 0)
+        self.assertEqual(counts.get('reviewed_non_pem_go_format_literal'), 1)
+
+    def test_go_elf_actual_pem_block_never_exempt(self):
+        marker = b'-----BEGIN ' + b'PRIVATE KEY-----'
+        footer = b'-----END ' + b'PRIVATE KEY-----'
+        program = self._synthetic_go_elf(marker + b'\nFAKE-ONLY\n' + footer)
+        self.assertGreater(audit.audit_image_save(image_bytes([{'app/x-ui': program}]))[2], 0)
+
+    def test_go_elf_additional_token_never_exempt(self):
+        marker = b'-----BEGIN ' + b'PRIVATE KEY-----'
+        token = b'12345678:' + b'A' * 40
+        program = self._synthetic_go_elf(marker + b'format-only,' + token)
+        self.assertGreater(audit.audit_image_save(image_bytes([{'app/x-ui': program}]))[2], 0)
+
+    def test_non_panel_elf_bare_format_marker_still_blocked(self):
+        marker = b'-----BEGIN ' + b'PRIVATE KEY-----'
+        program = self._synthetic_go_elf(marker)
+        self.assertGreater(audit.audit_image_save(image_bytes([{'app/bin/xray-linux-amd64': program}]))[2], 0)
+
+    def test_unrecognized_panel_elf_not_exempt(self):
+        marker = b'-----BEGIN ' + b'PRIVATE KEY-----'
+        program = b'\x7fELF' + marker
+        self.assertGreater(audit.audit_image_save(image_bytes([{'app/x-ui': program}]))[2], 0)
+
     def test_empty_or_corrupt_tar_refused(self):
         for content in (b'',b'not tar',tar_bytes({'manifest.json':b'[]'})):
             with self.subTest(size=len(content)),self.assertRaises(ValueError):

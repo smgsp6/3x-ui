@@ -116,6 +116,47 @@ def file_has_secret(f, diagnostics=None):
         overlap = current[-256:]
 
 
+# A bare PEM format label in the Go panel's .rodata is NOT a PEM key:
+# it has no immediate newline or matching footer. Accept only this one exact
+# compiler-produced, non-PEM layout and always scan all other signatures.
+# Unknown ELF layouts, extra markers, other filenames and actual PEM blocks
+# continue to fail closed. This is not a general ELF allowlist.
+MAX_PANEL_ELF = 256 * 1024 * 1024
+
+
+def scan_panel_elf_bytes(stream, length, diagnostics=None):
+    if length < 0 or length > MAX_PANEL_ELF:
+        raise ValueError('panel executable size invalid for full safety inspection')
+    payload = stream.read(length + 1)
+    if len(payload) != length:
+        raise ValueError('panel executable unreadable')
+    marker = b'-----BEGIN ' + b'PRIVATE KEY-----'
+    hits = list(KEY_HEADER.finditer(payload))
+    if payload.startswith(b'\x7fELF') and len(hits) == 1 and hits[0].group() == marker:
+        try:
+            from ci_elf_marker_inspect import classify
+            evidence = classify(payload)
+        except (ValueError, ImportError):
+            evidence = None
+        # Only one literal in read-only constants, no PEM newline or closing
+        # boundary; every extra or differently located marker remains blocked.
+        if evidence == {
+            'readonly_constants': 1,
+            'unpaired_header_within_bound': 1,
+            'not_followed_by_newline': 1,
+        }:
+            hit = hits[0]
+            redacted = (payload[:hit.start()] + b' ' * len(marker)
+                        + payload[hit.end():])
+            if file_has_secret(io.BytesIO(redacted), diagnostics):
+                return True
+            if diagnostics is not None:
+                diagnostics['reviewed_non_pem_go_format_literal'] = (
+                    diagnostics.get('reviewed_non_pem_go_format_literal', 0) + 1)
+            return False
+    return file_has_secret(io.BytesIO(payload), diagnostics)
+
+
 def scan_layer_tar(source, diagnostics=None):
     """Inspect a layer regardless of whether its outer name is legacy or OCI."""
     checked = violations = 0
@@ -132,7 +173,12 @@ def scan_layer_tar(source, diagnostics=None):
                     raise ValueError('unreadable layer member')
                 footer_before = diagnostics.get('pem_header_with_footer', 0) if diagnostics is not None else 0
                 partial_before = diagnostics.get('pem_header_no_footer_within_bound', 0) if diagnostics is not None else 0
-                if file_has_secret(stream, diagnostics):
+                detected = (
+                    scan_panel_elf_bytes(stream, member.size, diagnostics)
+                    if member.name in ('app/x-ui', './app/x-ui')
+                    else file_has_secret(stream, diagnostics)
+                )
+                if detected:
                     violations += 1
                     if diagnostics is not None:
                         diagnostics['layer_content'] = diagnostics.get('layer_content', 0) + 1
@@ -289,6 +335,10 @@ def main():
                   file=sys.stderr)
         return 1
     print(f'Vela image audit: PASS ({layers} image layer(s), {checked} file(s) scanned)')
+    if diagnostics is not None and diagnostics.get('reviewed_non_pem_go_format_literal'):
+        print('Validated bare Go PEM-format constants (NOT key blocks): '
+              + str(diagnostics['reviewed_non_pem_go_format_literal']),
+              file=sys.stderr)
     return 0
 
 if __name__ == '__main__':
