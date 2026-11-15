@@ -265,7 +265,7 @@ export const sections: readonly Section[] = [
         summary:
           'Inspect the management-panel and subscription TLS certificates, including their expiry and configured Telegram alert status. Does not return private keys or host filesystem paths.',
         response:
-          '{\\n  "success": true,\\n  "obj": {\\n    "alertsEnabled": false,\\n    "certificates": [\\n      { "purpose": "panel", "dnsNames": [], "daysRemaining": 0, "status": "unconfigured" },\\n      { "purpose": "subscription", "dnsNames": [], "daysRemaining": 0, "status": "unconfigured" }\\n    ]\\n  }\\n}',
+          '{\n  "success": true,\n  "obj": {\n    "alertsEnabled": false,\n    "certificates": [\n      { "purpose": "panel", "dnsNames": [], "daysRemaining": 0, "status": "unconfigured" },\n      { "purpose": "subscription", "dnsNames": [], "daysRemaining": 0, "status": "unconfigured" }\n    ]\n  }\n}',
         description:
           'Status is one of unconfigured, valid, expiring, expired or invalid. A configured certificate may also include issuer, validFrom and validUntil. DNS names are certificate metadata, not the configured key path. Telegram notifications remain disabled by default.',
         security: [{ cookieAuth: [] }, { bearerAuth: [] }],
