@@ -36,7 +36,13 @@ const (
 
 // homeRows is the admin's menu: four categories and a refresh, one row per
 // subject, so every subject is one tap deeper and nothing is more than two away.
-func (t *Tgbot) homeRows(chatID int64) [][]telego.InlineKeyboardButton {
+// The optional argument preserves upstream call sites. An omitted chat ID
+// never qualifies for the Vela Mini App WebApp button (fail closed).
+func (t *Tgbot) homeRows(chatIDs ...int64) [][]telego.InlineKeyboardButton {
+    var chatID int64
+    if len(chatIDs) > 0 {
+        chatID = chatIDs[0]
+    }
     rows := [][]telego.InlineKeyboardButton{}
     // WebApp inline buttons are only valid in private chats. Never show
     // this admin entry point in groups, topics or public conversations.
