@@ -1,0 +1,72 @@
+name: Vela isolated container boot and security smoke (no deploy)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [vela-dev]
+    paths:
+      - "deploy/vela/ci_prepare_dockerfile.py"
+      - "tests/test_vela_dockerfile_isolation.py"
+      - ".github/workflows/vela-container-boot-smoke.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  boot-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout with complete baseline and no saved credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Validate baseline privacy and guarded Dockerfile transformation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 vela-development/integration/baseline_privacy_gate.py
+          python3 -m unittest discover -s tests -p test_vela_dockerfile_isolation.py -v
+          python3 deploy/vela/ci_prepare_dockerfile.py Dockerfile "${RUNNER_TEMP}/VelaSmokeDockerfile"
+          test -z "$(git status --porcelain)"
+      - name: Build Vela image only in isolated runner
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker build --pull --no-cache -f "${RUNNER_TEMP}/VelaSmokeDockerfile" -t vela-boot-smoke:local .
+      - name: Confirm Fail2ban was not removed
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm --network none --entrypoint fail2ban-client vela-boot-smoke:local --version >/dev/null
+          echo "Fail2ban CLI retained"
+      - name: Boot actual panel with synthetic empty state, zero network access
+        shell: bash
+        run: |
+          set -euo pipefail
+          trap 'docker rm -f vela-smoke >/dev/null 2>&1 || true' EXIT
+          docker run --detach --name vela-smoke --network none \
+            --cap-drop ALL --security-opt no-new-privileges \
+            --tmpfs /etc/x-ui:rw,noexec,nosuid,size=32m \
+            --tmpfs /tmp:rw,nosuid,size=16m \
+            --tmpfs /var/log/x-ui:rw,nosuid,size=16m \
+            -e XUI_ENABLE_FAIL2BAN=false -e XUI_DB_TYPE=sqlite \
+            vela-boot-smoke:local >/dev/null
+          started=0
+          for i in 1 2 3 4 5 6 7 8 9 10; do
+            if docker exec vela-smoke sh -c 'pidof x-ui >/dev/null'; then
+              started=1
+              break
+            fi
+            sleep 1
+          done
+          test "$started" -eq 1
+          test "$(docker inspect -f '{{.State.Running}}' vela-smoke)" = true
+          echo "Panel booted under Docker network=none, cap-drop=ALL and empty tmpfs state"
+      - name: Enforce strict image-layer privacy gate (expected to block until fully cleared)
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker image save vela-boot-smoke:local | python3 deploy/vela/image_layer_audit.py --stdin --diagnostic-counts
+          echo "Strict privacy gate PASSED, but runtime and Telegram production tests still outstanding"
