@@ -75,3 +75,9 @@
 - 检查本地安装目录、Compose 与仓库内审阅模板一致、文件与 Secret 权限、非符号链接、重复 env 键、合法管理员白名单、非占位 HTTPS URL、端口、镜像固定 SHA256 Digest 和 `release.sequence` 序号。
 - 所有检查使用本地文件和标准库；测试使用一次性目录与合成数据，CI **不能验证真实 Telegram、真实证书、反向代理、Docker 网络或镜像来源**。
 - 通过本检查只能说明**本地候选布局通过部分静态安全条件**；无法推出安装、升级、运行或个人内测已经获批准。正式签名发布密钥仍未配置。
+
+## 第十三阶段补充：本地环境变量安全门禁
+
+- 个人内测只读预检拒绝在 `.env` 中配置任何名称含有 `TOKEN`、`PASSWORD`、`PASSWD`、`SECRET`、`PRIVATE_KEY` 或 `API_KEY` 的变量；Bot Token 仅能使用本地 Docker Secret 文件。
+- 拒绝 `DOCKER_*` 与 `COMPOSE_*` 环境变量进入候选 `.env`，降低通过额外 Compose 文件或 Docker 目标重定向造成误操作的风险。
+- 本检查不会读取进程环境变量，因此**不能保证宿主机环境没有覆盖配置**；未来个人内测仍需在隔离机器上核实实际 `docker compose config` 的最终展开结果和镜像 Digest。

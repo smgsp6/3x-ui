@@ -73,6 +73,23 @@ def parse_env(path: Path) -> dict[str, str]:
     return parsed
 
 
+def reject_unsafe_env_variables(env: dict[str, str]) -> None:
+    # Compose reads .env as input, but credentials must reside only in local
+    # Docker Secret files, never in env, process arguments or public CI logs.
+    # Also refuse Docker/Compose environment directives that could redirect
+    # an operator's deployment to a different daemon or configuration.
+    # These checks are intentionally independent of whether the reviewed
+    # Compose file currently interpolates a given variable.
+    sensitive_markers = ("TOKEN", "PASSWORD", "PASSWD", "SECRET", "PRIVATE_KEY", "API_KEY")
+    for name in env:
+        normalized = name.upper()
+        if (normalized.startswith(("DOCKER_", "COMPOSE_")) or
+                any(marker in normalized for marker in sensitive_markers)):
+            # Never print names or values: a malicious env key itself could
+            # contain an identifier or credential.
+            raise PreflightFailure("unsafe credential or Docker/Compose variable in env")
+
+
 def validate_url(value: str) -> None:
     if any(c.isspace() for c in value) or any(c in value for c in '$\\"\''):
         raise PreflightFailure("invalid Telegram HTTPS URL")
@@ -126,6 +143,7 @@ def validate(home: Path, template: Path | None = None) -> None:
             raise PreflightFailure("VELA_HOME contains a symlinked path component")
     verify_path(home, "home", private=True)
     env = parse_env(home / ".env")
+    reject_unsafe_env_variables(env)
     # The maintenance CLI passes VELA_HOME as a process environment variable.
     # The shipped runtime.env.example intentionally omits it. The inspected
     # absolute path is authoritative; still refuse any conflicting .env value.

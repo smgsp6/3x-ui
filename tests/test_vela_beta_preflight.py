@@ -80,6 +80,32 @@ class BetaGateTests(unittest.TestCase):
         self.put('.env', self.default.replace(str(self.home), '/opt/unreviewed'))
         self.assert_refused('VELA_HOME')
 
+    def test_inline_credentials_are_never_accepted_in_env(self):
+        # Personal-beta credentials must be stored in the local Secret file;
+        # don't print any value or accidentally accept alternative token keys.
+        for key in ("XUI_TG_MINIAPP_BOT_TOKEN", "XUI_TG_MINIAPP_BOT_TOKEN_FILE",
+                    "BOT_TOKEN", "ADMIN_PASSWORD", "API_KEY", "TLS_PRIVATE_KEY"):
+            with self.subTest(key=key):
+                self.put('.env', self.default + key + '=synthetic_only_fixture\n')
+                self.assert_refused('unsafe credential')
+        self.put('.env', self.default)
+
+    def test_docker_compose_environment_redirection_refused(self):
+        for line in (
+            'DOCKER_HOST=tcp://127.0.0.1:2375',
+            'DOCKER_CONTEXT=unreviewed',
+            'COMPOSE_FILE=../../unreviewed.yml',
+            'COMPOSE_PROJECT_NAME=unreviewed',
+        ):
+            with self.subTest(prefix=line.split('=', 1)[0]):
+                self.put('.env', self.default + line + '\n')
+                self.assert_refused('Docker/Compose')
+        self.put('.env', self.default)
+
+    def test_benign_optional_compose_keys_still_accepted(self):
+        self.put('.env', self.default + 'TZ=Asia/Tokyo\nXUI_TG_CERT_ALERT_ENABLED=false\n')
+        gate.validate(self.home, self.template)
+
     def test_duplicate_admin_key_refused(self):
         self.put('.env', self.default + 'XUI_TG_MINIAPP_ADMIN_IDS=1002\n')
         self.assert_refused('duplicate')
