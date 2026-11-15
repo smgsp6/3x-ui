@@ -49,7 +49,7 @@ def file_has_secret(f):
         overlap = current[-256:]
 
 
-def scan_layer_tar(source):
+def scan_layer_tar(source, diagnostics=None):
     """Inspect a layer regardless of whether its outer name is legacy or OCI."""
     checked = violations = 0
     with tarfile.open(fileobj=source, mode='r|*') as layer:
@@ -58,11 +58,15 @@ def scan_layer_tar(source):
                 checked += 1
                 if private_path(member.name):
                     violations += 1
+                    if diagnostics is not None:
+                        diagnostics['private_path'] = diagnostics.get('private_path', 0) + 1
                 stream = layer.extractfile(member)
                 if stream is None:
                     raise ValueError('unreadable layer member')
                 if file_has_secret(stream):
                     violations += 1
+                    if diagnostics is not None:
+                        diagnostics['layer_content'] = diagnostics.get('layer_content', 0) + 1
             elif member.issym() or member.islnk():
                 # No link is followed or dereferenced. Runtime link-policy
                 # validation is intentionally separate from this privacy gate.
@@ -90,7 +94,7 @@ def scan_oci_json(source):
 OCI_BLOB = re.compile(r'^blobs/sha256/[a-f0-9]{64}$')
 
 
-def audit_image_save(fileobj):
+def audit_image_save(fileobj, diagnostics=None):
     layer_count = 0
     checked = 0
     violations = 0
@@ -113,7 +117,7 @@ def audit_image_save(fileobj):
                 if name == 'layer.tar' or name.endswith('/layer.tar'):
                     seen_legacy = True
                     layer_count += 1
-                    count, risks = scan_layer_tar(source)
+                    count, risks = scan_layer_tar(source, diagnostics)
                     checked += count
                     violations += risks
                     continue
@@ -128,10 +132,13 @@ def audit_image_save(fileobj):
                     prefix = source.peek(256).lstrip()
                     if prefix.startswith((b'{', b'[')):
                         checked += 1
-                        violations += scan_oci_json(source)
+                        risk = scan_oci_json(source)
+                        violations += risk
+                        if risk and diagnostics is not None:
+                            diagnostics['metadata_content'] = diagnostics.get('metadata_content', 0) + 1
                     else:
                         layer_count += 1
-                        count, risks = scan_layer_tar(source)
+                        count, risks = scan_layer_tar(source, diagnostics)
                         checked += count
                         violations += risks
                     continue
@@ -141,6 +148,8 @@ def audit_image_save(fileobj):
                 checked += 1
                 if file_has_secret(source):
                     violations += 1
+                    if diagnostics is not None:
+                        diagnostics['metadata_content'] = diagnostics.get('metadata_content', 0) + 1
     except (tarfile.TarError, OSError, EOFError, ValueError) as exc:
         raise ValueError('cannot audit Docker image; archive is invalid') from exc
     if layer_count == 0 or (seen_oci and seen_legacy):
@@ -151,16 +160,24 @@ def audit_image_save(fileobj):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--stdin', action='store_true', help='read docker image save tar from standard input')
+    parser.add_argument('--diagnostic-counts', action='store_true',
+                        help='print aggregate finding categories only; never paths or contents')
     args = parser.parse_args()
     if not args.stdin:
         parser.error('use --stdin; this tool never contacts Docker or the network')
+    diagnostics = {} if args.diagnostic_counts else None
     try:
-        layers, checked, risks = audit_image_save(sys.stdin.buffer)
+        layers, checked, risks = audit_image_save(sys.stdin.buffer, diagnostics)
     except ValueError:
         print('Vela image audit: archive invalid or unreadable (fail closed)', file=sys.stderr)
         return 2
     if risks:
         print(f'Vela image audit: FAIL ({risks} potential private-data findings, contents/names suppressed)', file=sys.stderr)
+        if diagnostics is not None:
+            print('Aggregate categories (no paths, values or contents): '
+                  + ', '.join(f'{kind}={diagnostics.get(kind, 0)}'
+                              for kind in ('private_path', 'layer_content', 'metadata_content')),
+                  file=sys.stderr)
         return 1
     print(f'Vela image audit: PASS ({layers} image layer(s), {checked} file(s) scanned)')
     return 0

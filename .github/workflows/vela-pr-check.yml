@@ -163,4 +163,4 @@ jobs:
           docker image inspect vela-integration-ci:local --format '{{.Id}}'
           test "$(docker image inspect vela-integration-ci:local --format '{{.Architecture}}')" = amd64
       - name: Audit every final-image layer for private data (never upload tar)
-        run: docker image save vela-integration-ci:local | python3 deploy/vela/image_layer_audit.py --stdin
+        run: docker image save vela-integration-ci:local | python3 deploy/vela/image_layer_audit.py --stdin --diagnostic-counts

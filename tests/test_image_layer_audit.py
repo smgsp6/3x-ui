@@ -92,6 +92,18 @@ class ImageLayerTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 audit.audit_image_save(stream)
 
+    def test_aggregate_diagnostics_never_include_secret_names(self):
+        synthetic_name = 'private-operator-placeholder.key'
+        synthetic_value = b'-----BEGIN PRIVATE KEY-----\nFAKE-ONLY'
+        diagnostics = {}
+        stream = image_bytes([{synthetic_name: synthetic_value}], {'config.json': b'{"Env":["FAKE=test"]}'})
+        count, checked, violations = audit.audit_image_save(stream, diagnostics)
+        self.assertEqual(count, 1)
+        self.assertEqual(violations, 2)
+        self.assertEqual(diagnostics, {'private_path': 1, 'layer_content': 1})
+        self.assertNotIn(synthetic_name, str(diagnostics))
+        self.assertNotIn('FAKE-ONLY', str(diagnostics))
+
     def test_empty_or_corrupt_tar_refused(self):
         for content in (b'',b'not tar',tar_bytes({'manifest.json':b'[]'})):
             with self.subTest(size=len(content)),self.assertRaises(ValueError):
