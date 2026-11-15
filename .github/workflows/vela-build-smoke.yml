@@ -5,6 +5,10 @@ on:
   push:
     branches: [vela-dev]
     paths:
+      - "internal/**"
+      - "frontend/**"
+      - "go.mod"
+      - "go.sum"
       - ".github/workflows/vela-build-smoke.yml"
 
 permissions:
