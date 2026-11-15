@@ -53,6 +53,11 @@ jobs:
           grep -nE '^(def |class |if __name__|\s+subprocess\.|\s+os\.system)' "${RUNNER_TEMP}/vela-phase12-verified/apply_to_repo.py" | head -100
           echo "References to baseline/repository identity:"
           grep -nE '5297fd3c|smgsp6/3x-ui|--check|git status' "${RUNNER_TEMP}/vela-phase12-verified/apply_to_repo.py" | head -55
+      - name: Inspect complete archived patch entrypoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          sed -n '1,240p' "${RUNNER_TEMP}/vela-phase12-verified/apply_to_repo.py"
       - name: Check candidate files with phase-12 privacy checker
         shell: bash
         run: |
