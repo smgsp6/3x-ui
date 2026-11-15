@@ -124,6 +124,7 @@ class ImageLayerTests(unittest.TestCase):
         self.assertEqual(diagnostics.get('pem_header_with_footer'), 1)
         self.assertEqual(diagnostics.get('source_vela_panel_binary'), 1)
         self.assertEqual(diagnostics.get('source_vela_panel_binary_paired'), 1)
+        self.assertEqual(diagnostics.get('pem_unparseable_or_encrypted'), 1)
         self.assertNotIn(synthetic_name, str(diagnostics))
         self.assertNotIn('NOT_REAL_KEY_MATERIAL', str(diagnostics))
 
@@ -137,6 +138,7 @@ class ImageLayerTests(unittest.TestCase):
         self.assertEqual(diagnostics.get('pem_header_with_footer'), 1)
         self.assertEqual(diagnostics.get('source_os_content'), 1)
         self.assertEqual(diagnostics.get('source_os_content_paired'), 1)
+        self.assertEqual(diagnostics.get('pem_unparseable_or_encrypted'), 1)
 
     def test_empty_or_corrupt_tar_refused(self):
         for content in (b'',b'not tar',tar_bytes({'manifest.json':b'[]'})):

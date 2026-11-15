@@ -65,8 +65,24 @@ def pem_footer_diagnostic(current, match, stream, diagnostics):
         if not chunk:
             break
         tail.extend(chunk)
-    label = 'pem_header_with_footer' if footer in tail else 'pem_header_no_footer_within_bound'
+    complete = footer in tail
+    label = 'pem_header_with_footer' if complete else 'pem_header_no_footer_within_bound'
     diagnostics[label] = diagnostics.get(label, 0) + 1
+    if complete:
+        # Forensics only: feed a bounded candidate to the local OpenSSL parser.
+        # No PEM bytes, paths, passwords, parser stderr or key output are logged.
+        import subprocess
+        end = tail.find(footer) + len(footer)
+        candidate = match.group(0) + tail[:end]
+        try:
+            proc = subprocess.run(
+                ['openssl', 'pkey', '-inform', 'PEM', '-noout'],
+                input=candidate, stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL, check=False, timeout=5)
+            evidence = 'pem_parseable_private_key' if proc.returncode == 0 else 'pem_unparseable_or_encrypted'
+        except (OSError, subprocess.TimeoutExpired):
+            evidence = 'pem_parser_unavailable'
+        diagnostics[evidence] = diagnostics.get(evidence, 0) + 1
 
 
 def file_has_secret(f, diagnostics=None):
@@ -264,6 +280,12 @@ def main():
                                'source_mtg_binary_paired', 'source_mtg_binary_unpaired',
                                'source_os_content_paired', 'source_os_content_unpaired',
                                'source_other_content_paired', 'source_other_content_unpaired')),
+                  file=sys.stderr)
+            print('Local OpenSSL structural review (counts only): '
+                  + ', '.join(f'{kind}={diagnostics.get(kind, 0)}'
+                              for kind in ('pem_parseable_private_key',
+                                           'pem_unparseable_or_encrypted',
+                                           'pem_parser_unavailable')),
                   file=sys.stderr)
         return 1
     print(f'Vela image audit: PASS ({layers} image layer(s), {checked} file(s) scanned)')
