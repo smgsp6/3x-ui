@@ -124,3 +124,13 @@ python3 /path/to/vela-phase12/apply_to_repo.py .
 - 当前重跑检查：Go/React 只读冒烟工作流 `43687931803`；完整安全与构建检查 `43687931783`。截至更新本节时，隐私门禁和 76 项 Python 模拟/离线回归通过，Go 整仓编译与浏览器测试仍在运行。**不应将未完成的 CI 当作通过**。
 - 按用户新指示：不做任何额外的语言精简或默认语言改动；原版 14 种语言和上游兼容性必须保留。
 - 生产安装、真实 Telegram 登录、多节点、真实 Docker 部署、证书签发与回滚尚未验收，仍禁止正式安装发布。
+
+
+## 12. 第十三阶段整仓验收进度（2026-11-15）
+
+- GitHub Actions `43687931803`、`43688837769` 的独立只读构建验证通过：Node 26 React 面板与 Telegram Mini App Vite 构建、`go:embed` 入口检查、Go 1.27.4 全包编译、Go 面板可执行文件构建；第二轮额外通过 `TestRouteRegistryContract`（API 文档清单与实际路由必须一致）。
+- GitHub Actions `43688727166`：隐私门禁、76 项 Python 离线回归、React 单元/Playwright 浏览器测试、Go 全量测试、Mini App Go Race、Go 可执行文件构建与依赖安全检查全部成功。Docker 作业被安全门禁阻止，原因是该作业使用默认浅克隆，找不到原始 Git 基线；**不是 Docker 镜像验收通过**。
+- 新增的 `GET /panel/api/certificates/status` 在 `internal/web/routes_contract_test.go` 检出缺失文档，已补入 `frontend/src/pages/api-docs/endpoints.ts`，只描述授权访问与证书元数据，不输出私钥或本地路径。
+- `.github/workflows/vela-pr-check.yml` 中的 Docker checkout 已改为 `fetch-depth: 0`，使原本必须执行的历史隐私基线检查能够工作。重跑 `43689490404` 的实际 Docker 结果尚未确定，不可宣称成功。
+- 当前所有改动仅在 `vela-dev`，上游 `main` 和 Go 模块路径未变；原版 14 种语言不再主动调整。
+- 依然**没有**真正安装到服务器、测试 Telegram WebView 或发布生产 Docker 镜像/一键安装。生产升级、回滚、ACME 续签、Xray 多节点和镜像层隐私扫描仍需通过后续真实验收。
