@@ -52,6 +52,46 @@ class ImageLayerTests(unittest.TestCase):
         x=image_bytes([{'app/readme.txt':b'ok'}], {'config.json':b'{"Env":["TOKEN='+token+b'"]}'})
         self.assertGreater(audit.audit_image_save(x)[2],0)
 
+    def test_oci_layout_gzip_layers_and_metadata(self):
+        import gzip
+        import hashlib
+        import json
+
+        def as_oci(layers, config):
+            blobs = {}
+            refs = []
+            for contents in layers:
+                data = gzip.compress(tar_bytes(contents))
+                digest = hashlib.sha256(data).hexdigest()
+                blobs[f'blobs/sha256/{digest}'] = data
+                refs.append({'mediaType': 'application/vnd.oci.image.layer.v1.tar+gzip', 'digest': f'sha256:{digest}', 'size': len(data)})
+            config_digest = hashlib.sha256(config).hexdigest()
+            blobs[f'blobs/sha256/{config_digest}'] = config
+            manifest = json.dumps({'schemaVersion': 2, 'config': {'digest': f'sha256:{config_digest}'}, 'layers': refs}).encode()
+            manifest_digest = hashlib.sha256(manifest).hexdigest()
+            blobs[f'blobs/sha256/{manifest_digest}'] = manifest
+            blobs['index.json'] = json.dumps({'schemaVersion': 2, 'manifests': [{'digest': f'sha256:{manifest_digest}'}]}).encode()
+            blobs['oci-layout'] = b'{"imageLayoutVersion":"1.0.0"}'
+            return io.BytesIO(tar_bytes(blobs))
+
+        with self.subTest('normal OCI tar'):
+            stream = as_oci([{'app/x-ui': b'public test application'}, {'etc/ssl/certs/ca.pem': b'public cert'}], b'{"Env":["XUI_DB_TYPE=sqlite"]}')
+            count, files, risks = audit.audit_image_save(stream)
+            self.assertEqual(count, 2)
+            self.assertGreaterEqual(files, 5)
+            self.assertEqual(risks, 0)
+        with self.subTest('deleted file in OCI layer'):
+            stream = as_oci([{'app/.env': b'PRIVATE FAKE DATA'}, {'app/.wh..env': b''}], b'{}')
+            self.assertGreater(audit.audit_image_save(stream)[2], 0)
+        with self.subTest('credential in OCI config'):
+            token = b'12345678:' + b'A' * 35
+            stream = as_oci([{'app/x-ui': b'ok'}], b'{"Env":["TG='+token+b'"]}')
+            self.assertGreater(audit.audit_image_save(stream)[2], 0)
+        with self.subTest('corrupt OCI blob fails closed'):
+            stream = io.BytesIO(tar_bytes({'blobs/sha256/' + 'f'*64: b'not a compressed or uncompressed tar'}))
+            with self.assertRaises(ValueError):
+                audit.audit_image_save(stream)
+
     def test_empty_or_corrupt_tar_refused(self):
         for content in (b'',b'not tar',tar_bytes({'manifest.json':b'[]'})):
             with self.subTest(size=len(content)),self.assertRaises(ValueError):

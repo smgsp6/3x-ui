@@ -49,50 +49,102 @@ def file_has_secret(f):
         overlap = current[-256:]
 
 
+def scan_layer_tar(source):
+    """Inspect a layer regardless of whether its outer name is legacy or OCI."""
+    checked = violations = 0
+    with tarfile.open(fileobj=source, mode='r|*') as layer:
+        for member in layer:
+            if member.isfile():
+                checked += 1
+                if private_path(member.name):
+                    violations += 1
+                stream = layer.extractfile(member)
+                if stream is None:
+                    raise ValueError('unreadable layer member')
+                if file_has_secret(stream):
+                    violations += 1
+            elif member.issym() or member.islnk():
+                # No link is followed or dereferenced. Runtime link-policy
+                # validation is intentionally separate from this privacy gate.
+                continue
+    return checked, violations
+
+
+def scan_oci_json(source):
+    """Parse small OCI config/index/manifest documents; never print their values."""
+    import json
+    # OCI descriptors should be small. Refuse a huge or malformed JSON blob
+    # rather than assuming it is harmless metadata.
+    blob = source.read((2 << 20) + 1)
+    if len(blob) > (2 << 20):
+        raise ValueError('oversized OCI metadata')
+    try:
+        obj = json.loads(blob)
+    except (ValueError, UnicodeDecodeError) as exc:
+        raise ValueError('invalid OCI metadata') from exc
+    if not isinstance(obj, (dict, list)):
+        raise ValueError('invalid OCI metadata shape')
+    return int(file_has_secret(io.BytesIO(blob)))
+
+
+OCI_BLOB = re.compile(r'^blobs/sha256/[a-f0-9]{64}$')
+
+
 def audit_image_save(fileobj):
     layer_count = 0
     checked = 0
     violations = 0
+    seen_oci = False
+    seen_legacy = False
     try:
-        # `r|*` supports Docker's streaming tar without writing the image to disk.
+        # Docker Engines using the containerd image store can export OCI-style
+        # blobs/sha256/<digest> instead of legacy <id>/layer.tar paths.
+        # Scan every blob, including ones not referenced by the final manifest:
+        # deleting a secret in a later layer must not erase the finding.
         with tarfile.open(fileobj=fileobj, mode='r|*') as image:
             for outer in image:
                 if not outer.isfile():
                     continue
-                # Docker-save config JSON contains image environment variables;
-                # do not echo any values if the scan detects a credential.
-                if outer.name.endswith('.json') and '/' not in outer.name:
-                    stream = image.extractfile(outer)
-                    if stream is not None:
-                        checked += 1
-                        if file_has_secret(stream):
-                            violations += 1
-                    continue
-                if not outer.name.endswith('/layer.tar') and outer.name != 'layer.tar':
-                    continue
-                layer_count += 1
+                name = outer.name
                 source = image.extractfile(outer)
                 if source is None:
-                    raise ValueError('unreadable image layer')
-                with tarfile.open(fileobj=source, mode='r|*') as layer:
-                    for member in layer:
-                        if member.isfile():
-                            checked += 1
-                            if private_path(member.name):
-                                violations += 1
-                            stream = layer.extractfile(member)
-                            if stream is None:
-                                raise ValueError('unreadable layer member')
-                            if file_has_secret(stream):
-                                violations += 1
-                        elif member.issym() or member.islnk():
-                            # This gate only detects private data, not unsafe
-                            # runtime link-following; that is a separate check.
-                            continue
+                    raise ValueError('unreadable archive member')
+
+                if name == 'layer.tar' or name.endswith('/layer.tar'):
+                    seen_legacy = True
+                    layer_count += 1
+                    count, risks = scan_layer_tar(source)
+                    checked += count
+                    violations += risks
+                    continue
+
+                if name.startswith('blobs/'):
+                    seen_oci = True
+                    if OCI_BLOB.fullmatch(name) is None:
+                        raise ValueError('unrecognized OCI blob path')
+                    # OCI blobs contain either JSON configs/manifests or
+                    # (possibly compressed) tar layers. Peeking preserves the
+                    # stream for the following bounded parse.
+                    prefix = source.peek(256).lstrip()
+                    if prefix.startswith((b'{', b'[')):
+                        checked += 1
+                        violations += scan_oci_json(source)
+                    else:
+                        layer_count += 1
+                        count, risks = scan_layer_tar(source)
+                        checked += count
+                        violations += risks
+                    continue
+
+                # Docker legacy manifest/config, OCI index, oci-layout and
+                # other top-level metadata are still scanned for credentials.
+                checked += 1
+                if file_has_secret(source):
+                    violations += 1
     except (tarfile.TarError, OSError, EOFError, ValueError) as exc:
         raise ValueError('cannot audit Docker image; archive is invalid') from exc
-    if layer_count == 0:
-        raise ValueError('Docker image has no readable layer archives')
+    if layer_count == 0 or (seen_oci and seen_legacy):
+        raise ValueError('image has no layers or ambiguous archive layout')
     return layer_count, checked, violations
 
 
