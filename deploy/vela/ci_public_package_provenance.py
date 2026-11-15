@@ -16,6 +16,7 @@ PACKAGE = re.compile(rb"is owned by ([A-Za-z0-9_.+~:-]{1,100})")
 ROOTS = ["/etc", "/usr", "/lib", "/bin", "/sbin"]
 COUNTS = collections.Counter()
 EXAMINED = 0
+HITS = 0
 for root in ROOTS:
     if not os.path.isdir(root):
         continue
@@ -48,19 +49,20 @@ for root in ROOTS:
                             input=candidate, capture_output=True, timeout=5, check=False)
                         classification = "parseable" if parsed.returncode == 0 else "unparseable"
                     COUNTS[(owner, classification)] += 1
+                    HITS += 1
                     if owner.startswith("fail2ban-pyc-"):
                         safe_parts = [part.lower() for part in path.parts]
                         family = ("test_fixture" if any(part in ("test", "tests", "testing") for part in safe_parts)
                                   else "non_test_module")
                         suffix = "bytecode" if path.suffix == ".pyc" else "other_file"
                         COUNTS[(owner, family + "_" + suffix)] += 1
-                if sum(COUNTS.values()) > 32:
+                if HITS > 32:
                     raise RuntimeError("unexpected number of PEM markers")
             except (OSError, ValueError, subprocess.TimeoutExpired) as exc:
                 # Never surface exceptions that might contain private file paths.
                 raise SystemExit("Public-package provenance diagnostic could not complete") from None
 print("PUBLIC_RUNTIME_FILES_CHECKED", EXAMINED)
-print("PUBLIC_RUNTIME_PEM_HITS", sum(COUNTS.values()))
+print("PUBLIC_RUNTIME_PEM_HITS", HITS)
 for (owner, classification), count in sorted(COUNTS.items()):
     # Owner is a public package ID extracted from apk, not a pathname.
     print(f"PUBLIC_PACKAGE {owner}: {classification}={count}")
