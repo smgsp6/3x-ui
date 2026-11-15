@@ -5,6 +5,9 @@ set -Eeuo pipefail
 umask 077
 
 ROOT=${VELA_HOME:-/opt/vela}
+# Keep the operator-supplied spelling so strict beta preflight can reject
+# symlinks anywhere in the path, even though maintenance uses pwd -P.
+ROOT_INPUT=$ROOT
 [[ "$ROOT" = /* && "$ROOT" != / && "$ROOT" != */../* && "$ROOT" != */.. ]] || { echo 'VELA_HOME 必须是安全的绝对路径' >&2; exit 2; }
 [[ -d "$ROOT" && ! -L "$ROOT" ]] || { echo "VELA_HOME 不存在或为符号链接: $ROOT" >&2; exit 2; }
 ROOT=$(cd -- "$ROOT" && pwd -P)
@@ -346,11 +349,20 @@ case "$cmd" in
   doctor)
     old=$(current_image)
     require python3
-    health_path >/dev/null || die 'Mini App URL 解析失败'
+    # The strict filesystem gate is part of doctor, never an optional
+    # command an operator must remember. Fail closed if the reviewed
+    # companion scripts were not installed together with this CLI.
+    script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
+    [[ -f "$script_dir/beta_preflight.py" && ! -L "$script_dir/beta_preflight.py" &&
+       -f "$script_dir/compose.host.yml" && ! -L "$script_dir/compose.host.yml" ]] ||
+      die '缺少已审核的个人内测预检文件；拒绝以 doctor 放行'
+    python3 "$script_dir/beta_preflight.py" "$ROOT_INPUT" ||
+      die '个人内测文件预检未通过；拒绝继续检查 Compose'
+    # Verify the exact reviewed host-network template at runtime, not merely
+    # YAML syntax. The preflight rejects inline tokens and Docker overrides.
     compose "$old" config --quiet
-    msg '配置结构和镜像 Digest 有效；这不能代替服务和 Telegram 实机测试'
-    ;;
-  backup)
+    msg '个人内测文件安全与 Compose 结构检查通过（不代表正式安装获批）'
+    ;;  backup)
     old=$(current_image)
     backup_locked "$old"
     ;;
@@ -453,7 +465,7 @@ PY
 Vela 维护命令（开发预览；尚未发布 stable.json，也未通过 Docker 实机测试）
   vela status    查看当前镜像、容器状态和 Vela 本地健康检查
   vela logs      显示最近 150 行本机容器日志（可能含敏感信息，请勿公开粘贴）
-  vela doctor    检查 Compose/摘要/配置
+  vela doctor    只读检查本地私密文件权限、管理员/HTTPS/镜像、审核模板及 Compose 配置
   vela backup    短暂停机，备份 SQLite、证书、ACME 状态
   vela update    验证离线签名、单调版本序号和镜像 Digest；备份、升级、检查，失败恢复
   vela recover   从意外中断的升级记录中恢复旧镜像和本地备份（须人工触发）
