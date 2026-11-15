@@ -58,6 +58,37 @@ jobs:
         run: |
           set -euo pipefail
           sed -n '1,240p' "${RUNNER_TEMP}/vela-phase12-verified/apply_to_repo.py"
+
+      - name: Dry run patch against pinned baseline in isolated worktree
+        shell: bash
+        run: |
+          set -euo pipefail
+          git worktree add --detach "${RUNNER_TEMP}/vela-phase13-scratch" 5297fd3c8495d80fab97ae511553fa545c69e913
+          git -C "${RUNNER_TEMP}/vela-phase13-scratch" switch -c vela-phase13-scratch
+          python3 "${RUNNER_TEMP}/vela-phase12-verified/apply_to_repo.py" "${RUNNER_TEMP}/vela-phase13-scratch" --check
+          test -z "$(git -C "${RUNNER_TEMP}/vela-phase13-scratch" status --porcelain)"
+      - name: Apply patch in scratch checkout only and audit staged changes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 "${RUNNER_TEMP}/vela-phase12-verified/apply_to_repo.py" "${RUNNER_TEMP}/vela-phase13-scratch"
+          git -C "${RUNNER_TEMP}/vela-phase13-scratch" add -A
+          cd "${RUNNER_TEMP}/vela-phase13-scratch"
+          python3 "${GITHUB_WORKSPACE}/vela-development/integration/phase13_gate.py" audit-index
+          echo "Staged changes:"
+          git diff --cached --stat
+          echo "Files modified in upstream tree:"
+          git diff --cached --name-only --diff-filter=M
+      - name: Execute isolated security module tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "${RUNNER_TEMP}/vela-phase13-scratch"
+          GO111MODULE=off go test -race ./internal/web/service/tgminiapp
+          GO111MODULE=off go vet ./internal/web/service/tgminiapp
+          bash -n deploy/vela/vela
+          python3 -m py_compile deploy/vela/*.py apply_to_repo.py
+          echo "Isolated security checks passed; all changes remain in runner temp."
       - name: Check candidate files with phase-12 privacy checker
         shell: bash
         run: |
