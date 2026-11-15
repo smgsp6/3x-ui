@@ -81,8 +81,11 @@ jobs:
         run: |
           set -euo pipefail
           scratch="$(mktemp -d)"
-          chmod 700 "$scratch"
-          trap 'docker rm -f vela-persist-smoke >/dev/null 2>&1 || true; rm -rf "$scratch"' EXIT
+          # The container runs with CAP_DAC_OVERRIDE removed. Match the
+          # production bind-directory ownership rather than weakening perms.
+          sudo chown 0:0 "$scratch"
+          sudo chmod 700 "$scratch"
+          trap 'docker rm -f vela-persist-smoke >/dev/null 2>&1 || true; sudo rm -rf "$scratch"' EXIT
           run_panel() {
             docker run --detach --name vela-persist-smoke --network none \
               --cap-drop ALL --security-opt no-new-privileges \
@@ -105,10 +108,10 @@ jobs:
                 process=present
               fi
               db_exists=no
-              if test -e "$scratch/x-ui.db"; then db_exists=yes; fi
+              if sudo test -e "$scratch/x-ui.db"; then db_exists=yes; fi
               db_nonempty=no
-              if test -s "$scratch/x-ui.db"; then db_nonempty=yes; fi
-              files_count="$(find "$scratch" -maxdepth 1 -type f | wc -l | tr -d ' ')"
+              if sudo test -s "$scratch/x-ui.db"; then db_nonempty=yes; fi
+              files_count="$(sudo find "$scratch" -maxdepth 1 -type f | wc -l | tr -d ' ')"
               state="$(docker inspect -f '{{.State.Status}}' vela-persist-smoke)"
               echo "Synthetic persistence probe blocked: container=$state, process=$process, db_exists=$db_exists, db_nonempty=$db_nonempty, file_count=$files_count (names/contents suppressed)" >&2
               exit 1
@@ -116,12 +119,12 @@ jobs:
             test "$(docker inspect -f '{{.State.Running}}' vela-persist-smoke)" = true
           }
           run_panel
-          test -s "$scratch/x-ui.db"
-          test "$(stat -c %a "$scratch/x-ui.db")" = 600
+          sudo test -s "$scratch/x-ui.db"
+          test "$(sudo stat -c %a "$scratch/x-ui.db")" = 600
           docker rm -f vela-persist-smoke >/dev/null
           run_panel
-          test -s "$scratch/x-ui.db"
-          test "$(stat -c %a "$scratch/x-ui.db")" = 600
+          sudo test -s "$scratch/x-ui.db"
+          test "$(sudo stat -c %a "$scratch/x-ui.db")" = 600
           echo "Synthetic SQLite database survived container recreation with private permissions"
       - name: Enforce strict image-layer privacy gate (expected to block until fully cleared)
         shell: bash
