@@ -15,6 +15,8 @@ class DockerfileIsolationTests(unittest.TestCase):
         result = mod.render(before)
         self.assertEqual((ROOT / "Dockerfile").read_text(), before)
         self.assertEqual(result.count("fail2ban/tests/*"), 1)
+        self.assertIn('RUN sh deploy/vela/ci_pin_mtg_dockerinit.sh DockerInit.sh', result)
+        self.assertLess(result.index('ci_pin_mtg_dockerinit.sh'), result.index('RUN ./DockerInit.sh'))
         self.assertIn("openssl \\\n  && find ", result)
         self.assertLess(result.index("fail2ban/tests/*"), result.index("COPY --from=builder /app/build"))
         self.assertIn("&& fail2ban-client --version", result)

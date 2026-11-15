@@ -22,7 +22,13 @@ def render(text: str) -> str:
         raise ValueError("upstream runtime base stage changed")
     if not text.count("  fail2ban \\\n") == 1:
         raise ValueError("upstream Fail2ban installation changed")
+    pin_anchor = 'RUN ./DockerInit.sh "$TARGETARCH" "$TARGETVARIANT"'
+    if text.count(pin_anchor) != 1:
+        raise ValueError("upstream DockerInit invocation changed; manual review required")
     updated = text.replace(ORIGINAL, REPLACEMENT)
+    updated = updated.replace(
+        pin_anchor,
+        "RUN sh deploy/vela/ci_pin_mtg_dockerinit.sh DockerInit.sh\n" + pin_anchor)
     if updated == text or updated.count("fail2ban/tests/*") != 1:
         raise ValueError("could not generate audited Fail2ban test cleanup")
     return updated
