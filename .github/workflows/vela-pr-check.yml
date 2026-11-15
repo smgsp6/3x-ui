@@ -1,0 +1,130 @@
+name: Vela integration and privacy gate
+
+on:
+  pull_request:
+    paths:
+      - 'internal/**'
+      - 'frontend/**'
+      - 'Dockerfile'
+      - '.dockerignore'
+      - 'docker-compose.yml'
+      - 'deploy/vela/**'
+      - 'tests/**'
+      - 'brand/**'
+      - '.github/workflows/vela-pr-check.yml'
+  workflow_dispatch:
+
+# This CI cannot deploy, upload production configuration, or write to GitHub.
+permissions:
+  contents: read
+
+concurrency:
+  group: vela-check-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  privacy:
+    name: Privacy audit before executing build scripts
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Check Git history for leaked credentials
+        run: python3 deploy/vela/git_history_audit.py .
+      - name: Audit source and Docker build context
+        run: python3 deploy/vela/privacy_audit.py .
+      - name: Recheck tracked private files
+        run: bash deploy/vela/security-check.sh .
+
+  integration:
+    name: React build, full Go tests and executable
+    needs: privacy
+    runs-on: ubuntu-latest
+    timeout-minutes: 65
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@44694675825211faa026b3c33043df3e48a5fa00 # v6.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: '26'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install locked React dependencies
+        working-directory: frontend
+        run: npm ci
+      - name: Full TypeScript typecheck
+        working-directory: frontend
+        run: npm run typecheck
+      - name: React unit tests
+        working-directory: frontend
+        run: npm test
+      # Vela's Go server uses //go:embed all:dist. The upstream repository
+      # does not track internal/web/dist. Building Go before Vite fails on a
+      # clean checkout even if the Go sources are otherwise valid.
+      - name: Build React panel AND Telegram Mini App first
+        working-directory: frontend
+        run: npm run build
+      - name: Ensure both app entry points were generated
+        shell: bash
+        run: |
+          test -s internal/web/dist/index.html
+          test -s internal/web/dist/miniapp.html
+          test -s internal/web/dist/login.html
+      - name: Full Go tests (with embedded React assets present)
+        run: go test ./...
+      - name: Mini App crypto and TLS race tests
+        run: go test -race ./internal/web/service/tgminiapp
+      - name: Build full Go panel executable
+        run: go build -trimpath -o "${RUNNER_TEMP}/vela-ci" ./main.go
+      - name: Runtime dependency audit
+        working-directory: frontend
+        run: npm audit --omit=dev --audit-level=high
+      - name: Go dependency vulnerability scan
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
+
+  maintenance:
+    name: Backup, recovery and patch contract tests
+    needs: privacy
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Unit tests including Docker simulation and build order
+        run: python3 -m unittest discover -s tests -p 'test_*.py' -v
+      - name: Shell syntax
+        run: |
+          bash -n deploy/vela/vela
+          bash -n deploy/vela/preflight.sh
+          bash -n deploy/vela/security-check.sh
+
+  docker:
+    name: Clean Docker image build (no push)
+    needs: [privacy, integration, maintenance]
+    runs-on: ubuntu-latest
+    timeout-minutes: 80
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      # Build only from a clean checkout; no .env, db or Secret is available.
+      # No registry login, image push, deploy or production credentials.
+      - name: Recheck private build inputs
+        run: python3 deploy/vela/privacy_audit.py .
+      - name: Build final image from reviewed Dockerfile
+        run: docker build --pull --no-cache --tag vela-integration-ci:local .
+      - name: Inspect resulting image metadata
+        run: |
+          docker image inspect vela-integration-ci:local --format '{{.Id}}'
+          test "$(docker image inspect vela-integration-ci:local --format '{{.Architecture}}')" = amd64
+      - name: Audit every final-image layer for private data (never upload tar)
+        run: docker image save vela-integration-ci:local | python3 deploy/vela/image_layer_audit.py --stdin
