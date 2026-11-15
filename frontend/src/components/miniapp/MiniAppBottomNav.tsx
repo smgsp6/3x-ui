@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { Drawer } from 'antd';
@@ -36,6 +36,31 @@ export default function MiniAppBottomNav() {
     () => PANEL_ROUTES.filter((route) => !primary.some((p) => p.path === route.path)),
     [],
   );
+
+  // The official Telegram WebApp BackButton is a separate control from
+  // browser history. Never navigate(-1): a Mini App may open as a deep link
+  // with no same-origin previous entry. Close the app drawer first, then
+  // return to the safe dashboard root on subsequent back presses.
+  useEffect(() => {
+    if (!window.X_UI_TG_MINIAPP_MODE) return;
+    const backButton = window.Telegram?.WebApp?.BackButton;
+    if (!backButton?.onClick || !backButton.offClick) return;
+    const shouldShow = moreOpen || pathname !== '/';
+    if (!shouldShow) {
+      backButton.hide();
+      return;
+    }
+    const handleBack = () => {
+      if (moreOpen) setMoreOpen(false);
+      else navigate('/');
+    };
+    backButton.onClick(handleBack);
+    backButton.show();
+    return () => {
+      backButton.offClick(handleBack);
+      backButton.hide();
+    };
+  }, [moreOpen, navigate, pathname]);
 
   if (!window.X_UI_TG_MINIAPP_MODE) return null;
   return (

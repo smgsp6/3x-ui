@@ -1,6 +1,6 @@
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, useLocation } from 'react-router';
-import { afterEach, expect, test } from 'vitest';
+import { afterEach, expect, test, vi } from 'vitest';
 
 import MiniAppBottomNav from '@/components/miniapp/MiniAppBottomNav';
 import { PANEL_ROUTES } from '@/routes/panelRoutes';
@@ -22,6 +22,7 @@ function renderNav(initialPath = '/') {
 
 afterEach(() => {
   window.X_UI_TG_MINIAPP_MODE = undefined;
+  window.Telegram = undefined;
 });
 
 test('original panel hides the Telegram-only bottom navigation', () => {
@@ -57,4 +58,50 @@ test('advanced Xray functions remain in the More drawer', async () => {
   expect(advanced.some((r) => r.path === '/xray')).toBe(true);
   fireEvent.click(entries[inboundIndex]!);
   expect(screen.getByTestId('current-route').textContent).toBe('/inbounds');
+});
+
+test('Telegram native BackButton closes More first then returns safely to dashboard', async () => {
+  const callbacks = new Set<() => void>();
+  const back = {
+    show: vi.fn(),
+    hide: vi.fn(),
+    onClick: vi.fn((cb: () => void) => { callbacks.add(cb); }),
+    offClick: vi.fn((cb: () => void) => { callbacks.delete(cb); }),
+  };
+  window.Telegram = { WebApp: { initData: '', BackButton: back } };
+  window.X_UI_TG_MINIAPP_MODE = true;
+  const rendered = renderNav('/clients');
+
+  await waitFor(() => {
+    expect(back.show).toHaveBeenCalled();
+    expect(callbacks.size).toBe(1);
+  });
+  // Native back from a deep link must return to the panel dashboard,
+  // not escape the Telegram WebView through browser history.
+  fireEvent.click(screen.getByRole('button', { name: '更多' }));
+  await waitFor(() => { expect(callbacks.size).toBe(1); });
+  const backWhileDrawer = [...callbacks][0]!;
+  backWhileDrawer();
+  await waitFor(() => {
+    expect(screen.getByRole('button', { name: '更多' }).getAttribute('aria-expanded')).toBe('false');
+    expect(screen.getByTestId('current-route').textContent).toBe('/clients');
+    expect(callbacks.size).toBe(1);
+  });
+  [...callbacks][0]!();
+  await waitFor(() => {
+    expect(screen.getByTestId('current-route').textContent).toBe('/');
+    expect(callbacks.size).toBe(0);
+    expect(back.hide).toHaveBeenCalled();
+  });
+  rendered.unmount();
+  expect(callbacks.size).toBe(0);
+  expect(back.offClick).toHaveBeenCalled();
+});
+
+test('missing Telegram WebApp bridge does not block regular Mini App navigation', () => {
+  window.X_UI_TG_MINIAPP_MODE = true;
+  window.Telegram = undefined;
+  renderNav('/clients');
+  fireEvent.click(screen.getByRole('button', { name: '证书' }));
+  expect(screen.getByTestId('current-route').textContent).toBe('/certificates');
 });
