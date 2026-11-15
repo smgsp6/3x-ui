@@ -47,7 +47,7 @@ def file_has_secret(f, diagnostics=None):
         if not chunk:
             return False
         if first:
-            is_elf = chunk.startswith(b'\\x7fELF')
+            is_elf = chunk.startswith(b'\x7fELF')
             first = False
         current = overlap + chunk
         matched = None

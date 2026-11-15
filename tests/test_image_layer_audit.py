@@ -107,7 +107,7 @@ class ImageLayerTests(unittest.TestCase):
     def test_elf_signature_diagnostic_is_only_a_category(self):
         fake = b'-----BEGIN ' + b'PRIVATE KEY-----'
         diagnostics = {}
-        stream = image_bytes([{'app/fake-elf': b'\\x7fELF' + b'\\x00' * 512 + fake}])
+        stream = image_bytes([{'app/fake-elf': b'\x7fELF' + b'\\x00' * 512 + fake}])
         self.assertEqual(audit.audit_image_save(stream, diagnostics)[2], 1)
         self.assertEqual(diagnostics.get('pem_elf'), 1)
         self.assertEqual(diagnostics.get('layer_content'), 1)
