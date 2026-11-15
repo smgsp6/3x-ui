@@ -275,6 +275,96 @@ os.execv('/usr/bin/tar', ['/usr/bin/tar', *sys.argv[1:]])
         self.assertNotIn('stop', self.log.read_text())
         self.assertEqual((self.root / 'db' / 'x-ui.db').read_text(), 'original-db')
 
+    def _seed_real_sqlite(self):
+        """Use an actual SQLite database, never an uploaded customer snapshot."""
+        import sqlite3
+        db = self.root / 'db' / 'x-ui.db'
+        with sqlite3.connect(db) as connection:
+            connection.execute('CREATE TABLE vela_ci_only (id INTEGER PRIMARY KEY, value TEXT NOT NULL)')
+            connection.executemany(
+                'INSERT INTO vela_ci_only(id, value) VALUES (?, ?)',
+                [(1, 'before-snapshot'), (2, 'retain-second-row')],
+            )
+        db.chmod(0o600)
+        return db
+
+    def _assert_real_sqlite_restored(self, db):
+        import sqlite3
+        self.assertEqual(db.stat().st_mode & 0o777, 0o600)
+        with sqlite3.connect('file:' + str(db) + '?mode=ro', uri=True) as connection:
+            self.assertEqual(connection.execute('PRAGMA integrity_check').fetchone(), ('ok',))
+            rows = connection.execute('SELECT id, value FROM vela_ci_only ORDER BY id').fetchall()
+        self.assertEqual(rows, [(1, 'before-snapshot'), (2, 'retain-second-row')])
+
+    def test_real_sqlite_signed_candidate_failure_restores_snapshot(self):
+        db = self._seed_real_sqlite()
+        result = self.run_cli('update', VELA_TEST_FAIL_HEALTH='1')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('恢复旧镜像', result.stdout)
+        self._assert_real_sqlite_restored(db)
+        self.assertEqual((self.root / 'image.ref').read_text().strip(), OLD)
+        self.assertEqual((self.root / 'release.sequence').read_text().strip(), '0')
+        self.assertFalse((self.root / '.pending-update').exists())
+        archived = list((self.root / 'backups').glob('vela-*.tar.gz'))
+        self.assertEqual(len(archived), 1)
+        self.assertEqual(archived[0].stat().st_mode & 0o777, 0o600)
+        with tarfile.open(archived[0], 'r:gz') as tf:
+            names = set(tf.getnames())
+            self.assertTrue({'db/x-ui.db', 'cert/panel.pem', 'acme/state'} <= names)
+            self.assertFalse(any(x.startswith('secrets/') for x in names))
+        quarantined = list((self.root / 'failed-updates').glob('*/db/x-ui.db'))
+        self.assertEqual(len(quarantined), 1)
+        self.assertEqual(quarantined[0].read_text(), 'migrated-db')
+
+    def test_real_sqlite_interrupted_upgrade_recovery_restores_exact_rows(self):
+        import sqlite3
+        db = self._seed_real_sqlite()
+        snapshot_result = self.run_cli('backup')
+        self.assertEqual(snapshot_result.returncode, 0, snapshot_result.stderr)
+        archive = next((self.root / 'backups').glob('vela-*.tar.gz'))
+        (self.root / '.pending-update').write_text(
+            OLD + '\n' + NEW + '\n' + str(archive) + '\n0\n')
+        (self.root / '.pending-update').chmod(0o600)
+        with sqlite3.connect(db) as connection:
+            connection.execute("UPDATE vela_ci_only SET value='candidate-write' WHERE id=1")
+        (self.root / 'image.ref').write_text(NEW + '\n')
+        self.state.write_text(NEW)
+        result = self.run_cli('recover')
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self._assert_real_sqlite_restored(db)
+        self.assertFalse((self.root / '.pending-update').exists())
+        self.assertEqual((self.root / 'image.ref').read_text().strip(), OLD)
+        self.assertEqual((self.root / 'release.sequence').read_text().strip(), '0')
+        self.assertEqual((self.root / 'cert' / 'panel.pem').read_text(), 'cert bytes')
+        self.assertEqual((self.root / 'acme' / 'state').read_text(), 'acme bytes')
+        preserved = list((self.root / 'failed-updates').glob('*/db/x-ui.db'))
+        self.assertEqual(len(preserved), 1)
+        with sqlite3.connect(preserved[0]) as connection:
+            state = connection.execute(
+                'SELECT value FROM vela_ci_only WHERE id=1').fetchone()
+        self.assertEqual(state, ('candidate-write',))
+
+    def test_invalid_archive_refuses_real_sqlite_recovery_without_data_loss(self):
+        import sqlite3
+        db = self._seed_real_sqlite()
+        snapshot_result = self.run_cli('backup')
+        self.assertEqual(snapshot_result.returncode, 0, snapshot_result.stderr)
+        archive = next((self.root / 'backups').glob('vela-*.tar.gz'))
+        archive.write_bytes(b'synthetic-corrupted-archive')
+        (self.root / '.pending-update').write_text(
+            OLD + '\n' + NEW + '\n' + str(archive) + '\n0\n')
+        (self.root / '.pending-update').chmod(0o600)
+        with sqlite3.connect(db) as connection:
+            connection.execute("UPDATE vela_ci_only SET value='current-precious-state' WHERE id=1")
+        before = db.read_bytes()
+        result = self.run_cli('recover')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertTrue((self.root / '.pending-update').exists())
+        self.assertEqual(db.read_bytes(), before)
+        self.assertFalse((self.root / 'failed-updates').exists())
+        self.assertEqual((self.root / 'image.ref').read_text().strip(), OLD)
+        self.assertNotIn(' up -d', self.log.read_text())
+
     def test_update_bad_health_restores_both_image_and_database(self):
         result = self.run_cli('update', VELA_TEST_FAIL_HEALTH='1')
         self.assertNotEqual(result.returncode, 0)
