@@ -25,8 +25,10 @@ class BuildGateContractTests(unittest.TestCase):
         self.assertIn('fetch-depth: 0', w)
         self.assertIn('needs: privacy', w)
         self.assertIn('needs: [privacy, integration, maintenance]', w)
-        self.assertIn('python3 deploy/vela/privacy_audit.py .', w)
-        self.assertIn('python3 deploy/vela/git_history_audit.py .', w)
+        self.assertIn('python3 vela-development/integration/baseline_privacy_gate.py', w)
+        self.assertIn('Strict delta privacy check against immutable upstream baseline', w)
+        # Historical upstream fixtures are not an approval for a release.
+        self.assertIn('Reject tracked runtime secrets and private files', w)
         self.assertNotIn('docker push', w)
         self.assertNotIn('docker/login-action', w)
         self.assertNotIn('secrets.', w)
