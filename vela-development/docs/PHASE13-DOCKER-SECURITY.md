@@ -68,3 +68,11 @@
 - `43698995315` 中的实验 Docker 镜像构建、Fail2ban CLI 验证均通过；镜像扫描仍因 Vela 面板 ELF 中 1 项 PEM 起始标记而失败。扫描结果由此前 2 项降至 **1 项**，没有任意放宽安全扫描规则。
 - Vela 专用清理目前仅用于安全验证，并非正式发布 Dockerfile。后续必须进一步证明 ELF 中该标记是否为公共代码常量，并确认没有真正可解析的私钥材料；还须完成真实 Docker 服务、Telegram、备份恢复与上游发行版本/摘要审查。
 - 重要：用户要求保留原版所有核心功能、语言、Fork、Go 模块路径，并优先保持上游同步。不要为了让测试变绿而删除 Fail2ban、Xray、MTG 或关闭隐私扫描。**尚不可提供正式安装命令。**
+
+
+## 第十三阶段：隔离容器启动与 ELF 源码标记取证（2026-11-15）
+
+- 新增只读 GitHub Actions `vela-container-boot-smoke.yml`，实测 `43704990342` 成功构建由 Vela 临时 Dockerfile 生成的镜像、验证 Fail2ban CLI、启动 `/app/x-ui` 进程，并在 `--network none --cap-drop ALL --security-opt no-new-privileges`、空白 tmpfs 运行数据目录下保持容器运行。这仅证明隔离容器**能够启动进程**，不等于公网服务、持久化数据库、Xray 入站、Telegram 登录或应用健康检查全部通过。流程最终被**仍存在的面板 ELF PEM 标记**阻断，因而总体 CI 仍为 failure；没有推送镜像。
+- 新增 `deploy/vela/ci_elf_marker_inspect.py`，用于在隔离 CI 中对**本轮构建的临时 Go 可执行文件**仅输出 PEM 标记所在 ELF 区域类别与配对情况，不打印原始字节、路径、偏移或任何密钥。该工具**不是**隐私扫描豁免机制，也不得取代完整 Docker 层审计。
+- `tests/test_vela_elf_marker_inspect.py` 包含合成 ELF 的只读常量、未配对/配对标记、损坏 ELF 和非文件映射 .bss 检查；独立 GitHub Actions `43705636972` 验证通过。针对真实 Go 可执行文件的检查由 `vela-build-smoke.yml` 执行，需以该工作流真实结果为准。
+- `vela-dev` 保留原版 Fork、Go 模块路径、14 种语言和所有原版主要能力；`main` 不动。**仍禁止公开稳定镜像、正式一键安装及对用户线上服务器修改。**
