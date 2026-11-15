@@ -13,6 +13,15 @@ on:
       - 'brand/**'
       - '.github/workflows/vela-pr-check.yml'
   workflow_dispatch:
+  push:
+    branches: [vela-dev]
+    paths:
+      - 'internal/**'
+      - 'frontend/**'
+      - 'deploy/vela/**'
+      - 'tests/**'
+      - 'vela-development/integration/**'
+      - '.github/workflows/vela-pr-check.yml'
 
 # This CI cannot deploy, upload production configuration, or write to GitHub.
 permissions:
@@ -32,10 +41,8 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
-      - name: Check Git history for leaked credentials
-        run: python3 deploy/vela/git_history_audit.py .
-      - name: Audit source and Docker build context
-        run: python3 deploy/vela/privacy_audit.py .
+      - name: Strict delta privacy check against immutable upstream baseline
+        run: python3 vela-development/integration/baseline_privacy_gate.py
       - name: Recheck tracked private files
         run: bash deploy/vela/security-check.sh .
 
@@ -118,8 +125,8 @@ jobs:
           persist-credentials: false
       # Build only from a clean checkout; no .env, db or Secret is available.
       # No registry login, image push, deploy or production credentials.
-      - name: Recheck private build inputs
-        run: python3 deploy/vela/privacy_audit.py .
+      - name: Recheck build-context privacy against audited baseline
+        run: python3 vela-development/integration/baseline_privacy_gate.py .
       - name: Build final image from reviewed Dockerfile
         run: docker build --pull --no-cache --tag vela-integration-ci:local .
       - name: Inspect resulting image metadata
