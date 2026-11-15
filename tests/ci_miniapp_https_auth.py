@@ -135,7 +135,23 @@ def main():
 
     status, _, _ = http("/panel/api/openapi.json")
     require(status == 200, "post-login API access unexpectedly lost")
-    print("08/10 HTTPS session remained functional; synthetic smoke PASS")
+    print("08/10 HTTPS session remained functional")
+
+    # In Mini App mode the original password login route must never be an
+    # alternative to the Telegram-signed, allowlisted identity.
+    status, _, _ = http("/login", method="POST", payload={}, csrf=refreshed_csrf)
+    require(status == 404, "legacy password login was not disabled in Mini App mode")
+    print("09/10 legacy password login endpoint was disabled")
+
+    # The signed admin session must cease to authorize API calls immediately
+    # after logout, rather than lingering in a browser cookie.
+    logout_csrf = csrf_token()
+    status, body, _ = http("/logout", method="POST", payload={}, csrf=logout_csrf)
+    require(status == 200 and json.loads(body).get("success") is True,
+            "Mini App logout did not complete")
+    status, _, _ = http("/panel/api/openapi.json")
+    require(status == 401, "logout did not revoke admin API permissions")
+    print("10/10 logout revoked administrator session; HTTPS Mini App smoke PASS")
 
 if __name__ == "__main__":
     try:
