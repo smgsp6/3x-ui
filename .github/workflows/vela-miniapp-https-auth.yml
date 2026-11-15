@@ -6,6 +6,10 @@ on:
     branches: [vela-dev]
     paths:
       - "tests/ci_miniapp_https_auth.py"
+      - "deploy/vela/ci_prepare_dockerfile.py"
+      - "deploy/vela/ci_pin_mtg_dockerinit.sh"
+      - "deploy/vela/ci_verify_mtg_archive.sh"
+      - "tests/test_vela_mtg_release_pin.py"
       - "internal/web/controller/miniapp.go"
       - "internal/web/service/tgminiapp/auth.go"
       - ".github/workflows/vela-miniapp-https-auth.yml"
@@ -30,6 +34,7 @@ jobs:
           python3 vela-development/integration/baseline_privacy_gate.py
           python3 -m py_compile tests/ci_miniapp_https_auth.py
           python3 -m unittest discover -s tests -p test_vela_dockerfile_isolation.py -v
+          python3 -m unittest discover -s tests -p test_vela_mtg_release_pin.py -v
           python3 deploy/vela/ci_prepare_dockerfile.py Dockerfile "$RUNNER_TEMP/VelaMiniAppDockerfile"
           test -z "$(git status --porcelain)"
       - name: Build real panel only on disposable runner
