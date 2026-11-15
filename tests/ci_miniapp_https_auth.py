@@ -124,12 +124,30 @@ def main():
     require(status == 200, "authenticated Mini App admin cannot access API")
     # The bootstrap and authenticated SPA are distinct documents.
     # Verify the official SDK and Mini App mode survive the navigation.
-    status, panel_html, _ = http("/panel/")
+    panel_request = request.Request(BASE + "/panel/", headers={
+        "X-Requested-With": "XMLHttpRequest",
+    })
+    with opener.open(panel_request, timeout=6) as panel_response:
+        status = panel_response.status
+        panel_html = panel_response.read(512 * 1024)
+        csp = panel_response.headers.get("Content-Security-Policy", "")
     require(status == 200 and
             b"window.X_UI_TG_MINIAPP_MODE=true" in panel_html and
             panel_html.count(b'src="https://telegram.org/js/telegram-web-app.js"') == 1,
             "signed Telegram panel missing the official SDK or Mini App mode")
-    print("06/26 signed admin API and authenticated panel Telegram bridge verified")
+    # Relax script-src for the official bridge ONLY. Never permit Telegram
+    # in connect-src, default-src, framing, or as a broad arbitrary origin.
+    policies = {}
+    for directive in csp.split(";"):
+        parts = directive.strip().split()
+        if parts:
+            policies[parts[0]] = parts[1:]
+    require("https://telegram.org" in policies.get("script-src", []) and
+            policies.get("default-src") == ["'self'"] and
+            "https://telegram.org" not in policies.get("connect-src", []) and
+            policies.get("frame-ancestors") == ["'none'"],
+            "Telegram official SDK exception unexpectedly weakened panel CSP")
+    print("06/26 signed admin panel SDK and script-only CSP exception verified")
 
     refreshed_csrf = csrf_token()
     require(refreshed_csrf != original_csrf, "privilege change retained old CSRF")
@@ -628,7 +646,14 @@ def main():
                   "/panel/api/server/status", "/panel/api/certificates/status"):
         status, _, _ = http(route)
         require(status == 401, "logout left a sensitive management API accessible")
-    print("25/26 logout removed session and protected all management APIs")
+    # The unauthenticated panel redirect may show the public Telegram login
+    # page (with its bootstrap SDK), but it must NOT render authenticated
+    # Mini App navigation or re-enable the panel WebApp bridge.
+    status, anonymous_page, _ = http("/panel/")
+    require(status in (200, 401, 403) and
+            b"window.X_UI_TG_MINIAPP_MODE=true" not in anonymous_page,
+            "logout left authenticated Telegram Mini App panel mode enabled")
+    print("25/26 logout revoked APIs and authenticated Telegram panel mode")
 
     replay_request = request.Request(
         BASE + "/panel/api/inbounds/list",
