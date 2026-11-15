@@ -50,7 +50,7 @@ jobs:
           python3 - <<'PY'
           import pathlib
           import subprocess
-          paths = subprocess.check_output(["git", "ls-files", "-z"]).decode().split("\\0")
+          paths = subprocess.check_output(["git", "ls-files", "-z"]).decode().split(chr(0))
           invalid = []
           for name in filter(None, paths):
               parts = pathlib.PurePosixPath(name).parts
