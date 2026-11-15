@@ -156,8 +156,16 @@ jobs:
       # No registry login, image push, deploy or production credentials.
       - name: Recheck build-context privacy against audited baseline
         run: python3 vela-development/integration/baseline_privacy_gate.py .
-      - name: Build final image from reviewed Dockerfile
-        run: docker build --pull --no-cache --tag vela-integration-ci:local .
+      - name: Verify Vela-only runtime cleanup and image safety contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests -p test_vela_dockerfile_isolation.py -v
+          python3 -m unittest discover -s tests -p test_image_layer_audit.py -v
+          python3 deploy/vela/ci_prepare_dockerfile.py Dockerfile "${RUNNER_TEMP}/VelaCiDockerfile"
+          test -z "$(git status --porcelain)"
+      - name: Build final Vela development image without modifying upstream Dockerfile
+        run: docker build --pull --no-cache -f "${RUNNER_TEMP}/VelaCiDockerfile" --tag vela-integration-ci:local .
       - name: Inspect resulting image metadata
         run: |
           docker image inspect vela-integration-ci:local --format '{{.Id}}'
