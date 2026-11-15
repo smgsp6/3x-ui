@@ -304,6 +304,65 @@ def main():
         def log_message(self, *args):
             pass  # No request data in public CI output.
 
+    # Upstream deliberately blocks geoip:private in BOTH routing and the
+    # freedom outbound finalRules. An ordinary local proxy request must stay
+    # blocked. Only this disposable container's named test inbound may reach
+    # one exact loopback address, using a dedicated test-only outbound.
+    default_config = api_obj("/panel/api/xray/getDefaultJsonConfig")
+    require(isinstance(default_config, dict), "original Xray template is unavailable")
+    base_rules = default_config.get("routing", {}).get("rules", [])
+    require(isinstance(base_rules, list) and
+            any("geoip:private" in rule.get("ip", []) and
+                rule.get("outboundTag") == "blocked" for rule in base_rules),
+            "default private-address routing protection unexpectedly absent")
+    original_direct = next((outbound for outbound in default_config.get("outbounds", [])
+                            if outbound.get("tag") == "direct"), None)
+    require(original_direct is not None and
+            any("geoip:private" in rule.get("ip", []) and
+                rule.get("action") == "block"
+                for rule in original_direct.get("settings", {}).get("finalRules", [])),
+            "original freedom outbound private-address block unexpectedly absent")
+
+    confined = json.loads(json.dumps(default_config))
+    confined["outbounds"].append({
+        "tag": "ci-only-local-egress",
+        "protocol": "freedom",
+        "settings": {},
+    })
+    confined["routing"]["rules"].insert(0, {
+        "type": "field",
+        "inboundTag": ["ci-loopback-tcp"],
+        "ip": ["127.0.0.1/32"],
+        "outboundTag": "ci-only-local-egress",
+    })
+    def write_isolated_xray_template(config):
+        body = parse.urlencode({
+            "xraySetting": json.dumps(config, separators=(",", ":")),
+        }).encode("utf-8")
+        req = request.Request(
+            BASE + "/panel/api/xray/update",
+            method="POST",
+            data=body,
+            headers={
+                "X-Requested-With": "XMLHttpRequest",
+                "Content-Type": "application/x-www-form-urlencoded",
+                "X-CSRF-Token": crud_csrf,
+            },
+        )
+        try:
+            resp = opener.open(req, timeout=10)
+        except error.HTTPError as exc:
+            resp = exc
+        with resp as response:
+            code = response.status
+            payload = response.read(512 * 1024)
+        require(code == 200, "protected Xray test-template update rejected")
+        result = json.loads(payload)
+        require(result.get("success") is True,
+                "Xray rejected synthetic confined loopback routing")
+    write_isolated_xray_template(confined)
+    print("TCP-CI stage: private-IP default protections retained; precise test-only route installed", flush=True)
+
     origin = http_server.ThreadingHTTPServer(("127.0.0.1", 0), LocalOrigin)
     thread = threading.Thread(target=origin.serve_forever, daemon=True)
     thread.start()
@@ -363,6 +422,9 @@ def main():
         origin.shutdown()
         origin.server_close()
         thread.join(timeout=3)
+        # Restore the exact original policy before subsequent test actions,
+        # even if the TCP test raised. This container is destroyed by CI too.
+        write_isolated_xray_template(default_config)
     for _ in range(15):
         try:
             with socket.create_connection(("127.0.0.1", port), timeout=1):
