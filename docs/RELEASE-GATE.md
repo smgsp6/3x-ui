@@ -81,3 +81,9 @@
 - 个人内测只读预检拒绝在 `.env` 中配置任何名称含有 `TOKEN`、`PASSWORD`、`PASSWD`、`SECRET`、`PRIVATE_KEY` 或 `API_KEY` 的变量；Bot Token 仅能使用本地 Docker Secret 文件。
 - 拒绝 `DOCKER_*` 与 `COMPOSE_*` 环境变量进入候选 `.env`，降低通过额外 Compose 文件或 Docker 目标重定向造成误操作的风险。
 - 本检查不会读取进程环境变量，因此**不能保证宿主机环境没有覆盖配置**；未来个人内测仍需在隔离机器上核实实际 `docker compose config` 的最终展开结果和镜像 Digest。
+
+## 第十三阶段补充：阻断 Shell 环境覆盖 Compose 安全参数
+
+- Vela 维护命令执行 `docker compose` 时显式清除调用方环境中的 `XUI_TG_MINIAPP_ADMIN_IDS`、`XUI_TG_MINIAPP_URL`、`XUI_PORT`、`XUI_TG_CERT_ALERT_ENABLED` 和 `TZ`，让经过本地预检的 `.env` 提供这些插值值。
+- `VELA_IMAGE` 和 `VELA_HOME` 仍由维护命令指定，不取决于用户终端同名变量的偶然值。
+- 同时保留 Docker 环境和其他原始维护能力，以兼容隔离 Docker 恢复测试；此防护**不等于审计了宿主机 Docker Context/Daemon 或所有运行时环境变量**。

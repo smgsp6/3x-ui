@@ -57,6 +57,13 @@ state = Path(os.environ['VELA_TEST_STATE'])
 log = Path(os.environ['VELA_TEST_LOG'])
 with log.open('a') as f: f.write('docker ' + ' '.join(args) + ' image=' + os.getenv('VELA_IMAGE','') + '\\n')
 if args[:2] == ['compose','version']: sys.exit(0)
+# Synthetic fail-closed signal with no secrets or IDs in logs.
+# Ambient values must be absent from the actual compose subprocess.
+if args and args[0] == 'compose' and 'config' in args:
+    if any(key in os.environ for key in
+           ('XUI_TG_MINIAPP_ADMIN_IDS','XUI_TG_MINIAPP_URL',
+            'XUI_PORT','XUI_TG_CERT_ALERT_ENABLED','TZ')):
+        sys.exit(98)
 if args == ['info']: sys.exit(0)
 if args[0] == 'inspect': print('true'); sys.exit(0)
 if args[0] == 'exec':
@@ -181,6 +188,23 @@ os.execv('/usr/bin/tar', ['/usr/bin/tar', *sys.argv[1:]])
         bad = self.run_cli('doctor')
         self.assertNotEqual(bad.returncode, 0)
         self.assertIn('image.ref', bad.stderr)
+
+    def test_doctor_ignores_conflicting_shell_compose_interpolation(self):
+        self.prepare_reviewed_doctor_fixture()
+        # Exported shell variables normally override --env-file interpolation
+        # in Docker Compose. Verify the actual CLI does not pass them through.
+        okay = self.run_cli(
+            'doctor',
+            XUI_TG_MINIAPP_ADMIN_IDS='9999',
+            XUI_TG_MINIAPP_URL='https://unreviewed-ci.example.org/',
+            XUI_PORT='9999',
+            XUI_TG_CERT_ALERT_ENABLED='true',
+            TZ='Etc/UTC',
+        )
+        self.assertEqual(okay.returncode, 0, okay.stderr)
+        self.assertIn('个人内测文件安全', okay.stdout)
+        self.assertIn(' config', self.log.read_text())
+        self.assertNotIn('9999', self.log.read_text())
 
     def test_doctor_rejects_unsafe_env_before_compose(self):
         self.prepare_reviewed_doctor_fixture()

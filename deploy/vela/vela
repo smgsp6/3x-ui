@@ -82,7 +82,14 @@ flock -n 9 || die '另一个 Vela 维护操作正在运行'
 compose() {
   local image=$1
   image_valid "$image" || die '拒绝非仓库 ghcr.io/smgsp6/3x-ui 的镜像，或没有 sha256 Digest 的镜像'
-  VELA_IMAGE="$image" VELA_HOME="$ROOT" docker compose --project-directory "$ROOT" --env-file "$ENVFILE" -f "$COMPOSE" "${@:2}"
+  # Compose gives exported shell variables precedence over the reviewed
+  # .env file. Do not let an operator's terminal silently replace the admin
+  # allowlist, HTTPS URL, panel port, certificate-alert toggle or timezone.
+  # VELA_HOME and VELA_IMAGE are injected deliberately from reviewed inputs.
+  env -u XUI_TG_MINIAPP_ADMIN_IDS -u XUI_TG_MINIAPP_URL \
+      -u XUI_PORT -u XUI_TG_CERT_ALERT_ENABLED -u TZ \
+      VELA_IMAGE="$image" VELA_HOME="$ROOT" \
+      docker compose --project-directory "$ROOT" --env-file "$ENVFILE" -f "$COMPOSE" "${@:2}"
 }
 current_image() {
   [[ -f "$CURRENT" && ! -L "$CURRENT" ]] || die '缺少当前镜像摘要 image.ref'
