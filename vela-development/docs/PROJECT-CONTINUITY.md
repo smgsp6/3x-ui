@@ -167,3 +167,17 @@ python3 /path/to/vela-phase12/apply_to_repo.py .
 - 新增只读专项 CI `.github/workflows/vela-recovery-contract.yml`，执行完整 Git 历史隐私基线、shell 语法以及维护 CLI 测试。GitHub Actions `43710100702` **成功，40/40 项测试通过**；隐私差异检查为零新增发现（检查器报告的上游历史告警是既有对象，不等于全历史无告警）。
 - 正式 `vela update` 仍刻意被未配置的发行公钥指纹禁用；测试中的签名密钥只在 GitHub Runner 临时目录生成，绝不配置为正式密钥。
 - **验收边界**：真实 SQLite + 归档 + CLI 已验证，但 Docker Compose 调度仍由测试替身模拟。与此前 `43709075622` 实际容器快照恢复测试相互补充，**不能宣称完成真正的签名 Docker 升级、失败回滚、断电故障恢复与 Telegram/多节点生产验收**。没有发布正式一键安装命令。
+
+
+## 2026-11-16 · 个人内测优先冲刺（分支 vela-dev）
+
+本节覆盖此前文档中的旧进度结论。请勿把历史阶段报告中的“尚无 GitHub 写入/构建”误认为当前状态。
+
+- 最近完整成功基线：`7e1105b5d09cb78cb5a8e939f68f10ecc4d0d45a`；HTTPS 26 项集成 `43748407608` 成功、整仓隐私/React/Go/Docker `43748407591` 成功。先前独立真实 Docker CLI 恢复 `43745266278`、SQLite 恢复 `43745266362` 均成功。
+- 2026-11-16 新发现：在 Mini App 模式启用但原版 Telegram 通知 DB 开关未开启的**新 SQLite 安装**中，原有 `internal/web/web.go` 启动门槛可能阻止 Bot 启动，致 `/start` 没有 WebApp 按钮。提交 `2241ba216346947394158fb937fefaf9c23152d5` 改为在 Mini App 模式中独立启动 Bot（原版模式仍尊重原版开关），新增 Go 判定测试。
+- 提交 `6681ee53e99976b1bae4afaabeee442ad7d57566`：Go 回归验证授权私聊展示**且只展示**官方 Telegram WebApp 按钮，群聊、无用户身份、非白名单、关闭 Mini App 均拒绝；独立 Go/React 构建运行 `43750432621` 成功。
+- 提交 `b891bd9286a8ad679c1ccaa822ea6c755114d118`：个人内测真实手机/隔离 VPS 验收清单 `docs/VELA-PERSONAL-BETA-ACCEPTANCE.md`。这是手动验收方案，不是安装脚本。
+- 提交 `d20e69e94fbc2afd29ceaad7707f7fdfc7d0e72d`：确保修改 Bot 启动或 WebApp 按钮时触发真正的隔离 Docker HTTPS 联调，防止只靠编译证明可用。该次 GitHub Actions `43750834946` 需以最终状态为准。
+- 本轮完整整仓 CI `43750432591` 需以最终状态为准；编辑本节时隐私/备份恢复已通过，React+Go 后续仍运行中。
+- **距离个人试用的真实阻断**：独立测试 VPS + 单独测试 Bot + 真实 HTTPS 域名的人工授权、Telegram 手机 WebView 实机、真实主机防火墙与外部 Xray 节点、停机恢复验证。无真实生产凭据、节点或主机信息写入 GitHub。未发布正式镜像，签名稳定版更新仍被禁用。
+- 永远只在 `smgsp6/3x-ui:vela-dev` 修改；`main`、Go module、上游 14 种语言和原版 Xray 功能不变。真实线上服务器须有操作者明确授权才可触及。
