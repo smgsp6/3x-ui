@@ -51,6 +51,13 @@ jobs:
           echo "__VELA_CI_TEMPLATE_START__"
           cat "${RUNNER_TEMP}/vela-phase12-verified/.github/workflows/vela-pr-check.yml"
           echo "__VELA_CI_TEMPLATE_END__"
+      - name: Emit verified source-only patcher for root integration
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "__VELA_PATCHER_START__"
+          cat "${RUNNER_TEMP}/vela-phase12-verified/apply_to_repo.py"
+          echo "__VELA_PATCHER_END__"
       - name: Review application script structure without executing it
         shell: bash
         run: |
