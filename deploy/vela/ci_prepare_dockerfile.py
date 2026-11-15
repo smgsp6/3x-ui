@@ -8,9 +8,9 @@ Fail closed if the upstream build recipe no longer matches exactly.
 import argparse
 from pathlib import Path
 
-ORIGINAL = "  bash\n  curl\n  openssl\n\nCOPY --from=builder"
+ORIGINAL = "  bash \\\n  curl \\\n  openssl\n\nCOPY --from=builder"
 REPLACEMENT = (
-    "  bash\n  curl\n  openssl \\\n"
+    "  bash \\\n  curl \\\n  openssl \\\n"
     "  && find /usr/lib -type f -name '*.pyc' -path '*/fail2ban/tests/*' -delete \\\n"
     "  && fail2ban-client --version >/dev/null\n\nCOPY --from=builder"
 )
