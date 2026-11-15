@@ -38,7 +38,7 @@ class ELFMarkerInventoryTests(unittest.TestCase):
         c = mod.classify(fake_elf(header + b"\nNOT_A_REAL_KEY\n" + footer))
         self.assertEqual(c["readonly_constants"], 1)
         self.assertEqual(c["paired_header_within_bound"], 1)
-        self.assertEqual(c["not_followed_by_newline"], 1)
+        self.assertEqual(c["followed_by_newline"], 1)
 
     def test_non_file_backed_bss_is_accepted(self):
         header = b"-----BEGIN " + b"PRIVATE KEY-----"
