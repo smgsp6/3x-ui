@@ -87,7 +87,7 @@ jobs:
           GO111MODULE=off go test -race ./internal/web/service/tgminiapp
           GO111MODULE=off go vet ./internal/web/service/tgminiapp
           bash -n deploy/vela/vela
-          python3 -m py_compile deploy/vela/*.py apply_to_repo.py
+          python3 -m py_compile deploy/vela/*.py "${RUNNER_TEMP}/vela-phase12-verified/apply_to_repo.py"
           echo "Isolated security checks passed; all changes remain in runner temp."
       - name: Check candidate files with phase-12 privacy checker
         shell: bash
