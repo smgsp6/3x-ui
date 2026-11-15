@@ -35,9 +35,7 @@ jobs:
           set -euo pipefail
           python3 vela-development/integration/baseline_privacy_gate.py
           python3 -m py_compile tests/ci_miniapp_https_auth.py
-          # Execute real signed-cookie revocation regressions in the full
-          # integrated Go test suite; no real Telegram identity is used.
-          # Build order still matters: Go embeds React only after Docker builds.
+          # Session code changes also trigger this isolated HTTPS smoke.
           python3 -m unittest discover -s tests -p test_vela_dockerfile_isolation.py -v
           python3 -m unittest discover -s tests -p test_vela_mtg_release_pin.py -v
           python3 deploy/vela/ci_prepare_dockerfile.py Dockerfile "$RUNNER_TEMP/VelaMiniAppDockerfile"
