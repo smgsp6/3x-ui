@@ -80,9 +80,34 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          python3 deploy/vela/privacy_audit.py .
+          # Upstream already contains these four literal PEM markers in source/test
+          # fixtures. Their exact Git blob IDs are pinned to the reviewed base;
+          # do NOT permit any changed content or any new scanner finding.
+          python3 - <<'PY'
+          import subprocess
+          known = {
+              "frontend/src/pages/xray/outbounds/transport/masque.tsx": "e0416fb751a163f034f2464ae6d181bca6bea5dc",
+              "frontend/src/test/warp-masque-modal.test.tsx": "d440d4e7dc4293ec5e1f8b975724d2b129d61df7",
+              "internal/web/runtime/remote_test.go": "5fee05759d00010c00435a7a58814472b199798d",
+              "internal/web/service/setting_mtls_bundle_test.go": "3526725dbfff5b21fbee5c4ec2664a67bf938328",
+          }
+          base = "5297fd3c8495d80fab97ae511553fa545c69e913"
+          for path, expected in known.items():
+              baseline = subprocess.check_output(["git", "rev-parse", f"{base}:{path}"], text=True).strip()
+              current = subprocess.check_output(["git", "hash-object", path], text=True).strip()
+              if baseline != expected or current != expected:
+                  raise SystemExit("Known upstream fixture changed: " + path)
+          scanner = subprocess.run(["python3", "deploy/vela/privacy_audit.py", "."], capture_output=True, text=True)
+          findings = [line for line in (scanner.stdout + scanner.stderr).splitlines() if line.startswith("BLOCK: ")]
+          expected_findings = {f"BLOCK: {path}: private key block" for path in known}
+          if scanner.returncode not in (0, 1) or set(findings) != expected_findings or len(findings) != 4:
+              print("Privacy checker found an unexpected condition or new suspected leak")
+              print("\\n".join(findings[:20]))
+              raise SystemExit(1)
+          print("No new findings; four exact pre-existing upstream fixture markers verified unchanged")
+          PY
           python3 deploy/vela/git_history_audit.py .
-          echo "Candidate privacy scan completed successfully"
+          echo "Candidate privacy and Git history audit completed successfully"
       - name: Commit validated changes locally and verify only target branch moves
         shell: bash
         run: |
