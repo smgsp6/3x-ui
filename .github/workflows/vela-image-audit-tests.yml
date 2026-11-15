@@ -25,3 +25,15 @@ jobs:
         run: python3 -m py_compile deploy/vela/image_layer_audit.py tests/test_image_layer_audit.py
       - name: Test legacy and OCI image archive safety
         run: python3 -m unittest discover -s tests -p test_image_layer_audit.py -v
+      - name: Scan a real Docker engine image export (no external image pull)
+        shell: bash
+        run: |
+          set -euo pipefail
+          context="$(mktemp -d)"
+          trap 'rm -rf "$context"' EXIT
+          printf 'FROM scratch\nCOPY canary.txt /app/canary.txt\n' > "$context/Dockerfile"
+          printf 'Vela synthetic public image archive canary\n' > "$context/canary.txt"
+          docker build --no-cache -t vela-image-audit-canary:local "$context"
+          docker image save vela-image-audit-canary:local | python3 deploy/vela/image_layer_audit.py --stdin
+          echo "Real Docker engine archive scan passed; image not pushed or uploaded."
+
