@@ -7,6 +7,9 @@ on:
     paths:
       - "deploy/vela/ci_prepare_dockerfile.py"
       - "tests/test_vela_dockerfile_isolation.py"
+      - "deploy/vela/image_layer_audit.py"
+      - "deploy/vela/ci_elf_marker_inspect.py"
+      - "tests/test_image_layer_audit.py"
       - ".github/workflows/vela-clean-runtime-probe.yml"
 
 permissions:
