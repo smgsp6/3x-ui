@@ -322,6 +322,9 @@ def main():
                 and live.get("enable") is True and live.get("listen") == "127.0.0.1",
                 "synthetic enabled inbound did not retain loopback binding")
         live_id = live["id"]
+        print("TCP-CI stage: inbound created", flush=True)
+        api_obj("/panel/api/server/restartXrayService", "POST", {}, crud_csrf)
+        print("TCP-CI stage: Xray restarted", flush=True)
         dst_port = origin.server_address[1]
         packet = (f"GET http://127.0.0.1:{dst_port}/ci-xray-probe HTTP/1.1\r\n"
                   f"Host: 127.0.0.1:{dst_port}\r\n"
@@ -345,6 +348,7 @@ def main():
                 pass
             time.sleep(1)
         require(passed, "genuine Xray TCP proxy did not reach synthetic origin")
+        print("TCP-CI stage: real proxy roundtrip succeeded", flush=True)
         addresses = []
         for line in Path("/proc/net/tcp").read_text(encoding="ascii").splitlines()[1:]:
             cols = line.split()
@@ -355,6 +359,7 @@ def main():
     finally:
         if live_id is not None:
             api_obj(f"/panel/api/inbounds/del/{live_id}", "POST", {}, crud_csrf)
+            api_obj("/panel/api/server/restartXrayService", "POST", {}, crud_csrf)
         origin.shutdown()
         origin.server_close()
         thread.join(timeout=3)
