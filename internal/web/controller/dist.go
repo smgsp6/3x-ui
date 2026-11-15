@@ -13,8 +13,8 @@ import (
 
 	"github.com/mhsanaei/3x-ui/v3/internal/config"
 	"github.com/mhsanaei/3x-ui/v3/internal/logger"
+	"github.com/mhsanaei/3x-ui/v3/internal/web/middleware"
 	"github.com/mhsanaei/3x-ui/v3/internal/web/session"
-	"github.com/mhsanaei/3x-ui/v3/internal/web/service/tgminiapp"
 )
 
 var distFS fs.FS
@@ -139,11 +139,19 @@ func serveDistPage(c *gin.Context, name string) {
 		script += `;window.X_UI_CUR_VER="` + escapedVer + `"`
 		script += `;window.X_UI_DB_TYPE="` + config.GetDBKind() + `"`
 	}
-    if name == "index.html" && tgminiapp.Enabled() {
-        script += `;window.X_UI_TG_MINIAPP_MODE=true`
-    }
-    script += `;</script>`
+	// After the bootstrap redirects, panel/ is a distinct HTML document.
+	// Its official Telegram bridge needs to load again, but only for a
+	// validated Telegram login session; ordinary browser panels stay intact.
+	telegramPanel := name == "index.html" && session.IsTelegramMiniAppLogin(c)
+	if telegramPanel {
+		script += `;window.X_UI_TG_MINIAPP_MODE=true`
+		middleware.AllowTelegramMiniAppSDK(c)
+	}
+	script += `;</script>`
 	inject := []byte(script)
+	if telegramPanel {
+		inject = append(inject, []byte(`<script data-cfasync="false" src="https://telegram.org/js/telegram-web-app.js"></script>`)...)
+	}
 	inject = append(inject, csrfMeta...)
 	inject = append(inject, basePathMeta...)
 	inject = append(inject, pwaHeadInjection(basePath, name)...)

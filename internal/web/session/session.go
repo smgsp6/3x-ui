@@ -228,6 +228,17 @@ func IsLogin(c *gin.Context) bool {
 	return GetLoginUser(c) != nil
 }
 
+// IsTelegramMiniAppLogin requires the validated, revocable Telegram session,
+// not merely an enabled Mini App deployment. Never expose Telegram UI or SDK
+// to ordinary panel logins just because the server feature flag is set.
+func IsTelegramMiniAppLogin(c *gin.Context) bool {
+	if !tgminiapp.Enabled() || GetLoginUser(c) == nil {
+		return false
+	}
+	id, ok := sessions.Default(c).Get(telegramMiniAppUserKey).(int64)
+	return ok && tgminiapp.AllowedUserID(id)
+}
+
 func sessionUserID(obj any) (int, bool) {
 	switch v := obj.(type) {
 	case int:

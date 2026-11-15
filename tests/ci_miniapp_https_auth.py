@@ -122,7 +122,14 @@ def main():
             "signed allowlisted Telegram admin failed to login")
     status, _, _ = http("/panel/api/openapi.json")
     require(status == 200, "authenticated Mini App admin cannot access API")
-    print("06/26 signed admin logged in and accessed real guarded panel API")
+    # The bootstrap and authenticated SPA are distinct documents.
+    # Verify the official SDK and Mini App mode survive the navigation.
+    status, panel_html, _ = http("/panel/")
+    require(status == 200 and
+            b"window.X_UI_TG_MINIAPP_MODE=true" in panel_html and
+            panel_html.count(b'src="https://telegram.org/js/telegram-web-app.js"') == 1,
+            "signed Telegram panel missing the official SDK or Mini App mode")
+    print("06/26 signed admin API and authenticated panel Telegram bridge verified")
 
     refreshed_csrf = csrf_token()
     require(refreshed_csrf != original_csrf, "privilege change retained old CSRF")
