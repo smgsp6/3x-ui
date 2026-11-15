@@ -1,0 +1,75 @@
+name: Vela private-key origin verification in isolated public builds
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [vela-dev]
+    paths:
+      - ".github/workflows/vela-key-provenance.yml"
+      - "deploy/vela/ci_public_package_provenance.py"
+
+permissions:
+  contents: read
+
+jobs:
+  alpine-public-package-origin:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Build disposable public Alpine packages only
+        shell: bash
+        run: |
+          set -euo pipefail
+          ctx="$(mktemp -d)"
+          trap 'rm -rf "$ctx"' EXIT
+          printf 'FROM alpine\nRUN apk add --no-cache --update ca-certificates tzdata fail2ban bash curl openssl\n' > "$ctx/Dockerfile"
+          docker build --pull --no-cache -t vela-public-pem-origin:local "$ctx"
+      - name: Inspect public package ownership without exposing paths or key bytes
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm --network none --read-only \
+            --entrypoint python3 \
+            --mount type=bind,src="$PWD/deploy/vela/ci_public_package_provenance.py",dst=/tmp/provenance.py,readonly \
+            vela-public-pem-origin:local /tmp/provenance.py
+
+  go-standard-library-marker:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Build minimal Go TLS program in an isolated container
+        shell: bash
+        run: |
+          set -euo pipefail
+          ctx="$(mktemp -d)"
+          trap 'rm -rf "$ctx"' EXIT
+          cat > "$ctx/main.go" <<'GO'
+          package main
+          import ("crypto/tls"; "crypto/x509"; "fmt")
+          func main() { fmt.Printf("%T %T", &tls.Config{}, &x509.Certificate{}) }
+          GO
+          cat > "$ctx/Dockerfile" <<'DOCKER'
+          FROM golang:1.27-alpine AS build
+          WORKDIR /src
+          COPY main.go .
+          RUN CGO_ENABLED=0 go build -trimpath -o /probe main.go
+          FROM alpine
+          COPY --from=build /probe /app/x-ui
+          DOCKER
+          docker build --pull --no-cache -t vela-go-tls-probe:local "$ctx"
+      - name: Classify marker only, never upload executable
+        shell: bash
+        run: |
+          set -euo pipefail
+          set +e
+          docker image save vela-go-tls-probe:local | python3 deploy/vela/image_layer_audit.py --stdin --diagnostic-counts
+          result=$?
+          set -e
+          test "$result" -eq 0 -o "$result" -eq 1
+          echo "Public Go TLS marker comparison completed; not a release waiver."
