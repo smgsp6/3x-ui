@@ -37,6 +37,38 @@ def private_path(name):
             or base.endswith(PRIVATE_EXTENSIONS))
 
 
+def classify_image_path(name):
+    """Return only a fixed bucket, never report the image member pathname."""
+    name = name.replace('\\\\', '/').lstrip('./')
+    if name == 'app/x-ui':
+        return 'vela_panel_binary'
+    if name.startswith('app/bin/xray-linux-'):
+        return 'xray_binary'
+    if name.startswith('app/bin/mtg-linux-'):
+        return 'mtg_binary'
+    if name.startswith(('usr/', 'lib/', 'etc/', 'bin/', 'sbin/')):
+        return 'os_content'
+    return 'other_content'
+
+
+def pem_footer_diagnostic(current, match, stream, diagnostics):
+    """Bounded, in-memory evidence check; NEVER reads/logs any key body.
+
+    Header alone is not enough to prove a private key was embedded, but both
+    header-only and complete candidates remain release-blocking.
+    """
+    footer = match.group(0).replace(b'BEGIN', b'END', 1)
+    limit = 128 * 1024
+    tail = bytearray(current[match.end():match.end() + limit])
+    while footer not in tail and len(tail) < limit:
+        chunk = stream.read(min(CHUNK, limit - len(tail)))
+        if not chunk:
+            break
+        tail.extend(chunk)
+    label = 'pem_header_with_footer' if footer in tail else 'pem_header_no_footer_within_bound'
+    diagnostics[label] = diagnostics.get(label, 0) + 1
+
+
 def file_has_secret(f, diagnostics=None):
     """Return a boolean; optional diagnosis contains counts only, never bytes."""
     overlap = b''
@@ -51,8 +83,11 @@ def file_has_secret(f, diagnostics=None):
             first = False
         current = overlap + chunk
         matched = None
-        if KEY_HEADER.search(current):
+        pem_match = KEY_HEADER.search(current)
+        if pem_match:
             matched = 'pem'
+            if diagnostics is not None:
+                pem_footer_diagnostic(current, pem_match, f, diagnostics)
         elif TELEGRAM_TOKEN.search(current):
             matched = 'telegram'
         elif AWS_KEY.search(current):
@@ -83,6 +118,8 @@ def scan_layer_tar(source, diagnostics=None):
                     violations += 1
                     if diagnostics is not None:
                         diagnostics['layer_content'] = diagnostics.get('layer_content', 0) + 1
+                        bucket = 'source_' + classify_image_path(member.name)
+                        diagnostics[bucket] = diagnostics.get(bucket, 0) + 1
             elif member.issym() or member.islnk():
                 # No link is followed or dereferenced. Runtime link-policy
                 # validation is intentionally separate from this privacy gate.
@@ -200,6 +237,17 @@ def main():
                               for kind in ('pem_elf', 'pem_nonelf',
                                            'telegram_elf', 'telegram_nonelf',
                                            'aws_elf', 'aws_nonelf')),
+                  file=sys.stderr)
+            print('Bounded PEM header/footer review (counts only): '
+                  + ', '.join(f'{kind}={diagnostics.get(kind, 0)}'
+                              for kind in ('pem_header_with_footer',
+                                           'pem_header_no_footer_within_bound')),
+                  file=sys.stderr)
+            print('Image component buckets (counts only): '
+                  + ', '.join(f'{kind}={diagnostics.get(kind, 0)}'
+                              for kind in ('source_vela_panel_binary', 'source_xray_binary',
+                                           'source_mtg_binary', 'source_os_content',
+                                           'source_other_content')),
                   file=sys.stderr)
         return 1
     print(f'Vela image audit: PASS ({layers} image layer(s), {checked} file(s) scanned)')

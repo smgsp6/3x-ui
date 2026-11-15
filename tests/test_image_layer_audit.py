@@ -113,6 +113,29 @@ class ImageLayerTests(unittest.TestCase):
         self.assertEqual(diagnostics.get('layer_content'), 1)
         self.assertNotIn('app/fake-elf', str(diagnostics))
 
+    def test_pem_footer_and_component_bucket_diagnostics_never_expose_member(self):
+        synthetic_name = 'app/x-ui'
+        prefix = b'-----BEGIN ' + b'PRIVATE KEY-----'
+        suffix = b'-----END ' + b'PRIVATE KEY-----'
+        diagnostics = {}
+        image = image_bytes([{synthetic_name: b'\\x7fELF' + b'\\x00' * 30
+                              + prefix + b'\\nNOT_REAL_KEY_MATERIAL\\n' + suffix}])
+        self.assertEqual(audit.audit_image_save(image, diagnostics)[2], 1)
+        self.assertEqual(diagnostics.get('pem_header_with_footer'), 1)
+        self.assertEqual(diagnostics.get('source_vela_panel_binary'), 1)
+        self.assertNotIn(synthetic_name, str(diagnostics))
+        self.assertNotIn('NOT_REAL_KEY_MATERIAL', str(diagnostics))
+
+    def test_pem_footer_split_at_scan_chunk_boundary(self):
+        prefix = b'-----BEGIN ' + b'PRIVATE KEY-----'
+        suffix = b'-----END ' + b'PRIVATE KEY-----'
+        # Extra bytes make the END marker cross a read boundary.
+        content = prefix + b'\\n' + b'A' * (audit.CHUNK - 12) + b'\\n' + suffix
+        diagnostics = {}
+        self.assertEqual(audit.audit_image_save(image_bytes([{'usr/public-fixture': content}]), diagnostics)[2], 1)
+        self.assertEqual(diagnostics.get('pem_header_with_footer'), 1)
+        self.assertEqual(diagnostics.get('source_os_content'), 1)
+
     def test_empty_or_corrupt_tar_refused(self):
         for content in (b'',b'not tar',tar_bytes({'manifest.json':b'[]'})):
             with self.subTest(size=len(content)),self.assertRaises(ValueError):

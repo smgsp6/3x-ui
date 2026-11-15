@@ -28,6 +28,8 @@ jobs:
         run: python3 -m unittest discover -s tests -p test_image_layer_audit.py -v
       - name: Build local image without credentials, cache, registry push or publication
         run: docker build --pull --no-cache -t vela-diagnostic:local .
+      # This review never changes release gates: any suspicious marker still
+      # produces a failing exit status. Only fixed category counts are logged.
       - name: Scan every layer and print finding counts ONLY
         shell: bash
         run: |
