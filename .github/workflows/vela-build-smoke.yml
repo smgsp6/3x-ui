@@ -56,6 +56,14 @@ jobs:
           test -s internal/web/dist/miniapp.html
       - name: Compile all Go packages without executing tests
         run: go test -run '^$' ./...
+      - name: Enforce panel API router documentation contract
+        run: go test ./internal/web -run '^TestRouteRegistryContract
+      - name: Ensure build binary exists without publishing it
+        shell: bash
+        run: |
+          test -s "${RUNNER_TEMP}/vela-build-smoke"
+          echo "PASS: source compiles in isolated GitHub runner, no artifacts published."
+ -count=1
       - name: Build Go panel binary only into runner scratch
         run: go build -trimpath -o "${RUNNER_TEMP}/vela-build-smoke" ./main.go
       - name: Ensure build binary exists without publishing it
