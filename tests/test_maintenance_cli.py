@@ -160,9 +160,9 @@ os.execv('/usr/bin/tar', ['/usr/bin/tar', *sys.argv[1:]])
         (self.root / 'compose.yml').write_bytes((deploy / 'compose.host.yml').read_bytes())
         (self.root / 'compose.yml').chmod(0o644)
         (self.root / '.env').write_text(
-            'XUI_TG_MINIAPP_ADMIN_IDS=1001\\n'
-            'XUI_TG_MINIAPP_URL=https://admin.vela-safe-domain.org/app/\\n'
-            'XUI_PORT=2053\\n',
+            'XUI_TG_MINIAPP_ADMIN_IDS=1001\n'
+            'XUI_TG_MINIAPP_URL=https://admin.vela-safe-domain.org/app/\n'
+            'XUI_PORT=2053\n',
             encoding='utf-8')
         (self.root / '.env').chmod(0o600)
         (self.root / 'secrets' / 'vela_bot_token').write_text('12345:synthetic_only_fixture')
@@ -185,7 +185,7 @@ os.execv('/usr/bin/tar', ['/usr/bin/tar', *sys.argv[1:]])
     def test_doctor_rejects_unsafe_env_before_compose(self):
         self.prepare_reviewed_doctor_fixture()
         with (self.root / '.env').open('a') as out:
-            out.write('XUI_TG_MINIAPP_BOT_TOKEN=synthetic-only-not-a-secret\\n')
+            out.write('XUI_TG_MINIAPP_BOT_TOKEN=synthetic-only-not-a-secret\n')
         bad = self.run_cli('doctor')
         self.assertNotEqual(bad.returncode, 0)
         self.assertIn('个人内测文件预检未通过', bad.stderr)
