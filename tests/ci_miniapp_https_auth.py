@@ -286,11 +286,11 @@ def main():
 
     # True TCP dataplane test. The CI Docker container runs --network none:
     # the HTTP proxy and synthetic origin bind only loopback inside it.
-    import http.server
+    import http.server as http_server
     import socket
     import threading
 
-    class LocalOrigin(http.server.BaseHTTPRequestHandler):
+    class LocalOrigin(http_server.BaseHTTPRequestHandler):
         def do_GET(self):
             if self.path != "/ci-xray-probe":
                 self.send_error(404)
@@ -304,7 +304,7 @@ def main():
         def log_message(self, *args):
             pass  # No request data in public CI output.
 
-    origin = http.server.ThreadingHTTPServer(("127.0.0.1", 0), LocalOrigin)
+    origin = http_server.ThreadingHTTPServer(("127.0.0.1", 0), LocalOrigin)
     thread = threading.Thread(target=origin.serve_forever, daemon=True)
     thread.start()
     port = 28343
