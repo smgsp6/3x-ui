@@ -90,11 +90,11 @@ def main():
         time.sleep(1)
     else:
         raise AssertionError("real HTTPS Mini App health did not become ready")
-    print("01/25 isolated HTTPS health 204 and local TLS certificate verified")
+    print("01/26 isolated HTTPS health 204 and local TLS certificate verified")
 
     status, _, _ = http("/panel/api/openapi.json")
     require(status == 401, "unauthenticated panel API must reject requests")
-    print("02/25 anonymous admin API rejected")
+    print("02/26 anonymous admin API rejected")
 
     original_csrf = csrf_token()
     require(any(c.secure for c in jar), "Mini App cookie must have Secure flag")
@@ -102,12 +102,12 @@ def main():
             "Mini App session cookie must be HttpOnly")
     status, _, _ = login(good)
     require(status == 403, "missing CSRF token must block signed Mini App auth")
-    print("03/25 secure browser cookie and login CSRF enforced")
+    print("03/26 secure browser cookie and login CSRF enforced")
 
     tampered = good.replace("Synthetic", "Impersonator", 1)
     status, _, _ = login(tampered, original_csrf)
     require(status == 401, "changed Telegram initData must fail HMAC")
-    print("04/25 altered Telegram signature rejected")
+    print("04/26 altered Telegram signature rejected")
 
     other = signed_init_data(token, 1002, now)
     status, _, _ = login(other, original_csrf)
@@ -115,14 +115,14 @@ def main():
     stale = signed_init_data(token, ADMIN_ID, now - 900)
     status, _, _ = login(stale, original_csrf)
     require(status == 401, "replayed expired Telegram initData accepted")
-    print("05/25 unauthorized ID and expired signature rejected")
+    print("05/26 unauthorized ID and expired signature rejected")
 
     status, body, _ = login(good, original_csrf)
     require(status == 200 and json.loads(body).get("success") is True,
             "signed allowlisted Telegram admin failed to login")
     status, _, _ = http("/panel/api/openapi.json")
     require(status == 200, "authenticated Mini App admin cannot access API")
-    print("06/25 signed admin logged in and accessed real guarded panel API")
+    print("06/26 signed admin logged in and accessed real guarded panel API")
 
     refreshed_csrf = csrf_token()
     require(refreshed_csrf != original_csrf, "privilege change retained old CSRF")
@@ -131,11 +131,11 @@ def main():
     status, body, _ = login(good, refreshed_csrf)
     require(status == 200 and json.loads(body).get("success") is True,
             "fresh CSRF after login did not work")
-    print("07/25 CSRF rotates on session privilege change")
+    print("07/26 CSRF rotates on session privilege change")
 
     status, _, _ = http("/panel/api/openapi.json")
     require(status == 200, "post-login API access unexpectedly lost")
-    print("08/25 HTTPS session remained functional")
+    print("08/26 HTTPS session remained functional")
 
     # Real management routes, synthetic data, disposable Docker only. The
     # inbound is disabled throughout to avoid opening a real proxy listener.
@@ -149,7 +149,7 @@ def main():
     for route in ("/panel/api/server/status", "/panel/api/inbounds/list",
                   "/panel/api/clients/list", "/panel/api/certificates/status"):
         api_obj(route)
-    print("09/25 signed session reached real server, inbound, client and certificate APIs")
+    print("09/26 signed session reached real server, inbound, client and certificate APIs")
 
     fixture = {
         "remark": "CI disposable disabled HTTP inbound",
@@ -161,7 +161,7 @@ def main():
     }
     status, _, _ = http("/panel/api/inbounds/add", method="POST", payload=fixture)
     require(status == 403, "Xray mutation without CSRF should be refused")
-    print("10/25 signed admin cannot mutate an Xray inbound without CSRF")
+    print("10/26 signed admin cannot mutate an Xray inbound without CSRF")
 
     crud_csrf = csrf_token()
     created = api_obj("/panel/api/inbounds/add", "POST", fixture, crud_csrf)
@@ -173,7 +173,7 @@ def main():
     require(isinstance(listed, list) and
             any(row.get("id") == inbound_id and row.get("enable") is False for row in listed),
             "new disabled inbound was missing from list API")
-    print("11/25 signed admin created and listed a disabled synthetic Xray inbound")
+    print("11/26 signed admin created and listed a disabled synthetic Xray inbound")
 
     detail = api_obj(f"/panel/api/inbounds/get/{inbound_id}")
     require(isinstance(detail, dict) and detail.get("id") == inbound_id,
@@ -186,14 +186,14 @@ def main():
     persisted = api_obj(f"/panel/api/inbounds/get/{inbound_id}")
     require(persisted.get("remark") == edited["remark"] and
             persisted.get("enable") is False, "updated disabled inbound not persisted")
-    print("12/25 signed admin read and updated disabled synthetic inbound")
+    print("12/26 signed admin read and updated disabled synthetic inbound")
 
     deleted = api_obj(f"/panel/api/inbounds/del/{inbound_id}", "POST", {}, crud_csrf)
     require(deleted == inbound_id, "real inbound deletion returned incorrect ID")
     listed = api_obj("/panel/api/inbounds/list")
     require(not any(row.get("id") == inbound_id for row in (listed or [])),
             "deleted synthetic inbound remained in database")
-    print("13/25 signed admin deleted the synthetic inbound and verified removal")
+    print("13/26 signed admin deleted the synthetic inbound and verified removal")
 
     # A second disabled inbound exercises the VLESS client lifecycle and the
     # original client API without opening TCP or UDP proxy traffic.
@@ -216,7 +216,7 @@ def main():
         probe.settimeout(1)
         require(probe.connect_ex(("127.0.0.1", 28342)) != 0,
                 "disabled VLESS inbound opened a proxy TCP listener")
-    print("14/25 disabled synthetic VLESS inbound did not open a TCP listener")
+    print("14/26 disabled synthetic VLESS inbound did not open a TCP listener")
 
     email = "vela-ci-client@synthetic.invalid"
     api_obj("/panel/api/clients/add", "POST",
@@ -236,7 +236,7 @@ def main():
     client_uuid = client_detail["client"].get("uuid")
     require(isinstance(client_uuid, str) and len(client_uuid) >= 32,
             "VLESS client did not receive a valid synthetic identifier")
-    print("15/25 signed admin created and listed a disabled synthetic VLESS client")
+    print("15/26 signed admin created and listed a disabled synthetic VLESS client")
 
     api_obj("/panel/api/clients/update/" + encoded_email, "POST",
             {"comment": "updated synthetic fixture"}, crud_csrf)
@@ -244,7 +244,7 @@ def main():
     require(client_detail.get("client", {}).get("comment") == "updated synthetic fixture"
             and client_detail.get("client", {}).get("uuid") == client_uuid,
             "partial client update failed or rotated credentials unexpectedly")
-    print("16/25 partial VLESS client update preserved its generated identifier")
+    print("16/26 partial VLESS client update preserved its generated identifier")
 
     # Exercise the original traffic API with a disabled synthetic VLESS client.
     # No Xray network traffic is generated: these are isolated SQLite counters.
@@ -252,7 +252,7 @@ def main():
     require(isinstance(traffic, dict) and traffic.get("email") == email
             and traffic.get("up") == 0 and traffic.get("down") == 0,
             "new disabled VLESS client did not have zeroed traffic counters")
-    print("17/25 read zeroed traffic counters for the synthetic VLESS client")
+    print("17/26 read zeroed traffic counters for the synthetic VLESS client")
 
     status, _, _ = http("/panel/api/clients/updateTraffic/" + encoded_email,
                         method="POST", payload={"upload": 4096, "download": 8192})
@@ -262,7 +262,7 @@ def main():
     traffic = api_obj("/panel/api/clients/traffic/" + encoded_email)
     require(traffic.get("up") == 4096 and traffic.get("down") == 8192,
             "traffic counter updates were not persisted")
-    print("18/25 CSRF protected traffic update persisted exact synthetic byte totals")
+    print("18/26 CSRF protected traffic update persisted exact synthetic byte totals")
 
     # Read both upstream link-generation routes. A disabled inbound may
     # intentionally produce no connectable links; neither response body nor
@@ -272,7 +272,7 @@ def main():
             "synthetic client missing subscription identifier")
     api_obj("/panel/api/clients/subLinks/" + parse.quote(sub_id, safe=""))
     api_obj("/panel/api/clients/links/" + encoded_email)
-    print("19/25 signed session accessed original subscription and client link APIs")
+    print("19/26 signed session accessed original subscription and client link APIs")
 
     api_obj("/panel/api/clients/resetTraffic/" + encoded_email, "POST",
             {}, crud_csrf)
@@ -282,7 +282,7 @@ def main():
     post_reset = api_obj("/panel/api/clients/get?email=" + encoded_email)
     require(post_reset.get("client", {}).get("enable") is False,
             "reset unexpectedly enabled the synthetic client")
-    print("20/25 traffic reset cleared counters without enabling the synthetic client")
+    print("20/26 traffic reset cleared counters without enabling the synthetic client")
 
     # True TCP dataplane test. The CI Docker container runs --network none:
     # the HTTP proxy and synthetic origin bind only loopback inside it.
@@ -434,7 +434,157 @@ def main():
         time.sleep(1)
     else:
         raise AssertionError("deleted Xray TCP inbound retained a listener")
-    print("21/25 real Xray TCP dataplane, kernel loopback binding and teardown verified")
+    print("21/26 real Xray TCP dataplane, kernel loopback binding and teardown verified")
+
+    # SOCKS5 UDP ASSOCIATE reaches a real UDP echo service through Xray.
+    # All sockets stay inside the --network none Docker namespace. Unlike
+    # merely creating a UDP inbound, this checks an application-layer reply.
+    # The temporary routing exception is tied to one inbound and /32 target;
+    # every other inbound still uses upstream private-IP blocking rules.
+    import struct
+    udp_confined = json.loads(json.dumps(confined))
+    udp_confined["routing"]["rules"].insert(0, {
+        "type": "field",
+        "inboundTag": ["ci-loopback-udp"],
+        "ip": ["127.0.0.1/32"],
+        "network": "udp",
+        "outboundTag": "ci-only-local-egress",
+    })
+    echo_stop = threading.Event()
+    echo_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    echo_socket.bind(("127.0.0.1", 0))
+    echo_socket.settimeout(0.2)
+
+    def udp_echo():
+        while not echo_stop.is_set():
+            try:
+                data, peer = echo_socket.recvfrom(512)
+            except socket.timeout:
+                continue
+            except OSError:
+                break
+            if data == b"vela-udp-loopback-request":
+                try:
+                    echo_socket.sendto(b"vela-udp-loopback-response", peer)
+                except OSError:
+                    break
+
+    echo_thread = threading.Thread(target=udp_echo, daemon=True)
+    echo_thread.start()
+    udp_id = None
+    udp_control = None
+    relay_port = None
+    try:
+        write_isolated_xray_template(udp_confined)
+        udp_row = api_obj("/panel/api/inbounds/add", "POST", {
+            "remark": "CI disposable SOCKS5 UDP dataplane",
+            "enable": True, "listen": "127.0.0.1", "port": 28344,
+            "protocol": "mixed",
+            "settings": {"auth": "noauth", "udp": True,
+                         "ip": "127.0.0.1"},
+            "streamSettings": {"network": "tcp", "security": "none"},
+            "sniffing": {"enabled": False}, "tag": "ci-loopback-udp",
+            "trafficReset": "never",
+        }, crud_csrf)
+        require(isinstance(udp_row, dict) and
+                isinstance(udp_row.get("id"), int) and
+                udp_row.get("listen") == "127.0.0.1" and
+                udp_row.get("enable") is True,
+                "synthetic SOCKS5 UDP inbound did not persist as loopback-only")
+        udp_id = udp_row["id"]
+        api_obj("/panel/api/server/restartXrayService", "POST", {}, crud_csrf)
+        print("UDP-CI stage: isolated SOCKS5 inbound started", flush=True)
+
+        for _ in range(15):
+            try:
+                udp_control = socket.create_connection(("127.0.0.1", 28344),
+                                                       timeout=2)
+                udp_control.settimeout(3)
+                break
+            except OSError:
+                time.sleep(0.5)
+        require(udp_control is not None, "SOCKS5 control listener not reachable")
+
+        def recv_exact(sock, count):
+            pieces = bytearray()
+            while len(pieces) < count:
+                part = sock.recv(count - len(pieces))
+                if not part:
+                    raise AssertionError("truncated SOCKS5 UDP control reply")
+                pieces.extend(part)
+            return bytes(pieces)
+
+        udp_control.sendall(b"\x05\x01\x00")
+        require(recv_exact(udp_control, 2) == b"\x05\x00",
+                "SOCKS5 no-auth negotiation rejected")
+        # 0.0.0.0:0 tells the SOCKS5 server that the UDP source port is
+        # dynamically allocated; the destination remains strict loopback.
+        udp_control.sendall(b"\x05\x03\x00\x01" + b"\x00" * 6)
+        answer = recv_exact(udp_control, 4)
+        require(answer == b"\x05\x00\x00\x01",
+                "SOCKS5 UDP ASSOCIATE rejected or returned non-IPv4 address")
+        relay_ip = socket.inet_ntoa(recv_exact(udp_control, 4))
+        relay_port = struct.unpack("!H", recv_exact(udp_control, 2))[0]
+        require(relay_ip == "127.0.0.1" and 1 <= relay_port <= 65535,
+                "SOCKS5 UDP relay advertised a non-loopback address")
+        print("UDP-CI stage: SOCKS5 UDP ASSOCIATE negotiated", flush=True)
+
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as udp:
+            udp.bind(("127.0.0.1", 0))
+            udp.settimeout(1.5)
+            target_port = echo_socket.getsockname()[1]
+            datagram = (b"\x00\x00\x00\x01" +
+                        socket.inet_aton("127.0.0.1") +
+                        struct.pack("!H", target_port) +
+                        b"vela-udp-loopback-request")
+            echoed = False
+            for _ in range(8):
+                udp.sendto(datagram, (relay_ip, relay_port))
+                try:
+                    response, _ = udp.recvfrom(512)
+                except socket.timeout:
+                    continue
+                if (response[:4] == b"\x00\x00\x00\x01" and
+                        response[10:] == b"vela-udp-loopback-response"):
+                    echoed = True
+                    break
+            require(echoed, "UDP packet did not traverse Xray and return via SOCKS5")
+        print("UDP-CI stage: application-layer datagram echoed through Xray", flush=True)
+
+        # Detect the core's known wildcard UDP binding pitfall, which is
+        # unsafe on Vela host-network deployments even if 'listen' is local.
+        bindings = []
+        for line in Path("/proc/net/udp").read_text(encoding="ascii").splitlines()[1:]:
+            columns = line.split()
+            if columns[1].endswith(f":{relay_port:04X}"):
+                bindings.append(columns[1].split(":")[0])
+        require(bindings and set(bindings) == {"0100007F"},
+                "Xray SOCKS5 UDP relay bound a non-loopback interface")
+        print("UDP-CI stage: kernel UDP relay socket restricted to loopback", flush=True)
+    finally:
+        if udp_control is not None:
+            udp_control.close()
+        if udp_id is not None:
+            api_obj(f"/panel/api/inbounds/del/{udp_id}", "POST", {}, crud_csrf)
+            api_obj("/panel/api/server/restartXrayService", "POST", {}, crud_csrf)
+        echo_stop.set()
+        echo_socket.close()
+        echo_thread.join(timeout=3)
+        write_isolated_xray_template(default_config)
+
+    # The UDP association is closed and its inbound was removed.
+    if relay_port is not None:
+        for _ in range(15):
+            in_use = any(
+                line.split()[1].endswith(f":{relay_port:04X}")
+                for line in Path("/proc/net/udp").read_text(encoding="ascii").splitlines()[1:]
+            )
+            if not in_use:
+                break
+            time.sleep(0.25)
+        else:
+            raise AssertionError("removed SOCKS5 UDP relay retained a kernel UDP listener")
+    print("22/26 genuine SOCKS5 UDP relay, loopback bind and teardown verified")
 
     api_obj("/panel/api/clients/del/" + encoded_email, "POST", {}, crud_csrf)
     clients = api_obj("/panel/api/clients/list")
@@ -444,7 +594,7 @@ def main():
     listed = api_obj("/panel/api/inbounds/list")
     require(not any(row.get("id") == vless_id for row in (listed or [])),
             "synthetic VLESS inbound remained after cleanup")
-    print("22/25 signed admin deleted synthetic client and VLESS inbound")
+    print("23/26 signed admin deleted synthetic client and VLESS inbound")
 
     # In Mini App mode the original password login route must never be an
     # alternative to the Telegram-signed, allowlisted identity.
@@ -452,7 +602,7 @@ def main():
     require(current_csrf != refreshed_csrf, "second privileged login did not rotate CSRF")
     status, _, _ = http("/login", method="POST", payload={}, csrf=current_csrf)
     require(status == 404, "legacy password login was not disabled in Mini App mode")
-    print("23/25 legacy password login endpoint was disabled")
+    print("24/26 legacy password login endpoint was disabled")
 
     # The signed admin session must cease to authorize API calls immediately
     # after logout, rather than lingering in a browser cookie.
@@ -471,7 +621,7 @@ def main():
                   "/panel/api/server/status", "/panel/api/certificates/status"):
         status, _, _ = http(route)
         require(status == 401, "logout left a sensitive management API accessible")
-    print("24/25 logout removed session and protected all management APIs")
+    print("25/26 logout removed session and protected all management APIs")
 
     replay_request = request.Request(
         BASE + "/panel/api/inbounds/list",
@@ -487,7 +637,7 @@ def main():
         r.read(512)
     require(replay_status == 401,
             "copied pre-logout signed Mini App cookie retained admin access")
-    print("25/25 replay of a copied signed cookie after logout rejected; HTTPS smoke PASS")
+    print("26/26 replay of a copied signed cookie after logout rejected; HTTPS smoke PASS")
 
 if __name__ == "__main__":
     try:
