@@ -37,14 +37,30 @@ def private_path(name):
             or base.endswith(PRIVATE_EXTENSIONS))
 
 
-def file_has_secret(f):
+def file_has_secret(f, diagnostics=None):
+    """Return a boolean; optional diagnosis contains counts only, never bytes."""
     overlap = b''
+    first = True
+    is_elf = False
     while True:
         chunk = f.read(CHUNK)
         if not chunk:
             return False
+        if first:
+            is_elf = chunk.startswith(b'\\x7fELF')
+            first = False
         current = overlap + chunk
-        if KEY_HEADER.search(current) or TELEGRAM_TOKEN.search(current) or AWS_KEY.search(current):
+        matched = None
+        if KEY_HEADER.search(current):
+            matched = 'pem'
+        elif TELEGRAM_TOKEN.search(current):
+            matched = 'telegram'
+        elif AWS_KEY.search(current):
+            matched = 'aws'
+        if matched:
+            if diagnostics is not None:
+                category = matched + ('_elf' if is_elf else '_nonelf')
+                diagnostics[category] = diagnostics.get(category, 0) + 1
             return True
         overlap = current[-256:]
 
@@ -63,7 +79,7 @@ def scan_layer_tar(source, diagnostics=None):
                 stream = layer.extractfile(member)
                 if stream is None:
                     raise ValueError('unreadable layer member')
-                if file_has_secret(stream):
+                if file_has_secret(stream, diagnostics):
                     violations += 1
                     if diagnostics is not None:
                         diagnostics['layer_content'] = diagnostics.get('layer_content', 0) + 1
@@ -177,6 +193,13 @@ def main():
             print('Aggregate categories (no paths, values or contents): '
                   + ', '.join(f'{kind}={diagnostics.get(kind, 0)}'
                               for kind in ('private_path', 'layer_content', 'metadata_content')),
+                  file=sys.stderr)
+        if diagnostics is not None:
+            print('Signature classes (counts only): '
+                  + ', '.join(f'{kind}={diagnostics.get(kind, 0)}'
+                              for kind in ('pem_elf', 'pem_nonelf',
+                                           'telegram_elf', 'telegram_nonelf',
+                                           'aws_elf', 'aws_nonelf')),
                   file=sys.stderr)
         return 1
     print(f'Vela image audit: PASS ({layers} image layer(s), {checked} file(s) scanned)')
