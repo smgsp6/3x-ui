@@ -126,6 +126,95 @@ jobs:
           sudo test -s "$scratch/x-ui.db"
           test "$(sudo stat -c %a "$scratch/x-ui.db")" = 600
           echo "Synthetic SQLite database survived container recreation with private permissions"
+      - name: Real SQLite stopped snapshot and restore with synthetic record
+        shell: bash
+        run: |
+          set -euo pipefail
+          scratch="$(mktemp -d)"
+          archives="$(mktemp -d)"
+          sudo chown 0:0 "$scratch"
+          sudo chmod 700 "$scratch"
+          chmod 700 "$archives"
+          trap 'docker rm -f vela-restore-smoke >/dev/null 2>&1 || true; sudo rm -rf "$scratch" "$archives"' EXIT
+          db="$scratch/x-ui.db"
+          archive="$archives/snapshot.tar.gz"
+          start_panel() {
+            docker run --detach --name vela-restore-smoke --network none \
+              --cap-drop ALL --security-opt no-new-privileges \
+              --mount "type=bind,src=$scratch,dst=/etc/x-ui" \
+              --tmpfs /tmp:rw,nosuid,size=16m \
+              --tmpfs /var/log/x-ui:rw,nosuid,size=16m \
+              -e XUI_ENABLE_FAIL2BAN=false -e XUI_DB_TYPE=sqlite \
+              vela-boot-smoke:local >/dev/null
+            ready=0
+            for i in $(seq 1 30); do
+              if docker exec vela-restore-smoke sh -c 'pidof x-ui >/dev/null && test -s /etc/x-ui/x-ui.db' >/dev/null 2>&1; then
+                ready=1
+                break
+              fi
+              sleep 1
+            done
+            if [ "$ready" -ne 1 ]; then
+              echo 'Synthetic restore probe: panel or database did not initialize (details suppressed)' >&2
+              exit 1
+            fi
+          }
+          start_panel
+          docker stop --time 30 vela-restore-smoke >/dev/null
+          docker rm vela-restore-smoke >/dev/null
+          # The real panel database is quiesced. Add only a fixed, synthetic
+          # record in a separate CI-only table without modifying panel users.
+          sudo python3 - "$db" <<'PY'
+          import sqlite3, sys
+          con = sqlite3.connect(sys.argv[1])
+          assert con.execute('PRAGMA integrity_check').fetchone() == ('ok',)
+          con.execute('CREATE TABLE IF NOT EXISTS vela_ci_snapshot_probe (id INTEGER PRIMARY KEY, state INTEGER NOT NULL)')
+          con.execute('INSERT OR REPLACE INTO vela_ci_snapshot_probe (id, state) VALUES (1, 12345)')
+          con.commit()
+          con.execute('PRAGMA wal_checkpoint(TRUNCATE)')
+          con.close()
+          PY
+          sudo tar -C "$scratch" -czf "$archive" -- x-ui.db
+          sudo chmod 600 "$archive"
+          # The archive is created by this job, contains exactly one regular
+          # file, and its contents never enter GitHub logs or build artifacts.
+          sudo python3 - "$archive" <<'PY'
+          import stat, sys, tarfile, os
+          path = sys.argv[1]
+          assert stat.S_IMODE(os.stat(path).st_mode) == 0o600
+          with tarfile.open(path, mode='r:gz') as a:
+              members = a.getmembers()
+              assert len(members) == 1 and members[0].name == 'x-ui.db' and members[0].isfile()
+          PY
+          # Deliberately corrupt ONLY the CI-only marker, not panel schema.
+          sudo python3 - "$db" <<'PY'
+          import sqlite3, sys
+          con = sqlite3.connect(sys.argv[1])
+          con.execute('UPDATE vela_ci_snapshot_probe SET state=99 WHERE id=1')
+          con.commit()
+          assert con.execute('SELECT state FROM vela_ci_snapshot_probe WHERE id=1').fetchone() == (99,)
+          con.execute('PRAGMA wal_checkpoint(TRUNCATE)')
+          con.close()
+          PY
+          sudo tar -C "$scratch" -xzf "$archive" -- x-ui.db
+          sudo python3 - "$db" <<'PY'
+          import os, sqlite3, stat, sys
+          path = sys.argv[1]
+          assert stat.S_IMODE(os.stat(path).st_mode) == 0o600
+          con = sqlite3.connect(path)
+          assert con.execute('PRAGMA integrity_check').fetchone() == ('ok',)
+          assert con.execute('SELECT state FROM vela_ci_snapshot_probe WHERE id=1').fetchone() == (12345,)
+          con.close()
+          PY
+          start_panel
+          sudo python3 - "$db" <<'PY'
+          import sqlite3, sys
+          con = sqlite3.connect('file:' + sys.argv[1] + '?mode=ro', uri=True)
+          assert con.execute('PRAGMA integrity_check').fetchone() == ('ok',)
+          assert con.execute('SELECT state FROM vela_ci_snapshot_probe WHERE id=1').fetchone() == (12345,)
+          con.close()
+          PY
+          echo "Real synthetic SQLite stopped snapshot, restore, integrity and resumed container all passed"
       - name: Enforce strict image-layer privacy gate (expected to block until fully cleared)
         shell: bash
         run: |
