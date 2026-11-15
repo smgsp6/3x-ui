@@ -1,0 +1,113 @@
+name: Vela phase 13 guarded source integration
+
+on:
+  push:
+    branches: [vela-dev]
+    paths:
+      - ".github/workflows/vela-phase13-publish.yml"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: vela-phase13-guarded-publish
+  cancel-in-progress: false
+
+jobs:
+  guarded-source-integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Checkout vela-dev without retaining push credentials
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Validate repository identity and immutable baseline
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "${GITHUB_REPOSITORY}" = smgsp6/3x-ui
+          test "${GITHUB_REF_NAME}" = vela-dev
+          test "$(git show HEAD:go.mod | head -n 1)" = 'module github.com/mhsanaei/3x-ui/v3'
+          git merge-base --is-ancestor 5297fd3c8495d80fab97ae511553fa545c69e913 HEAD
+          test ! -e internal/web/service/tgminiapp/auth.go
+          test ! -e internal/web/controller/miniapp.go
+      - name: Verify phase-12 ZIP and immutable file manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 vela-development/integration/phase13_gate.py verify-archive \
+            vela-development/archive/vela-phase12-dev-preview.zip \
+            "${RUNNER_TEMP}/vela-phase12-verified"
+      - name: Dry run and apply to exact baseline in scratch checkout
+        shell: bash
+        run: |
+          set -euo pipefail
+          git worktree add --detach "${RUNNER_TEMP}/vela-phase13-scratch" 5297fd3c8495d80fab97ae511553fa545c69e913
+          git -C "${RUNNER_TEMP}/vela-phase13-scratch" switch -c vela-phase13-scratch
+          python3 "${RUNNER_TEMP}/vela-phase12-verified/apply_to_repo.py" "${RUNNER_TEMP}/vela-phase13-scratch" --check
+          test -z "$(git -C "${RUNNER_TEMP}/vela-phase13-scratch" status --porcelain)"
+          python3 "${RUNNER_TEMP}/vela-phase12-verified/apply_to_repo.py" "${RUNNER_TEMP}/vela-phase13-scratch"
+          git -C "${RUNNER_TEMP}/vela-phase13-scratch" add -A
+          (
+            cd "${RUNNER_TEMP}/vela-phase13-scratch"
+            python3 "${GITHUB_WORKSPACE}/vela-development/integration/phase13_gate.py" audit-index
+          )
+      - name: Execute isolated security tests without repository write token
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "${RUNNER_TEMP}/vela-phase13-scratch"
+          GO111MODULE=off go test -race ./internal/web/service/tgminiapp
+          GO111MODULE=off go vet ./internal/web/service/tgminiapp
+          bash -n deploy/vela/vela
+          python3 -m py_compile deploy/vela/*.py "${RUNNER_TEMP}/vela-phase12-verified/apply_to_repo.py"
+      - name: Construct candidate integration commit without network credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          git -C "${RUNNER_TEMP}/vela-phase13-scratch" config user.name "Vela integration gate"
+          git -C "${RUNNER_TEMP}/vela-phase13-scratch" config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git -C "${RUNNER_TEMP}/vela-phase13-scratch" commit -m 'feat(vela): integrate phase-12 preview sources on audited base'
+          candidate_sha="$(git -C "${RUNNER_TEMP}/vela-phase13-scratch" rev-parse HEAD)"
+          git -c user.name="Vela integration gate" -c user.email="41898282+github-actions[bot]@users.noreply.github.com" cherry-pick --no-commit "$candidate_sha"
+          python3 vela-development/integration/phase13_gate.py audit-index
+          git diff --cached --check
+          echo "Candidate source changes:"
+          git diff --cached --stat
+      - name: Scan candidate content and history before any public push
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 deploy/vela/privacy_audit.py .
+          python3 deploy/vela/git_history_audit.py .
+          echo "Candidate privacy scan completed successfully"
+      - name: Commit validated changes locally and verify only target branch moves
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "Vela integration gate"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "feat(vela): integrate audited phase-12 source into vela-dev"
+          test -z "$(git status --porcelain)"
+          git merge-base --is-ancestor "${GITHUB_SHA}" HEAD
+          git diff --name-only "${GITHUB_SHA}" HEAD | grep -Fx 'internal/web/controller/miniapp.go'
+          git diff --name-only "${GITHUB_SHA}" HEAD | grep -Fx 'internal/web/service/tgminiapp/auth.go'
+      - name: Push solely to vela-dev, without force, after all gates pass
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test "${GITHUB_REPOSITORY}" = smgsp6/3x-ui
+          test "${GITHUB_REF_NAME}" = vela-dev
+          remote_sha="$(git ls-remote origin refs/heads/vela-dev | cut -f 1)"
+          if [ "$remote_sha" != "${GITHUB_SHA}" ]; then
+            echo "Branch moved during audit: aborting without force" >&2
+            exit 1
+          fi
+          credential="$(printf 'x-access-token:%s' "${GH_TOKEN}" | base64 -w0)"
+          git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $credential" \
+              push origin "HEAD:refs/heads/vela-dev"
+          echo "Guarded source integration pushed to vela-dev"
