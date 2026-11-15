@@ -38,6 +38,12 @@ class ELFMarkerInventoryTests(unittest.TestCase):
         self.assertEqual(c["readonly_constants"], 1)
         self.assertEqual(c["paired_header_within_bound"], 1)
 
+    def test_non_file_backed_bss_is_accepted(self):
+        header = b"-----BEGIN " + b"PRIVATE KEY-----"
+        image = bytearray(fake_elf(header))
+        struct.pack_into("<IIQQQQIIQQ", image, 128, 11, 8, 0, 0, len(image), 8192, 0, 0, 1, 0)
+        self.assertEqual(mod.classify(bytes(image))["readonly_constants"], 1)
+
     def test_corrupt_elf_fails_closed(self):
         with self.assertRaises(ValueError):
             mod.classify(b"\x7fELF")

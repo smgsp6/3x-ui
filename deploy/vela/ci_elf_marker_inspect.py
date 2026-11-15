@@ -40,8 +40,13 @@ def sections(data):
     out = []
     for entry in entries:
         nameid, offset, size = entry[0], entry[4], entry[5]
-        if offset + size > len(data) or nameid >= len(names):
+        # SHT_NOBITS (notably .bss) occupies memory but no bytes in the
+        # ELF file. Requiring offset+size <= file length would reject safe Go
+        # binaries whose .bss grows beyond the end of the on-disk image.
+        if nameid >= len(names) or offset > len(data) or (entry[1] != 8 and offset + size > len(data)):
             raise ValueError("invalid ELF section bounds")
+        if entry[1] == 8:
+            continue
         name = names[nameid:names.find(b"\0", nameid) if b"\0" in names[nameid:] else len(names)]
         # An empty or unusual section label must remain a separate unknown class.
         if name == b".rodata":
