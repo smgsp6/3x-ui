@@ -1,0 +1,46 @@
+name: Vela public base-image PEM marker provenance (diagnostic only)
+
+on:
+  push:
+    branches: [vela-dev]
+    paths:
+      - ".github/workflows/vela-image-base-provenance.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compare-base:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout scanner without persisted credentials
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+      - name: Compare official Alpine base marker categories without exposing paths
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker pull alpine:latest
+          set +e
+          docker image save alpine:latest | python3 deploy/vela/image_layer_audit.py --stdin --diagnostic-counts
+          result=$?
+          set -e
+          test "$result" -eq 0 -o "$result" -eq 1
+          echo "Official Alpine marker classification completed, no private files collected."
+      - name: Build only public runtime packages, without Vela application
+        shell: bash
+        run: |
+          set -euo pipefail
+          scratch="$(mktemp -d)"
+          trap 'rm -rf "$scratch"' EXIT
+          printf 'FROM alpine:latest\nRUN apk add --no-cache ca-certificates tzdata fail2ban bash curl openssl\n' > "$scratch/Dockerfile"
+          docker build --pull --no-cache -t vela-base-provenance:local "$scratch"
+          set +e
+          docker image save vela-base-provenance:local | python3 deploy/vela/image_layer_audit.py --stdin --diagnostic-counts
+          result=$?
+          set -e
+          test "$result" -eq 0 -o "$result" -eq 1
+          echo "Public package marker classification completed; no image publication."
