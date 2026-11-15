@@ -139,7 +139,9 @@ def main():
 
     # In Mini App mode the original password login route must never be an
     # alternative to the Telegram-signed, allowlisted identity.
-    status, _, _ = http("/login", method="POST", payload={}, csrf=refreshed_csrf)
+    current_csrf = csrf_token()
+    require(current_csrf != refreshed_csrf, "second privileged login did not rotate CSRF")
+    status, _, _ = http("/login", method="POST", payload={}, csrf=current_csrf)
     require(status == 404, "legacy password login was not disabled in Mini App mode")
     print("09/10 legacy password login endpoint was disabled")
 
