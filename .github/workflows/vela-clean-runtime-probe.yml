@@ -1,0 +1,51 @@
+name: Vela Docker runtime test-fixture removal (diagnostic only)
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [vela-dev]
+    paths:
+      - "deploy/vela/ci_prepare_dockerfile.py"
+      - "tests/test_vela_dockerfile_isolation.py"
+      - ".github/workflows/vela-clean-runtime-probe.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Check source baseline and executable fixture cleanup contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 vela-development/integration/baseline_privacy_gate.py
+          python3 -m unittest discover -s tests -p test_vela_dockerfile_isolation.py -v
+      - name: Create experimental Dockerfile outside upstream source tree
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 deploy/vela/ci_prepare_dockerfile.py Dockerfile "$RUNNER_TEMP/VelaDockerfile"
+          test ! -n "$(git status --porcelain)"
+      - name: Build Vela candidate without publishing any image
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker build --pull --no-cache -f "$RUNNER_TEMP/VelaDockerfile" -t vela-clean-runtime-probe:local .
+      - name: Verify Fail2ban is still present and callable
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm --network none --entrypoint fail2ban-client vela-clean-runtime-probe:local --version
+      - name: Scan candidate image with strict privacy gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker image save vela-clean-runtime-probe:local | python3 deploy/vela/image_layer_audit.py --stdin --diagnostic-counts
+          echo "Strict scanner passed; candidate remains unpublished."
