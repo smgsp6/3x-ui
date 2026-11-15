@@ -114,6 +114,13 @@ func TestMiniAppRevocationCannotResurrectOldCookies(t *testing.T) {
 		}
 		c.Status(http.StatusNoContent)
 	})
+	router.GET("/logout", func(c *gin.Context) {
+		if err := ClearSession(c); err != nil {
+			c.Status(http.StatusInternalServerError)
+			return
+		}
+		c.Status(http.StatusNoContent)
+	})
 	request := func(path string, sessionCookie *http.Cookie) (*httptest.ResponseRecorder, *http.Cookie) {
 		t.Helper()
 		req := httptest.NewRequest(http.MethodGet, path, nil)
@@ -166,4 +173,15 @@ func TestMiniAppRevocationCannotResurrectOldCookies(t *testing.T) {
 	}
 	allowed, _ := request("/protected", rotatedCookie)
 	checkStatus(http.StatusNoContent, allowed)
+
+	// Original signed cookie must not regain its privilege after session
+	// rotation, even if it was captured before the new cookie was delivered.
+	preRotationReplay, _ := request("/protected", freshCookie)
+	checkStatus(http.StatusUnauthorized, preRotationReplay)
+	loggedOut, _ := request("/logout", rotatedCookie)
+	checkStatus(http.StatusNoContent, loggedOut)
+	// Replay the exact original signed cookie, not the browser's deletion
+	// cookie. A signed client-side store alone cannot enforce this.
+	stolenCookieReplay, _ := request("/protected", rotatedCookie)
+	checkStatus(http.StatusUnauthorized, stolenCookieReplay)
 }

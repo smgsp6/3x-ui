@@ -12,6 +12,7 @@ on:
       - "tests/test_vela_mtg_release_pin.py"
       - "internal/web/controller/miniapp.go"
       - "internal/web/session/session.go"
+      - "internal/web/session/miniapp_sessions.go"
       - "internal/web/session/session_test.go"
       - "internal/web/service/tgminiapp/auth.go"
       - ".github/workflows/vela-miniapp-https-auth.yml"
