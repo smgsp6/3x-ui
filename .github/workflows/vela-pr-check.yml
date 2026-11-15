@@ -126,6 +126,11 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
+      - name: Verify root patch script against SHA-verified phase-12 archive
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "385cddc8631461e2bce5d67317dae405679c9a5d8a75f20e6a84fedeedbb4a37  apply_to_repo.py" | sha256sum -c -
       - name: Unit tests including Docker simulation and build order
         run: python3 -m unittest discover -s tests -p 'test_*.py' -v
       - name: Shell syntax
