@@ -1,4 +1,4 @@
-import { fireEvent, screen, within } from '@testing-library/react';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { MemoryRouter, useLocation } from 'react-router';
 import { afterEach, expect, test } from 'vitest';
 
@@ -41,14 +41,16 @@ test('Telegram navigation uses actual panel routes', () => {
   expect(screen.getByTestId('current-route').textContent).toBe('/certificates');
 });
 
-test('advanced Xray functions remain in the More drawer', () => {
+test('advanced Xray functions remain in the More drawer', async () => {
   window.X_UI_TG_MINIAPP_MODE = true;
   renderNav();
   const nav = screen.getByRole('navigation', { name: 'Vela 小程序主导航' });
   fireEvent.click(within(nav).getByRole('button', { name: '更多' }));
   const advanced = PANEL_ROUTES.filter((r) => !['/', '/nodes', '/clients', '/certificates'].includes(r.path));
+  await waitFor(() => {
+    expect(document.querySelectorAll('.vela-more-entry')).toHaveLength(advanced.length);
+  });
   const entries = document.querySelectorAll<HTMLButtonElement>('.vela-more-entry');
-  expect(entries.length).toBe(advanced.length);
   const inboundIndex = advanced.findIndex((r) => r.path === '/inbounds');
   expect(inboundIndex).toBeGreaterThanOrEqual(0);
   expect(advanced.some((r) => r.path === '/routing')).toBe(true);
