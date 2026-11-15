@@ -1143,7 +1143,7 @@ func (t *Tgbot) answerCallback(callbackQuery *telego.CallbackQuery, isAdmin bool
 	case "add_client_cancel":
 		userStateMgr.clear(actor)
 		addClientDrafts.reset(actor)
-		t.renderScreen(chatId, t.newScreen("main", t.I18nBot("tgbot.messages.cancel"), t.homeRows()...))
+		t.renderScreen(chatId, t.newScreen("main", t.I18nBot("tgbot.messages.cancel"), t.homeRows(chatId)...))
 	case "add_client_default_traffic_exp", "add_client_default_ip_limit":
 		// The picker was cancelled: the draft comes back unchanged.
 		t.addClient(chatId, draft, t.BuildClientDraftMessage(draft), callbackQuery.Message.GetMessageID())
@@ -1178,7 +1178,7 @@ func (t *Tgbot) answerCallback(callbackQuery *telego.CallbackQuery, isAdmin bool
 		t.searchClientScreen(chatId, email)
 		t.sendCallbackAnswerTgBot(callbackQuery.ID, t.I18nBot("tgbot.answers.successfulOperation"))
 	case "reset_all_traffics_cancel":
-		t.renderScreen(chatId, t.newScreen("main", t.I18nBot("tgbot.messages.cancel"), t.homeRows()...))
+		t.renderScreen(chatId, t.newScreen("main", t.I18nBot("tgbot.messages.cancel"), t.homeRows(chatId)...))
 	case "reset_all_traffics_c":
 		emails, err := t.inboundService.GetAllEmails()
 		if err != nil {
