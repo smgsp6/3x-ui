@@ -279,6 +279,9 @@ os.execv('/usr/bin/tar', ['/usr/bin/tar', *sys.argv[1:]])
         """Use an actual SQLite database, never an uploaded customer snapshot."""
         import sqlite3
         db = self.root / 'db' / 'x-ui.db'
+        # The existing offline CLI fixture contains placeholder text, not SQLite.
+        # Replace only this temporary test fixture with a real database.
+        db.unlink()
         with sqlite3.connect(db) as connection:
             connection.execute('CREATE TABLE vela_ci_only (id INTEGER PRIMARY KEY, value TEXT NOT NULL)')
             connection.executemany(
