@@ -61,7 +61,12 @@ class BuildGateContractTests(unittest.TestCase):
 
     def test_docker_build_has_no_push_and_runs_after_go(self):
         w = self.workflow
-        self.assertIn('docker build --pull --no-cache --tag vela-integration-ci:local .', w)
+        generated = 'python3 deploy/vela/ci_prepare_dockerfile.py Dockerfile "${RUNNER_TEMP}/VelaCiDockerfile"'
+        build = 'docker build --pull --no-cache -f "${RUNNER_TEMP}/VelaCiDockerfile" --tag vela-integration-ci:local .'
+        self.assertIn(generated, w)
+        self.assertIn(build, w)
+        self.assertLess(w.index(generated), w.index(build))
+        self.assertNotIn('docker build --pull --no-cache --tag vela-integration-ci:local .', w)
         self.assertIn('docker image inspect vela-integration-ci:local', w)
         self.assertIn('docker image save vela-integration-ci:local | python3 deploy/vela/image_layer_audit.py --stdin', w)
         self.assertIn('name: Clean Docker image build (no push)', w)
