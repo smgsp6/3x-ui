@@ -40,9 +40,18 @@ class ComposeContractTests(unittest.TestCase):
             token.write_text("12345:synthetic_only_fixture", encoding="ascii")
             token.chmod(0o600)
             image = "ghcr.io/smgsp6/3x-ui@sha256:" + "a" * 64
-            (home / "image.ref").write_text(image + "\n", encoding="ascii")
-            (home / "release.sequence").write_text("0\n", encoding="ascii")
+            image_ref = home / "image.ref"
+            image_ref.write_text(image + "\n", encoding="ascii")
+            image_ref.chmod(0o600)
+            release_floor = home / "release.sequence"
+            release_floor.write_text("0\n", encoding="ascii")
+            release_floor.chmod(0o600)
 
+            # Never relax the real preflight's sensitive-file permissions to
+            # satisfy synthetic CI fixtures; create reviewed test files with
+            # the same owner-only permissions expected on a private host.
+            self.assertEqual(image_ref.stat().st_mode & 0o777, 0o600)
+            self.assertEqual(release_floor.stat().st_mode & 0o777, 0o600)
             # Preflight and Compose must agree on the very same candidate.
             gate.validate(home, TEMPLATE)
             env = os.environ.copy()
