@@ -63,7 +63,8 @@ jobs:
           done
           test "$started" -eq 1
           test "$(docker inspect -f '{{.State.Running}}' vela-smoke)" = true
-          echo "Panel booted under Docker network=none, cap-drop=ALL and empty tmpfs state"
+          docker exec vela-smoke sh -c "grep -Eq '(^|[[:space:]])0A([[:space:]]|$)' /proc/net/tcp /proc/net/tcp6"
+          echo "Panel process and isolated TCP listener verified without exposing a port"
       - name: Enforce strict image-layer privacy gate (expected to block until fully cleared)
         shell: bash
         run: |
