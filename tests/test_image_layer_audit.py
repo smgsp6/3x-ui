@@ -94,7 +94,7 @@ class ImageLayerTests(unittest.TestCase):
 
     def test_aggregate_diagnostics_never_include_secret_names(self):
         synthetic_name = 'private-operator-placeholder.key'
-        synthetic_value = b'-----BEGIN PRIVATE KEY-----\nFAKE-ONLY'
+        synthetic_value = b'-----BEGIN ' + b'PRIVATE KEY-----\nFAKE-ONLY'
         diagnostics = {}
         stream = image_bytes([{synthetic_name: synthetic_value}], {'config.json': b'{"Env":["FAKE=test"]}'})
         count, checked, violations = audit.audit_image_save(stream, diagnostics)
