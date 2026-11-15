@@ -63,7 +63,7 @@ class BetaGateTests(unittest.TestCase):
         self.assert_refused('placeholder')
 
     def test_optional_home_override_must_still_match(self):
-        self.put('.env', self.default.replace(f'VELA_HOME={self.home}\\n', ''))
+        self.put('.env', self.default.replace(f'VELA_HOME={self.home}\n', ''))
         gate.validate(self.home, self.template)
         self.put('.env', self.default.replace(str(self.home), '/opt/unreviewed'))
         self.assert_refused('VELA_HOME')
