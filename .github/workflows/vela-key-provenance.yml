@@ -25,7 +25,7 @@ jobs:
           set -euo pipefail
           ctx="$(mktemp -d)"
           trap 'rm -rf "$ctx"' EXIT
-          printf 'FROM alpine\nRUN apk add --no-cache --update ca-certificates tzdata fail2ban bash curl openssl\n' > "$ctx/Dockerfile"
+          printf 'FROM alpine\nRUN apk add --no-cache --update ca-certificates tzdata fail2ban bash curl openssl python3\n' > "$ctx/Dockerfile"
           docker build --pull --no-cache -t vela-public-pem-origin:local "$ctx"
       - name: Inspect public package ownership without exposing paths or key bytes
         shell: bash
