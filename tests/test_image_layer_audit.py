@@ -100,7 +100,7 @@ class ImageLayerTests(unittest.TestCase):
         count, checked, violations = audit.audit_image_save(stream, diagnostics)
         self.assertEqual(count, 1)
         self.assertEqual(violations, 2)
-        self.assertEqual(diagnostics, {'private_path': 1, 'layer_content': 1, 'pem_nonelf': 1, 'pem_header_no_footer_within_bound': 1, 'source_other_content': 1})
+        self.assertEqual(diagnostics, {'private_path': 1, 'layer_content': 1, 'pem_nonelf': 1, 'pem_header_no_footer_within_bound': 1, 'source_other_content': 1, 'source_other_content_unpaired': 1})
         self.assertNotIn(synthetic_name, str(diagnostics))
         self.assertNotIn('FAKE-ONLY', str(diagnostics))
 
@@ -123,6 +123,7 @@ class ImageLayerTests(unittest.TestCase):
         self.assertEqual(audit.audit_image_save(image, diagnostics)[2], 1)
         self.assertEqual(diagnostics.get('pem_header_with_footer'), 1)
         self.assertEqual(diagnostics.get('source_vela_panel_binary'), 1)
+        self.assertEqual(diagnostics.get('source_vela_panel_binary_paired'), 1)
         self.assertNotIn(synthetic_name, str(diagnostics))
         self.assertNotIn('NOT_REAL_KEY_MATERIAL', str(diagnostics))
 
@@ -135,6 +136,7 @@ class ImageLayerTests(unittest.TestCase):
         self.assertEqual(audit.audit_image_save(image_bytes([{'usr/public-fixture': content}]), diagnostics)[2], 1)
         self.assertEqual(diagnostics.get('pem_header_with_footer'), 1)
         self.assertEqual(diagnostics.get('source_os_content'), 1)
+        self.assertEqual(diagnostics.get('source_os_content_paired'), 1)
 
     def test_empty_or_corrupt_tar_refused(self):
         for content in (b'',b'not tar',tar_bytes({'manifest.json':b'[]'})):

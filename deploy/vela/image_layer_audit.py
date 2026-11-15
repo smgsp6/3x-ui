@@ -114,12 +114,20 @@ def scan_layer_tar(source, diagnostics=None):
                 stream = layer.extractfile(member)
                 if stream is None:
                     raise ValueError('unreadable layer member')
+                footer_before = diagnostics.get('pem_header_with_footer', 0) if diagnostics is not None else 0
+                partial_before = diagnostics.get('pem_header_no_footer_within_bound', 0) if diagnostics is not None else 0
                 if file_has_secret(stream, diagnostics):
                     violations += 1
                     if diagnostics is not None:
                         diagnostics['layer_content'] = diagnostics.get('layer_content', 0) + 1
                         bucket = 'source_' + classify_image_path(member.name)
                         diagnostics[bucket] = diagnostics.get(bucket, 0) + 1
+                        if diagnostics.get('pem_header_with_footer', 0) > footer_before:
+                            key = bucket + '_paired'
+                            diagnostics[key] = diagnostics.get(key, 0) + 1
+                        if diagnostics.get('pem_header_no_footer_within_bound', 0) > partial_before:
+                            key = bucket + '_unpaired'
+                            diagnostics[key] = diagnostics.get(key, 0) + 1
             elif member.issym() or member.islnk():
                 # No link is followed or dereferenced. Runtime link-policy
                 # validation is intentionally separate from this privacy gate.
@@ -248,6 +256,14 @@ def main():
                               for kind in ('source_vela_panel_binary', 'source_xray_binary',
                                            'source_mtg_binary', 'source_os_content',
                                            'source_other_content')),
+                  file=sys.stderr)
+            print('PEM evidence by component (counts only): '
+                  + ', '.join(f'{kind}={diagnostics.get(kind, 0)}' for kind in
+                              ('source_vela_panel_binary_paired', 'source_vela_panel_binary_unpaired',
+                               'source_xray_binary_paired', 'source_xray_binary_unpaired',
+                               'source_mtg_binary_paired', 'source_mtg_binary_unpaired',
+                               'source_os_content_paired', 'source_os_content_unpaired',
+                               'source_other_content_paired', 'source_other_content_unpaired')),
                   file=sys.stderr)
         return 1
     print(f'Vela image audit: PASS ({layers} image layer(s), {checked} file(s) scanned)')
