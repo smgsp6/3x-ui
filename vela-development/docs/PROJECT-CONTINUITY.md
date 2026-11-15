@@ -113,3 +113,14 @@ python3 /path/to/vela-phase12/apply_to_repo.py .
 - ZIP 中的原始 `apply_to_repo.py` 已补充到仓库根目录，以支持旧开发包的回归测试；CI 对它实施第十二阶段固定 SHA256 校验。
 - 已有 GitHub Actions 初步通过了源码隐私基线差异、Git 运行时私密文件检查、前端 TypeScript 类型检查；完整 React 单测、Go 全量测试、Python 离线回归与 Docker 构建要以最新 CI 的实际最终结论为准，不能预先宣称通过。
 - 本阶段没有修改线上服务器、发布 Docker 镜像或生成正式一键安装脚本。签名生产发行密钥尚不存在，`vela update` 仍故意禁止生产升级。
+
+
+## 11. 第十三阶段续开发：整仓编译与浏览器测试（2026-11-15）
+
+- 实际 GitHub Actions 运行 `43686534916` 中，React 1,986/1,986 项断言通过，但浏览器测试因 CI 运行器缺少 Playwright Chromium 返回非零。已在 `.github/workflows/vela-pr-check.yml` 增加锁定依赖环境下的 `npx --no-install playwright install --with-deps chromium`，**仍以新一轮实际浏览器测试最终结论为准**。
+- 独立 Go/React 编译冒烟检查使用 `.github/workflows/vela-build-smoke.yml`，仅有 `contents: read`，不会发布镜像或二进制。第一次执行 `43687146886` 发现 `internal/web/service/tgbot/tgbot_router.go` 两处 `homeRows()` 遗漏传 `chatId`，已在提交 `fec05ec856dd0af836cfbcde158c7791d6c01ee0` 中修正。
+- 第二次编译运行 `43687514622` 发现上游既有 Go 测试调用 `homeRows()`，而 Vela 新签名要求参数。为避免批量修改上游测试和其他旧调用，提交 `dfd312a57f80d3cf2a9c31bb93f49e856f4f7bc6` 将签名改为兼容的可选 `chatID`：**省略参数时不会展示 Vela WebApp 按钮**，有明确数字用户 ID 时仍需满足 `tgminiapp.AllowedUserID` 校验。
+- 一次性写权限源码集成流水线已在提交 `4b8e62b6aa69b980899945885826ce64c32b6c40` 中删除，自动构建工作流保持只读权限。
+- 当前重跑检查：Go/React 只读冒烟工作流 `43687931803`；完整安全与构建检查 `43687931783`。截至更新本节时，隐私门禁和 76 项 Python 模拟/离线回归通过，Go 整仓编译与浏览器测试仍在运行。**不应将未完成的 CI 当作通过**。
+- 按用户新指示：不做任何额外的语言精简或默认语言改动；原版 14 种语言和上游兼容性必须保留。
+- 生产安装、真实 Telegram 登录、多节点、真实 Docker 部署、证书签发与回滚尚未验收，仍禁止正式安装发布。
