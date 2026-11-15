@@ -90,11 +90,11 @@ def main():
         time.sleep(1)
     else:
         raise AssertionError("real HTTPS Mini App health did not become ready")
-    print("01/20 isolated HTTPS health 204 and local TLS certificate verified")
+    print("01/24 isolated HTTPS health 204 and local TLS certificate verified")
 
     status, _, _ = http("/panel/api/openapi.json")
     require(status == 401, "unauthenticated panel API must reject requests")
-    print("02/20 anonymous admin API rejected")
+    print("02/24 anonymous admin API rejected")
 
     original_csrf = csrf_token()
     require(any(c.secure for c in jar), "Mini App cookie must have Secure flag")
@@ -102,12 +102,12 @@ def main():
             "Mini App session cookie must be HttpOnly")
     status, _, _ = login(good)
     require(status == 403, "missing CSRF token must block signed Mini App auth")
-    print("03/20 secure browser cookie and login CSRF enforced")
+    print("03/24 secure browser cookie and login CSRF enforced")
 
     tampered = good.replace("Synthetic", "Impersonator", 1)
     status, _, _ = login(tampered, original_csrf)
     require(status == 401, "changed Telegram initData must fail HMAC")
-    print("04/20 altered Telegram signature rejected")
+    print("04/24 altered Telegram signature rejected")
 
     other = signed_init_data(token, 1002, now)
     status, _, _ = login(other, original_csrf)
@@ -115,14 +115,14 @@ def main():
     stale = signed_init_data(token, ADMIN_ID, now - 900)
     status, _, _ = login(stale, original_csrf)
     require(status == 401, "replayed expired Telegram initData accepted")
-    print("05/20 unauthorized ID and expired signature rejected")
+    print("05/24 unauthorized ID and expired signature rejected")
 
     status, body, _ = login(good, original_csrf)
     require(status == 200 and json.loads(body).get("success") is True,
             "signed allowlisted Telegram admin failed to login")
     status, _, _ = http("/panel/api/openapi.json")
     require(status == 200, "authenticated Mini App admin cannot access API")
-    print("06/20 signed admin logged in and accessed real guarded panel API")
+    print("06/24 signed admin logged in and accessed real guarded panel API")
 
     refreshed_csrf = csrf_token()
     require(refreshed_csrf != original_csrf, "privilege change retained old CSRF")
@@ -131,11 +131,11 @@ def main():
     status, body, _ = login(good, refreshed_csrf)
     require(status == 200 and json.loads(body).get("success") is True,
             "fresh CSRF after login did not work")
-    print("07/20 CSRF rotates on session privilege change")
+    print("07/24 CSRF rotates on session privilege change")
 
     status, _, _ = http("/panel/api/openapi.json")
     require(status == 200, "post-login API access unexpectedly lost")
-    print("08/20 HTTPS session remained functional")
+    print("08/24 HTTPS session remained functional")
 
     # Real management routes, synthetic data, disposable Docker only. The
     # inbound is disabled throughout to avoid opening a real proxy listener.
@@ -149,7 +149,7 @@ def main():
     for route in ("/panel/api/server/status", "/panel/api/inbounds/list",
                   "/panel/api/clients/list", "/panel/api/certificates/status"):
         api_obj(route)
-    print("09/20 signed session reached real server, inbound, client and certificate APIs")
+    print("09/24 signed session reached real server, inbound, client and certificate APIs")
 
     fixture = {
         "remark": "CI disposable disabled HTTP inbound",
@@ -161,7 +161,7 @@ def main():
     }
     status, _, _ = http("/panel/api/inbounds/add", method="POST", payload=fixture)
     require(status == 403, "Xray mutation without CSRF should be refused")
-    print("10/20 signed admin cannot mutate an Xray inbound without CSRF")
+    print("10/24 signed admin cannot mutate an Xray inbound without CSRF")
 
     crud_csrf = csrf_token()
     created = api_obj("/panel/api/inbounds/add", "POST", fixture, crud_csrf)
@@ -173,7 +173,7 @@ def main():
     require(isinstance(listed, list) and
             any(row.get("id") == inbound_id and row.get("enable") is False for row in listed),
             "new disabled inbound was missing from list API")
-    print("11/20 signed admin created and listed a disabled synthetic Xray inbound")
+    print("11/24 signed admin created and listed a disabled synthetic Xray inbound")
 
     detail = api_obj(f"/panel/api/inbounds/get/{inbound_id}")
     require(isinstance(detail, dict) and detail.get("id") == inbound_id,
@@ -186,14 +186,14 @@ def main():
     persisted = api_obj(f"/panel/api/inbounds/get/{inbound_id}")
     require(persisted.get("remark") == edited["remark"] and
             persisted.get("enable") is False, "updated disabled inbound not persisted")
-    print("12/20 signed admin read and updated disabled synthetic inbound")
+    print("12/24 signed admin read and updated disabled synthetic inbound")
 
     deleted = api_obj(f"/panel/api/inbounds/del/{inbound_id}", "POST", {}, crud_csrf)
     require(deleted == inbound_id, "real inbound deletion returned incorrect ID")
     listed = api_obj("/panel/api/inbounds/list")
     require(not any(row.get("id") == inbound_id for row in (listed or [])),
             "deleted synthetic inbound remained in database")
-    print("13/20 signed admin deleted the synthetic inbound and verified removal")
+    print("13/24 signed admin deleted the synthetic inbound and verified removal")
 
     # A second disabled inbound exercises the VLESS client lifecycle and the
     # original client API without opening TCP or UDP proxy traffic.
@@ -216,7 +216,7 @@ def main():
         probe.settimeout(1)
         require(probe.connect_ex(("127.0.0.1", 28342)) != 0,
                 "disabled VLESS inbound opened a proxy TCP listener")
-    print("14/20 disabled synthetic VLESS inbound did not open a TCP listener")
+    print("14/24 disabled synthetic VLESS inbound did not open a TCP listener")
 
     email = "vela-ci-client@synthetic.invalid"
     api_obj("/panel/api/clients/add", "POST",
@@ -236,7 +236,7 @@ def main():
     client_uuid = client_detail["client"].get("uuid")
     require(isinstance(client_uuid, str) and len(client_uuid) >= 32,
             "VLESS client did not receive a valid synthetic identifier")
-    print("15/20 signed admin created and listed a disabled synthetic VLESS client")
+    print("15/24 signed admin created and listed a disabled synthetic VLESS client")
 
     api_obj("/panel/api/clients/update/" + encoded_email, "POST",
             {"comment": "updated synthetic fixture"}, crud_csrf)
@@ -244,7 +244,45 @@ def main():
     require(client_detail.get("client", {}).get("comment") == "updated synthetic fixture"
             and client_detail.get("client", {}).get("uuid") == client_uuid,
             "partial client update failed or rotated credentials unexpectedly")
-    print("16/20 partial VLESS client update preserved its generated identifier")
+    print("16/24 partial VLESS client update preserved its generated identifier")
+
+    # Exercise the original traffic API with a disabled synthetic VLESS client.
+    # No Xray network traffic is generated: these are isolated SQLite counters.
+    traffic = api_obj("/panel/api/clients/traffic/" + encoded_email)
+    require(isinstance(traffic, dict) and traffic.get("email") == email
+            and traffic.get("up") == 0 and traffic.get("down") == 0,
+            "new disabled VLESS client did not have zeroed traffic counters")
+    print("17/24 read zeroed traffic counters for the synthetic VLESS client")
+
+    status, _, _ = http("/panel/api/clients/updateTraffic/" + encoded_email,
+                        method="POST", payload={"upload": 4096, "download": 8192})
+    require(status == 403, "traffic mutation without CSRF must fail")
+    api_obj("/panel/api/clients/updateTraffic/" + encoded_email, "POST",
+            {"upload": 4096, "download": 8192}, crud_csrf)
+    traffic = api_obj("/panel/api/clients/traffic/" + encoded_email)
+    require(traffic.get("up") == 4096 and traffic.get("down") == 8192,
+            "traffic counter updates were not persisted")
+    print("18/24 CSRF protected traffic update persisted exact synthetic byte totals")
+
+    # Read both upstream link-generation routes. A disabled inbound may
+    # intentionally produce no connectable links; neither response body nor
+    # synthetic subscription identifier is ever logged to Actions output.
+    sub_id = client_detail["client"].get("subId")
+    require(isinstance(sub_id, str) and len(sub_id) > 0,
+            "synthetic client missing subscription identifier")
+    api_obj("/panel/api/clients/subLinks/" + parse.quote(sub_id, safe=""))
+    api_obj("/panel/api/clients/links/" + encoded_email)
+    print("19/24 signed session accessed original subscription and client link APIs")
+
+    api_obj("/panel/api/clients/resetTraffic/" + encoded_email, "POST",
+            {}, crud_csrf)
+    traffic = api_obj("/panel/api/clients/traffic/" + encoded_email)
+    require(traffic.get("up") == 0 and traffic.get("down") == 0,
+            "traffic reset failed to clear synthetic client counters")
+    post_reset = api_obj("/panel/api/clients/get?email=" + encoded_email)
+    require(post_reset.get("client", {}).get("enable") is False,
+            "reset unexpectedly enabled the synthetic client")
+    print("20/24 traffic reset cleared counters without enabling the synthetic client")
 
     api_obj("/panel/api/clients/del/" + encoded_email, "POST", {}, crud_csrf)
     clients = api_obj("/panel/api/clients/list")
@@ -254,7 +292,7 @@ def main():
     listed = api_obj("/panel/api/inbounds/list")
     require(not any(row.get("id") == vless_id for row in (listed or [])),
             "synthetic VLESS inbound remained after cleanup")
-    print("17/20 signed admin deleted synthetic client and VLESS inbound")
+    print("21/24 signed admin deleted synthetic client and VLESS inbound")
 
     # In Mini App mode the original password login route must never be an
     # alternative to the Telegram-signed, allowlisted identity.
@@ -262,7 +300,7 @@ def main():
     require(current_csrf != refreshed_csrf, "second privileged login did not rotate CSRF")
     status, _, _ = http("/login", method="POST", payload={}, csrf=current_csrf)
     require(status == 404, "legacy password login was not disabled in Mini App mode")
-    print("18/20 legacy password login endpoint was disabled")
+    print("22/24 legacy password login endpoint was disabled")
 
     # The signed admin session must cease to authorize API calls immediately
     # after logout, rather than lingering in a browser cookie.
@@ -281,7 +319,7 @@ def main():
                   "/panel/api/server/status", "/panel/api/certificates/status"):
         status, _, _ = http(route)
         require(status == 401, "logout left a sensitive management API accessible")
-    print("19/20 logout removed session and protected all management APIs")
+    print("23/24 logout removed session and protected all management APIs")
 
     replay_request = request.Request(
         BASE + "/panel/api/inbounds/list",
@@ -297,7 +335,7 @@ def main():
         r.read(512)
     require(replay_status == 401,
             "copied pre-logout signed Mini App cookie retained admin access")
-    print("20/20 replay of a copied signed cookie after logout rejected; HTTPS smoke PASS")
+    print("24/24 replay of a copied signed cookie after logout rejected; HTTPS smoke PASS")
 
 if __name__ == "__main__":
     try:
