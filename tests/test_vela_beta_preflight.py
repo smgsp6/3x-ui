@@ -46,6 +46,18 @@ class BetaGateTests(unittest.TestCase):
     def test_valid_isolated_layout(self):
         gate.validate(self.home, self.template)
 
+    def test_symlink_in_parent_path_refused(self):
+        alias = Path(self.tmp.name) / 'parent-alias'
+        alias.symlink_to(Path(self.tmp.name), target_is_directory=True)
+        # The leaf directory is real, but an earlier component is a symlink.
+        with self.assertRaisesRegex(gate.PreflightFailure, 'symlinked'):
+            gate.validate(alias / 'vela', self.template)
+
+    def test_parent_traversal_path_refused(self):
+        spelled = self.home.parent / 'placeholder' / '..' / 'vela'
+        with self.assertRaisesRegex(gate.PreflightFailure, 'traversal'):
+            gate.validate(spelled, self.template)
+
     def test_runtime_example_style_does_not_require_duplicate_home(self):
         # The CLI already exports VELA_HOME for Compose. Copying the sample
         # env into an isolated synthetic directory must not require an extra

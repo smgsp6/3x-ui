@@ -7,6 +7,8 @@ on:
     paths:
       - "deploy/vela/vela"
       - "deploy/vela/beta_preflight.py"
+      - "deploy/vela/compose.host.yml"
+      - "tests/test_vela_compose_contract.py"
       - "tests/test_vela_beta_preflight.py"
       - "tests/test_maintenance_cli.py"
       - ".github/workflows/vela-recovery-contract.yml"
@@ -34,6 +36,12 @@ jobs:
         run: bash -n deploy/vela/vela
       - name: Test read-only personal-beta installation preflight (synthetic only)
         run: python3 -m unittest discover -s tests -p test_vela_beta_preflight.py -v
+      - name: Verify real Docker Compose V2 expansion with synthetic beta inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker compose version >/dev/null
+          python3 -m unittest discover -s tests -p test_vela_compose_contract.py -v
       - name: Exercise signed-manifest, recovery journal and REAL SQLite rollback tests
         run: python3 -m unittest discover -s tests -p test_maintenance_cli.py -v
       - name: Enforce temporary-data-only recovery scope

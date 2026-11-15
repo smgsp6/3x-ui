@@ -111,6 +111,19 @@ def validate_url(value: str) -> None:
 def validate(home: Path, template: Path | None = None) -> None:
     if not home.is_absolute():
         raise PreflightFailure("VELA_HOME must be absolute")
+    # Checking only home.lstat() is insufficient: /safe/link/vela may be a
+    # real directory accessed through a symlinked parent. The CLI resolves
+    # VELA_HOME before operating; never let this preflight approve a
+    # different path or parent traversal spelling.
+    if ".." in home.parts:
+        raise PreflightFailure("VELA_HOME parent traversal is forbidden")
+    for ancestor in (home, *home.parents):
+        try:
+            mode = ancestor.lstat().st_mode
+        except OSError:
+            raise PreflightFailure("VELA_HOME path component is unavailable") from None
+        if stat.S_ISLNK(mode):
+            raise PreflightFailure("VELA_HOME contains a symlinked path component")
     verify_path(home, "home", private=True)
     env = parse_env(home / ".env")
     # The maintenance CLI passes VELA_HOME as a process environment variable.
