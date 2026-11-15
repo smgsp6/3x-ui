@@ -48,6 +48,12 @@ for root in ROOTS:
                             input=candidate, capture_output=True, timeout=5, check=False)
                         classification = "parseable" if parsed.returncode == 0 else "unparseable"
                     COUNTS[(owner, classification)] += 1
+                    if owner.startswith("fail2ban-pyc-"):
+                        safe_parts = [part.lower() for part in path.parts]
+                        family = ("test_fixture" if any(part in ("test", "tests", "testing") for part in safe_parts)
+                                  else "non_test_module")
+                        suffix = "bytecode" if path.suffix == ".pyc" else "other_file"
+                        COUNTS[(owner, family + "_" + suffix)] += 1
                 if sum(COUNTS.values()) > 32:
                     raise RuntimeError("unexpected number of PEM markers")
             except (OSError, ValueError, subprocess.TimeoutExpired) as exc:
