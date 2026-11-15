@@ -63,7 +63,18 @@ jobs:
           done
           test "$started" -eq 1
           test "$(docker inspect -f '{{.State.Running}}' vela-smoke)" = true
-          docker exec vela-smoke sh -c "grep -Eq '(^|[[:space:]])0A([[:space:]]|$)' /proc/net/tcp /proc/net/tcp6"
+          listener=0
+          for i in $(seq 1 25); do
+            if docker exec vela-smoke sh -c "grep -Eq '(^|[[:space:]])0A([[:space:]]|$)' /proc/net/tcp /proc/net/tcp6"; then
+              listener=1
+              break
+            fi
+            sleep 1
+          done
+          if [ "$listener" -ne 1 ]; then
+            echo "Panel process started, but no isolated TCP listener appeared (contents suppressed)" >&2
+            exit 1
+          fi
           echo "Panel process and isolated TCP listener verified without exposing a port"
       - name: Enforce strict image-layer privacy gate (expected to block until fully cleared)
         shell: bash
