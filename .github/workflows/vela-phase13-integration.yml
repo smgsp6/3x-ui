@@ -44,6 +44,13 @@ jobs:
           find "${RUNNER_TEMP}/vela-phase12-verified" -type f | wc -l
           echo "Archive root entries:"
           find "${RUNNER_TEMP}/vela-phase12-verified" -mindepth 1 -maxdepth 1 -printf '%f\n' | sort
+      - name: Emit verified CI template for reviewed connector-only upload
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "__VELA_CI_TEMPLATE_START__"
+          cat "${RUNNER_TEMP}/vela-phase12-verified/.github/workflows/vela-pr-check.yml"
+          echo "__VELA_CI_TEMPLATE_END__"
       - name: Review application script structure without executing it
         shell: bash
         run: |
