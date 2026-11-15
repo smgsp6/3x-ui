@@ -518,6 +518,14 @@ func (s *Server) memoryAlarmWanted() bool {
 	return false
 }
 
+// In explicit Telegram Mini App mode, the bot is the only permitted login
+// launch surface. A fresh SQLite install need not have the legacy Telegram
+// notification checkbox enabled. Keep the upstream checkbox semantics when
+// Mini App mode is off; errors in legacy preferences fail closed there.
+func shouldStartTelegramBot(legacyEnabled bool, legacyErr error) bool {
+	return tgminiapp.Enabled() || (legacyErr == nil && legacyEnabled)
+}
+
 // Start initializes and starts the web server with configured settings, routes, and background jobs.
 func (s *Server) Start() (err error) {
 	return s.start(true, true)
@@ -753,7 +761,7 @@ if tgminiapp.Enabled() {
 
 	controller.SetReloadTgbotFunc(func() {
 		enabled, err := s.settingService.GetTgbotEnabled()
-		if err != nil || !enabled {
+		if !shouldStartTelegramBot(enabled, err) {
 			if s.tgbotService.IsRunning() {
 				s.tgbotService.Stop()
 			}
@@ -776,12 +784,15 @@ if tgminiapp.Enabled() {
 	s.startTask(restartXray, loc)
 
 	if startTgBot {
-		isTgbotenabled, err := s.settingService.GetTgbotEnabled()
-		if (err == nil) && isTgbotenabled {
+		isTgbotEnabled, err := s.settingService.GetTgbotEnabled()
+		if shouldStartTelegramBot(isTgbotEnabled, err) {
 			tgBot := s.tgbotService.NewTgbot()
-			_ = tgBot.Start(i18nFS)
-			// Subscribe Telegram notifications for event bus
-			s.bus.Subscribe("tg-notifier", s.tgbotService.HandleEvent)
+			if startErr := tgBot.Start(i18nFS); startErr != nil {
+				// Never log a Bot Token, Telegram ID or remote API response.
+				logger.Warning("Telegram bot receiver could not start")
+			} else if s.bus != nil {
+				s.bus.Subscribe("tg-notifier", s.tgbotService.HandleEvent)
+			}
 		}
 	}
 
