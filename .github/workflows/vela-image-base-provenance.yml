@@ -4,6 +4,8 @@ on:
   push:
     branches: [vela-dev]
     paths:
+      - "deploy/vela/image_layer_audit.py"
+      - "tests/test_image_layer_audit.py"
       - ".github/workflows/vela-image-base-provenance.yml"
   workflow_dispatch:
 
