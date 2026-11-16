@@ -740,6 +740,10 @@ func stopBotLocked() {
 	handler := botHandler
 	botHandler = nil
 	isRunning = false
+	// Stop invalidates all prior Telegram administrators immediately.
+	// A subsequent failed Start must never keep an old allowlist alive.
+	adminIds = nil
+	adminTopics = nil
 	// Keep the receiver state and connection removal atomic. Otherwise a
 	// delayed OnReceive goroutine can start between these two operations,
 	// after StopBot has already captured the old cancellation function.
