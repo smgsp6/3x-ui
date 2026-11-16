@@ -126,8 +126,10 @@ func (t *Tgbot) OnReceive() {
 			return
 		}
 		tgBotMutex.Lock()
-		// StopBot may cancel before a delayed handler reaches this lock.
-		if ctx.Err() != nil {
+		// StopBot clears the current connection before cancelling the
+		// receiver context. Checking the connection as well closes that
+		// window: a stale handler can never publish itself after shutdown.
+		if ctx.Err() != nil || liveBot() != pollBot {
 			tgBotMutex.Unlock()
 			return
 		}
@@ -279,7 +281,9 @@ func (t *Tgbot) OnReceive() {
 			return nil
 		}, th.AnyMessage())
 
-		_ = h.Start()
+		if err := h.Start(); err != nil && ctx.Err() == nil {
+			logger.Warning("Telegram receiver exited unexpectedly:", safeTelegramLogError(err))
+		}
 	}()
 }
 
