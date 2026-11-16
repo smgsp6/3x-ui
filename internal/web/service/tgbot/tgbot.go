@@ -66,6 +66,7 @@ var (
 
 	// Performance improvements
 	messageWorkerPool chan struct{} // Semaphore for limiting concurrent message processing
+	messageWorkerPoolMu sync.RWMutex
 
 	// Simple cache for frequently accessed data
 	statusCache struct {
@@ -324,6 +325,20 @@ func (t *Tgbot) I18nBot(name string, params ...string) string {
 }
 
 // GetHashStorage returns the hash storage instance for callback queries.
+// A worker's token is returned to the same pool generation that lent it,
+// even if a Telegram receiver restarts before the callback completes.
+func currentBotWorkerPool() chan struct{} {
+	messageWorkerPoolMu.RLock()
+	defer messageWorkerPoolMu.RUnlock()
+	return messageWorkerPool
+}
+
+func setBotWorkerPool(pool chan struct{}) {
+	messageWorkerPoolMu.Lock()
+	messageWorkerPool = pool
+	messageWorkerPoolMu.Unlock()
+}
+
 func (t *Tgbot) GetHashStorage() *global.HashStorage {
 	return currentHashStorage()
 }
@@ -400,7 +415,7 @@ func (t *Tgbot) Start(i18nFS embed.FS) error {
 	setHashStorage(global.NewHashStorage(20 * time.Minute))
 
 	// Initialize worker pool for concurrent message processing (max 10 concurrent handlers)
-	messageWorkerPool = make(chan struct{}, 10)
+	setBotWorkerPool(make(chan struct{}, 10))
 
 	t.SetHostname()
 

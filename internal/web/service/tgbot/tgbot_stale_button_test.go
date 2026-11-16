@@ -51,17 +51,17 @@ func setTestBot(b *telego.Bot) {
 func swapTestBot(t *testing.T, url string) {
 	t.Helper()
 	origBot := liveBot()
-	origPool := messageWorkerPool
+	origPool := currentBotWorkerPool()
 	t.Cleanup(func() {
 		setTestBot(origBot)
-		messageWorkerPool = origPool
+		setBotWorkerPool(origPool)
 	})
 	newBot, err := telego.NewBot(testBotToken, telego.WithAPIServer(url))
 	if err != nil {
 		t.Fatalf("NewBot: %v", err)
 	}
 	setTestBot(newBot)
-	messageWorkerPool = make(chan struct{}, 10)
+	setBotWorkerPool(make(chan struct{}, 10))
 	// The screen store is process-wide state: a screen left by an earlier test
 	// would make this one edit an unrelated message instead of sending.
 	screens.reset()
@@ -123,9 +123,9 @@ func TestGetInboundClientsForUsesProvidedInbound(t *testing.T) {
 // A panicking handler must be contained by runBotHandler; without the
 // recover() the panic escapes and fails this test.
 func TestRunBotHandlerRecoversPanic(t *testing.T) {
-	origPool := messageWorkerPool
-	t.Cleanup(func() { messageWorkerPool = origPool })
-	messageWorkerPool = make(chan struct{}, 10)
+	origPool := currentBotWorkerPool()
+	t.Cleanup(func() { setBotWorkerPool(origPool) })
+	setBotWorkerPool(make(chan struct{}, 10))
 
 	ran := false
 	func() {

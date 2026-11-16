@@ -25,8 +25,13 @@ func recoverBotPanic() {
 // runBotHandler runs a bot handler on a worker slot and recovers panics: a bad
 // callback must not take down the whole panel, the way a cron panic would not.
 func runBotHandler(fn func()) {
-	messageWorkerPool <- struct{}{}
-	defer func() { <-messageWorkerPool }()
+	pool := currentBotWorkerPool()
+	if pool == nil {
+		// An update cannot be processed without a receiver's worker pool.
+		return
+	}
+	pool <- struct{}{}
+	defer func() { <-pool }()
 	defer recoverBotPanic()
 	fn()
 }
