@@ -174,7 +174,12 @@ def validate(home: Path, template: Path | None = None) -> None:
         verify_path(home / folder, folder, private=True)
     token = read_private_text(home / "secrets" / "vela_bot_token", "bot secret", maximum=512)
     token = token.removesuffix("\n")
-    if not re.fullmatch(r"[0-9]+:[A-Za-z0-9_-]+", token, re.ASCII):
+    # Match the Go runtime's strict Telegram token contract, so preflight
+    # never certifies a Secret that the application will reject at startup.
+    # Keep the credential itself out of diagnostics.
+    if not re.fullmatch(r"[1-9][0-9]*:[A-Za-z0-9_-]+", token, re.ASCII):
+        raise PreflightFailure("invalid bot secret format")
+    if int(token.split(":", 1)[0]) > 2**63 - 1:
         raise PreflightFailure("invalid bot secret format")
     # Do not print, log or return the secret or Telegram IDs.
     verify_path(home / "compose.yml", "compose")
