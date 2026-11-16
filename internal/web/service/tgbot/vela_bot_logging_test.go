@@ -33,3 +33,24 @@ func TestOriginalBotErrorReportingUnaffectedOutsideVela(t *testing.T) {
 		t.Fatal("upstream bot mode must keep original panic payload")
 	}
 }
+
+func TestMiniAppIgnoresLegacyBotTransportOverrides(t *testing.T) {
+	t.Setenv("XUI_TG_MINIAPP_ENABLED", "true")
+	proxy, api := botConnectionOptions(
+		"http://legacy-proxy.invalid:8080",
+		"https://legacy-bot-api.invalid/bot{token}/",
+	)
+	if proxy != "" || api != "" {
+		t.Fatal("private Vela Bot Token must never flow to legacy DB-configured transport")
+	}
+}
+
+func TestUpstreamBotTransportOverridesPreserved(t *testing.T) {
+	t.Setenv("XUI_TG_MINIAPP_ENABLED", "false")
+	const proxy = "socks5://127.0.0.1:1080"
+	const api = "https://legacy-telegram-api.example.org/"
+	actualProxy, actualAPI := botConnectionOptions(proxy, api)
+	if actualProxy != proxy || actualAPI != api {
+		t.Fatal("existing upstream Telegram Bot transport must not change")
+	}
+}
