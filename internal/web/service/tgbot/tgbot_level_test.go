@@ -120,19 +120,19 @@ func TestGateCallbackStopsStrangers(t *testing.T) {
 // Telegram may omit From on a service or channel update. In particular,
 // public /start and /id cannot be admitted without a real user identity.
 func TestGateCommandRejectsMissingSender(t *testing.T) {
-    tb := &Tgbot{}
-    cases := []*telego.Message{
-        nil,
-        &telego.Message{Text: "/start", Chat: telego.Chat{ID: -100, Type: telego.ChatTypeChannel}},
-        &telego.Message{Text: "/id", Chat: telego.Chat{ID: 1, Type: telego.ChatTypePrivate}},
-        &telego.Message{Text: "/restart", Chat: telego.Chat{ID: 1, Type: telego.ChatTypePrivate}},
-    }
-    for _, message := range cases {
-        if !sentForChat(message) {
-            t.Error("missing Telegram sender was treated as a user")
-        }
-        if isAdmin, ok := tb.gateCommand(message); isAdmin || ok {
-            t.Errorf("gateCommand(%v) admitted a message without a sender", message)
-        }
-    }
+	tb := &Tgbot{}
+	cases := []*telego.Message{
+		nil,
+		&telego.Message{Text: "/start", Chat: telego.Chat{ID: -100, Type: telego.ChatTypeChannel}},
+		&telego.Message{Text: "/id", Chat: telego.Chat{ID: 1, Type: telego.ChatTypePrivate}},
+		&telego.Message{Text: "/restart", Chat: telego.Chat{ID: 1, Type: telego.ChatTypePrivate}},
+	}
+	for _, message := range cases {
+		if !sentForChat(message) {
+			t.Error("missing Telegram sender was treated as a user")
+		}
+		if isAdmin, ok := tb.gateCommand(message); isAdmin || ok {
+			t.Errorf("gateCommand(%v) admitted a message without a sender", message)
+		}
+	}
 }
