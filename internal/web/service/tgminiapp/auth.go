@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -135,6 +136,26 @@ func MiniAppURL() string {
 	}
 	if strings.ContainsAny(u.Host, "\r\n\t ") {
 		return ""
+	}
+	// Fail closed even if an operator bypasses the installer. An unusable
+	// localhost/IP/example URL must never become a Bot WebApp button.
+	host := strings.ToLower(u.Hostname())
+	if net.ParseIP(host) != nil || !strings.Contains(host, ".") ||
+		strings.HasPrefix(host, ".") || strings.HasSuffix(host, ".") ||
+		strings.Contains(host, "..") {
+		return ""
+	}
+	for _, suffix := range []string{".localhost", ".local", ".test", ".invalid", ".example",
+		"example.com", "example.net", "example.org"} {
+		if host == strings.TrimPrefix(suffix, ".") || strings.HasSuffix(host, "."+strings.TrimPrefix(suffix, ".")) {
+			return ""
+		}
+	}
+	if port := u.Port(); port != "" {
+		value, err := strconv.Atoi(port)
+		if err != nil || value < 1 || value > 65535 {
+			return ""
+		}
 	}
 	return u.String()
 }
