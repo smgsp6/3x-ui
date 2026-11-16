@@ -244,3 +244,29 @@ func TestConnectionRejectsMalformedEmptyBotIdentity(t *testing.T) {
 		t.Fatal("empty Telegram bot identity was accepted as a healthy connection")
 	}
 }
+
+
+// A 200/ok response with no real bot identity must never convince the
+// control panel that Telegram authentication/network connectivity is healthy.
+func TestConnectionRejectsMalformedSuccessIdentity(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		result any
+	}{
+		{name: "null", result: nil},
+		{name: "zero identity", result: map[string]any{"id": 0, "is_bot": false}},
+		{name: "not a bot", result: map[string]any{"id": 42, "is_bot": false}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "result": tc.result})
+			}))
+			t.Cleanup(srv.Close)
+			swapTestBot(t, srv.URL)
+			if err := (&Tgbot{}).TestConnection(); err == nil {
+				t.Fatal("malformed getMe response was accepted as a live Telegram connection")
+			}
+		})
+	}
+}
