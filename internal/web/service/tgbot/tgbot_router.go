@@ -56,17 +56,25 @@ func (t *Tgbot) chooseInboundClient(callbackQuery *telego.CallbackQuery, chatId 
 		t.inboundSummaryText(inbound)+"\n"+t.I18nBot("tgbot.answers.chooseClient", "Inbound=="+inbound.Remark), rows...))
 }
 
-// finishBotReceiver only clears the receiver that still owns the current
-// connection. A stale goroutine must not clear a restarted receiver.
+// finishBotReceiver only retires the connection owned by this receiver.
+// Keep the lock order identical to StopBot (tgBotMutex then botMu), so an
+// obsolete goroutine cannot disable or close a newer Bot after a restart.
 func finishBotReceiver(receiver *telego.Bot) {
 	tgBotMutex.Lock()
 	defer tgBotMutex.Unlock()
-	if liveBot() != receiver {
+	botMu.Lock()
+	defer botMu.Unlock()
+	if receiver == nil || bot != receiver {
 		return
 	}
 	botHandler = nil
 	botCancel = nil
 	isRunning = false
+	if botStop != nil {
+		close(botStop)
+		botStop = nil
+	}
+	bot = nil
 }
 
 // OnReceive starts the message receiving loop for the Telegram liveBot().
