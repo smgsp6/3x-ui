@@ -197,12 +197,31 @@ func MiniAppURL() string {
 	return u.String()
 }
 
+// Never follow an ancestor symlink to reach a privileged Docker Secret.
+// An attacker able to replace a parent path must not redirect the Bot token
+// reader to a different filesystem. The normal Compose path is /run/secrets.
+func botTokenPathIsDirect(path string) bool {
+	if !filepath.IsAbs(path) || filepath.Clean(path) != path {
+		return false
+	}
+	for dir := filepath.Dir(path); ; dir = filepath.Dir(dir) {
+		info, err := os.Lstat(dir)
+		if err != nil || !info.IsDir() {
+			return false
+		}
+		if next := filepath.Dir(dir); next == dir {
+			break
+		}
+	}
+	return true
+}
+
 // BotToken reads ONLY a local Docker-secret file. Vela deliberately does NOT
 // accept bot tokens from process environment variables (docker inspect leaks
 // them to anyone with Docker access). File errors fail closed.
 func BotToken() string {
 	file := strings.TrimSpace(os.Getenv("XUI_TG_MINIAPP_BOT_TOKEN_FILE"))
-	if file == "" {
+	if file == "" || !botTokenPathIsDirect(file) {
 		return ""
 	}
 	// The Secret's immediate directory must not be writable by other users;
