@@ -308,7 +308,7 @@ func (t *Tgbot) OnReceive() {
 				if message.UsersShared != nil {
 					// Telegram channel/service messages can have no sender.
 					// Never dereference From unless Telegram supplied one.
-					if message.From != nil && checkAdmin(message.From.ID) {
+					if canContinueAdminWizard(message) {
 						for _, sharedUser := range message.UsersShared.Users {
 							userID := sharedUser.UserID
 							needRestart, err := t.clientService.SetClientTelegramUserID(&t.inboundService, message.UsersShared.RequestID, userID)
