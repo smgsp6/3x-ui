@@ -762,9 +762,10 @@ if tgminiapp.Enabled() {
 	controller.SetReloadTgbotFunc(func() {
 		enabled, err := s.settingService.GetTgbotEnabled()
 		if !shouldStartTelegramBot(enabled, err) {
-			if s.tgbotService.IsRunning() {
-				s.tgbotService.Stop()
-			}
+			// The initial receiver starts asynchronously. IsRunning can
+			// still be false after a live connection is installed: always
+			// retire it when Vela/legacy Telegram is disabled.
+			s.tgbotService.Stop()
 			if s.bus != nil {
 				s.bus.Unsubscribe("tg-notifier")
 			}
@@ -869,7 +870,10 @@ func (s *Server) stop(stopXray bool, stopTgBot bool) error {
 		}
 	}
 	// Before the bus: its Telegram notifier may sit in a send only StopBot ends.
-	if stopTgBot && s.tgbotService.IsRunning() {
+	if stopTgBot {
+		// A startup queued OnReceive may not have set isRunning yet.
+		// StopBot also closes its connection in that window, preventing
+		// a Bot from resurrecting after panel shutdown.
 		s.tgbotService.Stop()
 	}
 	if s.bus != nil {
