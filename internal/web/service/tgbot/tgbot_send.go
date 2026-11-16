@@ -118,10 +118,10 @@ func (t *Tgbot) SendMsgToTgbot(chatId int64, msg string, replyMarkup ...telego.R
 				// Exponential backoff: 1s, 2s, 4s
 				backoff := time.Duration(1<<uint(attempt)) * time.Second
 				logger.Warningf("Connection error sending telegram message (attempt %d/%d), retrying in %v: %v",
-					attempt+1, maxRetries, backoff, err)
+					attempt+1, maxRetries, backoff, safeTelegramLogError(err))
 				time.Sleep(backoff)
 			} else {
-				logger.Warning("Error sending telegram message:", err)
+				logger.Warning("Error sending telegram message:", safeTelegramLogError(err))
 				break
 			}
 		}
@@ -156,7 +156,7 @@ func (t *Tgbot) sendCallbackAnswerTgBot(id string, message string) {
 		Text:            html.UnescapeString(message),
 	}
 	if err := liveBot().AnswerCallbackQuery(context.Background(), &params); err != nil {
-		logger.Warning(err)
+		logger.Warning(safeTelegramLogError(err))
 	}
 }
 
@@ -178,7 +178,7 @@ func (t *Tgbot) editMessageCallbackTgBot(chatId int64, messageID int, inlineKeyb
 			logger.Debug("Telegram reply markup unchanged, skipping edit")
 			return
 		}
-		logger.Warning(err)
+		logger.Warning(safeTelegramLogError(err))
 	}
 }
 
@@ -198,7 +198,7 @@ func (t *Tgbot) editMessageTgBot(chatId int64, messageID int, text string, inlin
 			logger.Debug("Telegram message text unchanged, skipping edit")
 			return
 		}
-		logger.Warning(err)
+		logger.Warning(safeTelegramLogError(err))
 	}
 }
 
@@ -231,7 +231,7 @@ func (t *Tgbot) deleteMessageTgBot(chatId int64, messageID int) {
 		MessageID: messageID,
 	}
 	if err := liveBot().DeleteMessage(context.Background(), &params); err != nil {
-		logger.Warning("Failed to delete message:", err)
+		logger.Warning("Failed to delete message:", safeTelegramLogError(err))
 	} else {
 		logger.Info("Message deleted successfully")
 	}

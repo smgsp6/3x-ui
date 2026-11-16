@@ -249,7 +249,7 @@ func (t *Tgbot) replaceScreen(chatID int64, sc *screen) int {
 		})
 	}
 	if err != nil {
-		logger.Warning("Failed to send a screen:", err)
+		logger.Warning("Failed to send a screen:", safeTelegramLogError(err))
 		return 0
 	}
 	if hadPrev && prev.msgID != 0 && !t.deleteOwnMessage(chatID, prev.msgID) {

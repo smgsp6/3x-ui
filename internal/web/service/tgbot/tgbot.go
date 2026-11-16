@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"embed"
+	"errors"
 	"fmt"
 	"html"
 	"math/big"
@@ -73,6 +74,26 @@ var (
 		mutex     sync.RWMutex
 	}
 )
+
+// safeTelegramLogError keeps a Bot Token from appearing in backend logs
+// through Telegram HTTP errors (whose request URLs can embed /bot<TOKEN>/).
+// The original 3x-ui message contents remain unchanged when Vela is off.
+func safeTelegramLogError(err error) error {
+	if err == nil {
+		return nil
+	}
+	if tgminiapp.Enabled() {
+		return errors.New("Vela Telegram operation failed (private details withheld)")
+	}
+	return err
+}
+
+func safeTelegramLogPanic(value any) any {
+	if tgminiapp.Enabled() {
+		return "Vela Telegram handler panicked (private details withheld)"
+	}
+	return value
+}
 
 // liveBot is the current connection, or nil before login and after logout.
 func liveBot() *telego.Bot {
@@ -345,7 +366,7 @@ func (t *Tgbot) Start(i18nFS embed.FS) error {
         err = fmt.Errorf("Vela Bot token Secret missing or invalid")
     }
 	if err != nil || tgBotToken == "" {
-		logger.Warning("Failed to get Telegram bot token:", err)
+		logger.Warning("Failed to get Telegram bot token:", safeTelegramLogError(err))
 		return err
 	}
 
@@ -362,13 +383,13 @@ func (t *Tgbot) Start(i18nFS embed.FS) error {
         tgBotID, err = t.settingService.GetTgBotChatId()
     }
 	if err != nil {
-		logger.Warning("Failed to get Telegram bot chat ID:", err)
+		logger.Warning("Failed to get Telegram bot chat ID:", safeTelegramLogError(err))
 		return err
 	}
 
 	parsedAdminIds, parsedAdminTopics, err := parseAdminChats(tgBotID)
 	if err != nil {
-		logger.Warning("Failed to parse admin ID from Telegram bot chat ID:", err)
+		logger.Warning("Failed to parse admin ID from Telegram bot chat ID:", safeTelegramLogError(err))
 		return err
 	}
 	tgBotMutex.Lock()
@@ -379,13 +400,13 @@ func (t *Tgbot) Start(i18nFS embed.FS) error {
 	// Get Telegram bot proxy URL
 	tgBotProxy, err := t.settingService.GetTgBotProxy()
 	if err != nil {
-		logger.Warning("Failed to get Telegram bot proxy URL:", err)
+		logger.Warning("Failed to get Telegram bot proxy URL:", safeTelegramLogError(err))
 	}
 
 	// Get Telegram bot API server URL
 	tgBotAPIServer, err := t.settingService.GetTgBotAPIServer()
 	if err != nil {
-		logger.Warning("Failed to get Telegram bot API server URL:", err)
+		logger.Warning("Failed to get Telegram bot API server URL:", safeTelegramLogError(err))
 	}
 
 	// Create new Telegram bot instance
@@ -402,7 +423,7 @@ func (t *Tgbot) Start(i18nFS embed.FS) error {
 			// embeds the Bot Token. Never emit it to Docker or CI logs.
 			logger.Warning("Vela Telegram bot initialization failed")
 		} else {
-			logger.Error("Failed to initialize Telegram bot API:", err)
+			logger.Error("Failed to initialize Telegram bot API:", safeTelegramLogError(err))
 		}
 		return err
 	}
@@ -429,7 +450,7 @@ func (t *Tgbot) Start(i18nFS embed.FS) error {
 func (t *Tgbot) trySetBotCommands(bot *telego.Bot) {
 	defer func() {
 		if r := recover(); r != nil {
-			logger.Warning("Failed to register bot commands (Telegram may be rate-limiting); bot will continue without them:", r)
+			logger.Warning("Failed to register bot commands (Telegram may be rate-limiting); bot will continue without them:", safeTelegramLogPanic(r))
 		}
 	}()
 
@@ -441,7 +462,7 @@ func (t *Tgbot) trySetBotCommands(bot *telego.Bot) {
 		},
 	})
 	if err != nil {
-		logger.Warning("Failed to set bot commands:", err)
+		logger.Warning("Failed to set bot commands:", safeTelegramLogError(err))
 	}
 }
 
@@ -505,7 +526,7 @@ func (t *Tgbot) NewBot(token string, proxyUrl string, apiServerUrl string, stopp
 			logger.Warning("Unsupported proxy scheme (want socks5:// or http(s)://), ignoring proxy")
 			proxyUrl = "" // Clear invalid proxy
 		} else if _, err := url.Parse(proxyUrl); err != nil {
-			logger.Warningf("Can't parse proxy URL, ignoring proxy: %v", err)
+			logger.Warningf("Can't parse proxy URL, ignoring proxy: %v", safeTelegramLogError(err))
 			proxyUrl = ""
 		}
 	}
@@ -514,7 +535,7 @@ func (t *Tgbot) NewBot(token string, proxyUrl string, apiServerUrl string, stopp
 	if apiServerUrl != "" {
 		safeURL, err := service.SanitizePublicHTTPURL(apiServerUrl, false)
 		if err != nil {
-			logger.Warningf("Invalid or blocked API server URL, using default: %v", err)
+			logger.Warningf("Invalid or blocked API server URL, using default: %v", safeTelegramLogError(err))
 			apiServerUrl = ""
 		} else {
 			apiServerUrl = safeURL

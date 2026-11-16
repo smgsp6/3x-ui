@@ -18,7 +18,7 @@ import (
 // dispatch has no recovery of its own, so one bad update would kill the panel.
 func recoverBotPanic() {
 	if r := recover(); r != nil {
-		logger.Error("Recovered panic in Telegram bot handler:", r)
+		logger.Error("Recovered panic in Telegram bot handler:", safeTelegramLogPanic(r))
 	}
 }
 
@@ -605,7 +605,7 @@ func (t *Tgbot) answerCallback(callbackQuery *telego.CallbackQuery, isAdmin bool
 						if days > 0 {
 							traffic, err := t.inboundService.GetClientTrafficByEmail(email)
 							if err != nil {
-								logger.Warning(err)
+								logger.Warning(safeTelegramLogError(err))
 								t.sendNotice(chatId, t.I18nBot("tgbot.wentWrong"))
 								return
 							}
