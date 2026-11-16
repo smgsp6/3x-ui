@@ -97,7 +97,7 @@ func TestStopBotWaitsOnlyForRetiredGeneration(t *testing.T) {
 
 	// Simulate another reload installing a fresh receiver while the old
 	// generation has not yet finished cleanup.
-	newCtx, newCancel := context.WithCancel(context.Background())
+	_, newCancel := context.WithCancel(context.Background())
 	defer newCancel()
 	newDone := make(chan struct{})
 	tgBotMutex.Lock()
