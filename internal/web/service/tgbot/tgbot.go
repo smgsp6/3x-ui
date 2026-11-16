@@ -651,11 +651,15 @@ func adminSnapshot() []int64 {
 		return configured // preserve upstream chat/topic notification behavior
 	}
 	// Telegram's cached admin list is only a snapshot from Bot startup.
-	// Re-check the current Mini App allowlist before each privileged command
-	// and outbound notice, so removal takes effect without trusting old IDs.
+	// Parse the CURRENT allowlist once to avoid mixing different revisions
+	// during concurrent configuration changes. Invalid input denies everyone.
+	current, err := tgminiapp.AdminUserIDs()
+	if err != nil {
+		return nil
+	}
 	allowed := make([]int64, 0, len(configured))
 	for _, id := range configured {
-		if tgminiapp.AllowedUserID(id) {
+		if slices.Contains(current, id) {
 			allowed = append(allowed, id)
 		}
 	}
