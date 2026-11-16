@@ -1121,3 +1121,43 @@ func TestVelaRevokedAdminCannotFinalizeDelayedBroadcastAlbum(t *testing.T) {
 		t.Fatal("revoked administrator retained a broadcast confirmation token")
 	}
 }
+
+// The delivery boundary must never send a Vela broadcast to a group or
+// channel ID, even if a future caller bypasses the DB recipient collector.
+func TestVelaBroadcastEgressRejectsNonPrivateChatIDs(t *testing.T) {
+	t.Setenv("XUI_TG_MINIAPP_ENABLED", "true")
+	calls := 0
+	swapBroadcastSender(t, func(int64, broadcastDraft) ([]int, error) {
+		calls++
+		return []int{11}, nil
+	}, func(time.Duration) {})
+	draft := broadcastDraft{FromChatID: 111, MessageIDs: []int{7}}
+	for _, chatID := range []int64{-10012345, -10, 0} {
+		if _, err := broadcastDeliverOne(chatID, draft, nil); !errors.Is(err, errBroadcastNonPrivate) {
+			t.Fatalf("broadcast to %d returned %v, want privacy rejection", chatID, err)
+		}
+		if _, err := deliverBroadcastCopy(chatID, draft); !errors.Is(err, errBroadcastNonPrivate) {
+			t.Fatalf("direct copy to %d returned %v, want privacy rejection", chatID, err)
+		}
+	}
+	if calls != 0 {
+		t.Fatal("a rejected non-private chat reached the Telegram sender")
+	}
+}
+
+func TestLegacyBroadcastDeliveryKeepsOriginalChatBehavior(t *testing.T) {
+	t.Setenv("XUI_TG_MINIAPP_ENABLED", "false")
+	calls := 0
+	swapBroadcastSender(t, func(chatID int64, _ broadcastDraft) ([]int, error) {
+		if chatID != -10012345 {
+			t.Fatalf("wrong synthetic legacy broadcast destination: %d", chatID)
+		}
+		calls++
+		return []int{11}, nil
+	}, func(time.Duration) {})
+	ids, err := broadcastDeliverOne(-10012345,
+		broadcastDraft{FromChatID: 111, MessageIDs: []int{7}}, nil)
+	if err != nil || !slices.Equal(ids, []int{11}) || calls != 1 {
+		t.Fatalf("legacy Telegram group delivery changed: IDs %v, err %v, calls %d", ids, err, calls)
+	}
+}
