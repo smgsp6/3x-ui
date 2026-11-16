@@ -77,6 +77,17 @@ func finishBotReceiver(receiver *telego.Bot) {
 	bot = nil
 }
 
+// Drop all updates queued for a Bot that has since been stopped/reloaded.
+// The actual receiver remains the authorization boundary for its handlers.
+func guardReceiverUpdates(h *th.BotHandler, receiver *telego.Bot) {
+	h.Use(func(ctx *th.Context, update telego.Update) error {
+		if receiver == nil || liveBot() != receiver {
+			return nil
+		}
+		return ctx.Next(update)
+	})
+}
+
 // OnReceive starts the message receiving loop for the Telegram liveBot().
 func (t *Tgbot) OnReceive() {
 	params := telego.GetUpdatesParams{
@@ -141,6 +152,9 @@ func (t *Tgbot) OnReceive() {
 		// carries one already offers a way out.
 		registerTerminalCallbacks(cbHome, cbCatServer, cbCatClients, cbCatTraffic, cbCatMaintenance)
 
+		// A terminated Bot must never dispatch queued updates against a new
+		// session or a replacement connection.
+		guardReceiverUpdates(h, pollBot)
 		refuseGroups(h, t)
 
 		// A picked inline item is the user's own message, caught before the wizard
@@ -166,6 +180,9 @@ func (t *Tgbot) OnReceive() {
 
 			// Use goroutine with worker pool for concurrent command processing
 			go runBotHandler(func() {
+				if liveBot() != pollBot {
+					return // queued command from an already retired receiver
+				}
 				userStateMgr.clear(messageActor(message))
 				if isAdmin, ok := t.gateCommand(&message); ok {
 					t.answerCommand(&message, message.Chat.ID, isAdmin)
@@ -182,6 +199,9 @@ func (t *Tgbot) OnReceive() {
 		h.HandleInlineQuery(func(ctx *th.Context, query telego.InlineQuery) error {
 			defer recoverBotPanic()
 			go runBotHandler(func() {
+				if liveBot() != pollBot {
+					return
+				}
 				t.handleInlineQuery(&query)
 			})
 			return nil
@@ -190,6 +210,9 @@ func (t *Tgbot) OnReceive() {
 		h.HandleCallbackQuery(func(ctx *th.Context, query telego.CallbackQuery) error {
 			// Use goroutine with worker pool for concurrent callback processing
 			go runBotHandler(func() {
+				if liveBot() != pollBot {
+					return
+				}
 				userStateMgr.clear(callbackActor(&query))
 				if isAdmin, ok := t.gateCallback(&query); ok {
 					t.answerCallback(&query, isAdmin)
