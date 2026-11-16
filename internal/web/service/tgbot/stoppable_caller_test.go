@@ -48,6 +48,15 @@ func TestStopBotEndsInFlightTelegramCall(t *testing.T) {
 	}
 
 	StopBot()
+	if liveBot() != nil {
+		t.Fatal("StopBot must remove the stopped Bot from the live connection")
+	}
+	// A receiver scheduled immediately before StopBot must not restart
+	// without a connection, or panic when reading a removed Bot.
+	(&Tgbot{}).OnReceive()
+	if (&Tgbot{}).IsRunning() {
+		t.Fatal("a delayed receiver resurrected the stopped Bot")
+	}
 
 	select {
 	case err := <-errc:

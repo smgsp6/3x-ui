@@ -440,7 +440,8 @@ func (t *Tgbot) Start(i18nFS embed.FS) error {
 		}
 	}
 
-	// Create new Telegram bot instance
+	// Create new Telegram bot instance. Do not expose a client-construction
+	// error to a caller that could print it outside this logging boundary.
 	stop := make(chan struct{})
 	botMu.Lock()
 	bot, err = t.NewBot(tgBotToken, tgBotProxy, tgBotAPIServer, stop)
@@ -450,12 +451,10 @@ func (t *Tgbot) Start(i18nFS embed.FS) error {
 	botMu.Unlock()
 	if err != nil {
 		if tgminiapp.Enabled() {
-			// Telegram client errors may contain the request URL, which
-			// embeds the Bot Token. Never emit it to Docker or CI logs.
 			logger.Warning("Vela Telegram bot initialization failed")
-		} else {
-			logger.Error("Failed to initialize Telegram bot API:", safeTelegramLogError(err))
+			return errors.New("Vela Telegram bot initialization failed (private details withheld)")
 		}
+		logger.Error("Failed to initialize Telegram bot API:", safeTelegramLogError(err))
 		return err
 	}
 
@@ -695,14 +694,17 @@ func StopBot() {
 	handler := botHandler
 	botHandler = nil
 	isRunning = false
-	tgBotMutex.Unlock()
-
+	// Keep the receiver state and connection removal atomic. Otherwise a
+	// delayed OnReceive goroutine can start between these two operations,
+	// after StopBot has already captured the old cancellation function.
 	botMu.Lock()
 	if botStop != nil {
 		close(botStop)
 		botStop = nil
 	}
+	bot = nil
 	botMu.Unlock()
+	tgBotMutex.Unlock()
 
 	userStateMgr.reset()
 	addClientDrafts.resetAll()

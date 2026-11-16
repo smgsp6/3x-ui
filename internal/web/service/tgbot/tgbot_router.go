@@ -70,6 +70,14 @@ func (t *Tgbot) OnReceive() {
 		return
 	}
 
+	// Snapshot the connection while the receiver lock is held. StopBot
+	// acquires these locks in the same order and clears the connection, so a
+	// delayed receiver cannot dereference nil or resurrect a stopped bot.
+	pollBot := liveBot()
+	if pollBot == nil {
+		tgBotMutex.Unlock()
+		return
+	}
 	ctx, cancel := context.WithCancel(context.Background())
 	botCancel = cancel
 	isRunning = true
@@ -78,9 +86,7 @@ func (t *Tgbot) OnReceive() {
 	botWG.Add(1)
 	tgBotMutex.Unlock()
 
-	// Get updates channel using the context with shorter timeout for better error recovery
-	// One bot instance for the loop and the handler it feeds: reading the global twice could diverge them.
-	pollBot := liveBot()
+	// Get updates channel using the same Bot for the loop and handler.
 	updates, _ := pollBot.UpdatesViaLongPolling(ctx, &params)
 	go func() {
 		defer botWG.Done()
@@ -353,10 +359,11 @@ func (t *Tgbot) isCommandForCurrentBot(message *telego.Message) bool {
 }
 
 func botUsername() string {
-	if liveBot() == nil {
+	b := liveBot()
+	if b == nil {
 		return ""
 	}
-	return liveBot().Username()
+	return b.Username()
 }
 
 func isCommandForBot(text string, username string) bool {

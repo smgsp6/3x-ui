@@ -54,14 +54,14 @@ func TestEditMessageTgBotSkipsNotModified(t *testing.T) {
 	}))
 	defer mock.Close()
 
-	// Point the package-level bot at the mock.
+	// Replace the package-level bot only while holding its mutex.
 	origBot := liveBot()
 	t.Cleanup(func() { setTestBot(origBot) })
-	var err error
-	bot, err = telego.NewBot(testBotToken, telego.WithAPIServer(mock.URL))
+	mockBot, err := telego.NewBot(testBotToken, telego.WithAPIServer(mock.URL))
 	if err != nil {
 		t.Fatalf("NewBot: %v", err)
 	}
+	setTestBot(mockBot)
 
 	// Snapshot warning count before the edit call.
 	before := logger.GetLogs(100, "warning")
@@ -89,11 +89,11 @@ func TestEditMessageCallbackTgBotSkipsNotModified(t *testing.T) {
 
 	origBot := liveBot()
 	t.Cleanup(func() { setTestBot(origBot) })
-	var err error
-	bot, err = telego.NewBot(testBotToken, telego.WithAPIServer(mock.URL))
+	mockBot, err := telego.NewBot(testBotToken, telego.WithAPIServer(mock.URL))
 	if err != nil {
 		t.Fatalf("NewBot: %v", err)
 	}
+	setTestBot(mockBot)
 
 	before := logger.GetLogs(100, "warning")
 
