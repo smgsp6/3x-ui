@@ -21,10 +21,10 @@ func miniAppLaunchButtons(rows [][]telego.InlineKeyboardButton) []telego.InlineK
 func TestVelaPrivateAdminGetsOfficialWebAppLaunchButton(t *testing.T) {
 	t.Setenv("XUI_TG_MINIAPP_ENABLED", "true")
 	t.Setenv("XUI_TG_MINIAPP_ADMIN_IDS", "1001")
-	t.Setenv("XUI_TG_MINIAPP_URL", "https://panel.vela-ci.example.test/private/")
+	t.Setenv("XUI_TG_MINIAPP_URL", "https://panel.vela-ci.org/private/")
 	b := (&Tgbot{}).homeRows(1001)
 	found := miniAppLaunchButtons(b)
-	if len(found) != 1 || found[0].WebApp.URL != "https://panel.vela-ci.example.test/private/" {
+	if len(found) != 1 || found[0].WebApp.URL != "https://panel.vela-ci.org/private/" {
 		t.Fatal("allowlisted private Telegram admin must see one correct official WebApp button")
 	}
 }
@@ -34,7 +34,7 @@ func TestVelaPrivateAdminGetsOfficialWebAppLaunchButton(t *testing.T) {
 func TestVelaAdminStartSendsOfficialWebAppButtonToTelegramAPI(t *testing.T) {
 	t.Setenv("XUI_TG_MINIAPP_ENABLED", "true")
 	t.Setenv("XUI_TG_MINIAPP_ADMIN_IDS", "1001")
-	t.Setenv("XUI_TG_MINIAPP_URL", "https://panel.vela-ci.example.test/private/")
+	t.Setenv("XUI_TG_MINIAPP_URL", "https://panel.vela-ci.org/private/")
 	_, calls := newScreenTgbot(t, false)
 	bot := initReportDB(t)
 	setTestAdmins(t, 1001)
@@ -72,7 +72,7 @@ func TestVelaAdminStartSendsOfficialWebAppButtonToTelegramAPI(t *testing.T) {
 				if !ok {
 					continue
 				}
-				if webApp["url"] != "https://panel.vela-ci.example.test/private/" {
+				if webApp["url"] != "https://panel.vela-ci.org/private/" {
 					t.Fatal("Telegram /start sent an unexpected WebApp destination")
 				}
 				found = true
@@ -87,7 +87,7 @@ func TestVelaAdminStartSendsOfficialWebAppButtonToTelegramAPI(t *testing.T) {
 func TestVelaLaunchButtonNeverAppearsInGroupOrUnapprovedChat(t *testing.T) {
 	t.Setenv("XUI_TG_MINIAPP_ENABLED", "true")
 	t.Setenv("XUI_TG_MINIAPP_ADMIN_IDS", "1001")
-	t.Setenv("XUI_TG_MINIAPP_URL", "https://panel.vela-ci.example.test/private/")
+	t.Setenv("XUI_TG_MINIAPP_URL", "https://panel.vela-ci.org/private/")
 	bot := &Tgbot{}
 	for _, tc := range []struct {
 		name string
