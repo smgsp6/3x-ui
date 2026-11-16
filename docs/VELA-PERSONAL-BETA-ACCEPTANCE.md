@@ -29,6 +29,18 @@
 - [ ] 注销后立即无法访问管理 API；返回/重放旧 Cookie 不应恢复权限；再次进 Bot 重新登录才可访问
 - [ ] 记录测试结论仅包含 `PASS/FAIL` 和不含私密信息的错误分类。**不记录 initData、Token、Cookie、证书、域名、管理员 ID 或含隐私的截图**
 
+## 2.1 管理员私密就绪诊断（新增）
+
+在真实 Telegram 私聊小程序中完成登录后，使用管理 API `GET /panel/api/tg-miniapp/status` 检查**不含隐私的三个布尔值**：
+
+- `authConfigured`：当前进程能从本地 Secret 文件读取 Bot Token。**不是** Telegram 云端验证成功。
+- `launchConfigured`：Bot 配置的 HTTPS WebApp 启动 URL 通过本地格式校验。**不是** 真实域名解析或证书验证成功。
+- `botRunning`：当前进程的 Telegram bot 接收器报告为运行中。**不是** Telegram API 可达性或消息成功投递的证明。
+
+此接口使用原有 `/panel/api` 认证和 CSRF 中间件，并额外要求有效 Telegram Mini App 会话；未登录者及注销后的原会话应得到 `401/403`。响应不包含 URL、Token、用户身份、证书或主机信息。
+
+> 公开的 `GET /tg-miniapp/health` 只代表本机认证入口与管理员账户存在，**不能用于判断机器人正在 Telegram 上收发消息**。实际手机能否收到 `/start` 按钮必须人工验证。
+
 ## 3. 独立 VPS 与 Xray 验收
 
 - [ ] HTTPS 真实证书链、反向代理头部、CSRF 和 WebSocket 均符合配置；HTTP 不允许绕过认证
