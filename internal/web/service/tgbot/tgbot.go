@@ -35,6 +35,9 @@ import (
 
 var (
 	bot *telego.Bot
+	// Serialize complete bot startup with StopBot. Without this, a reload
+	// may finish creating a connection after panel shutdown has returned.
+	botLifecycleMu sync.Mutex
 	// botMu guards bot: EnsureBot may replace it while a background goroutine
 	// (the screen artwork warm-up) is still using the previous liveBot().
 	botMu sync.RWMutex
@@ -381,6 +384,8 @@ func (t *Tgbot) setCachedServerStats(stats string) {
 
 // Start initializes and starts the Telegram bot with the provided translation files.
 func (t *Tgbot) Start(i18nFS embed.FS) error {
+	botLifecycleMu.Lock()
+	defer botLifecycleMu.Unlock()
 	// Initialize localizer
 	err := locale.InitLocalizer(i18nFS, &t.settingService)
 	if err != nil {
@@ -389,7 +394,7 @@ func (t *Tgbot) Start(i18nFS embed.FS) error {
 
 	// If Start is called again (e.g. during reload), ensure any previous long-polling
 	// loop is stopped before creating a new bot / receiver.
-	StopBot()
+	stopBotLocked()
 
 	// Initialize hash storage to store callback queries
 	setHashStorage(global.NewHashStorage(20 * time.Minute))
@@ -704,7 +709,14 @@ func (t *Tgbot) Stop() {
 // StopBot safely stops the Telegram bot's Long Polling operation by cancelling its context.
 // This is the global function called from main.go's signal handler and t.Stop().
 func StopBot() {
-	// Don't hold the mutex while cancelling/waiting.
+	botLifecycleMu.Lock()
+	defer botLifecycleMu.Unlock()
+	stopBotLocked()
+}
+
+// stopBotLocked is called with botLifecycleMu held by either Start or StopBot.
+func stopBotLocked() {
+	// Don't hold the receiver mutex while cancelling/waiting.
 	tgBotMutex.Lock()
 	cancel := botCancel
 	botCancel = nil
