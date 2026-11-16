@@ -154,3 +154,31 @@ func max(a, b int) int {
 }
 
 var _ = io.Discard
+
+func TestLiveNoticeHandlesEmptyTelegramSuccessResponse(t *testing.T) {
+	srv, _ := recordingServer(t, false, map[string]any{
+		"sendMessage": map[string]any{"ok": true, "result": nil},
+	})
+	swapTestBot(t, srv.URL)
+	t.Cleanup(srv.Close)
+	notices.reset()
+	t.Cleanup(notices.reset)
+	tb := &Tgbot{}
+	tb.liveNotice(1001, "synthetic-outage", "synthetic")
+	if _, exists := notices.get(noticeKey{chatID: 1001, kind: "synthetic-outage"}); exists {
+		t.Fatal("a nil Telegram reply must never be persisted as an editable notice")
+	}
+}
+func TestNoticeHandlersHandleStoppedBot(t *testing.T) {
+	original := liveBot()
+	setTestBot(nil)
+	t.Cleanup(func() { setTestBot(original) })
+	tb := &Tgbot{}
+	tb.liveNotice(1001, "synthetic", "synthetic")
+	if tb.editNotice(1001, 1, "synthetic") {
+		t.Fatal("cannot edit notice when Bot is stopped")
+	}
+	if tb.sendBackupFile(1001, []byte("synthetic"), "fake.db", "synthetic") {
+		t.Fatal("cannot upload backup when Bot is stopped")
+	}
+}

@@ -83,14 +83,18 @@ func (t *Tgbot) inlineSupported() bool {
 }
 
 func (t *Tgbot) refreshInlineCapability() {
-	if liveBot() == nil {
+	b := liveBot()
+	if b == nil {
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	me, err := liveBot().GetMe(ctx)
+	me, err := b.GetMe(ctx)
 	if err != nil {
 		logger.Debug("Cannot read the bot capability for inline mode:", safeTelegramLogError(err))
+		return
+	}
+	if me == nil {
 		return
 	}
 	recordInlineCapability(me.SupportsInlineQueries)
@@ -125,14 +129,18 @@ type Capabilities struct {
 // Capabilities probes the live bot for what it can do.
 func (t *Tgbot) Capabilities() (Capabilities, error) {
 	caps := Capabilities{Running: t.IsRunning(), Username: botUsername()}
-	if liveBot() == nil {
+	b := liveBot()
+	if b == nil {
 		return caps, errors.New("bot is not initialised")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	me, err := liveBot().GetMe(ctx)
+	me, err := b.GetMe(ctx)
 	if err != nil {
-		return caps, err
+		return caps, safeTelegramLogError(err)
+	}
+	if me == nil {
+		return caps, errors.New("Telegram returned no bot capabilities")
 	}
 	caps.InlineEnabled = me.SupportsInlineQueries
 	// can_read_all_group_messages is the inverse of BotFather's Group Privacy.
@@ -155,7 +163,7 @@ func (t *Tgbot) screenInlineHelp(chatID int64) {
 
 // handleInlineQuery answers one query with the items of its scope.
 func (t *Tgbot) handleInlineQuery(query *telego.InlineQuery) {
-	if liveBot() == nil {
+	if query == nil || liveBot() == nil {
 		return
 	}
 	level := t.levelOf(query.From.ID)
@@ -204,6 +212,10 @@ func markerResultID(marker string) string {
 // answerInline answers with page, or with the "nothing here" card: an
 // unanswered query leaves Telegram spinning.
 func (t *Tgbot) answerInline(queryID string, results []telego.InlineQueryResult, offset string) {
+	b := liveBot()
+	if b == nil {
+		return
+	}
 	page, next := pageInlineResults(results, offset)
 	if len(results) == 0 {
 		hint := t.I18nBot("tgbot.inline.noneTitle")
@@ -219,7 +231,7 @@ func (t *Tgbot) answerInline(queryID string, results []telego.InlineQueryResult,
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
-	err := liveBot().AnswerInlineQuery(ctx, &telego.AnswerInlineQueryParams{
+	err := b.AnswerInlineQuery(ctx, &telego.AnswerInlineQueryParams{
 		InlineQueryID: queryID,
 		Results:       page,
 		NextOffset:    next,

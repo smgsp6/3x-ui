@@ -61,7 +61,8 @@ const noticeRepeatWindow = 30 * time.Minute
 // liveNotice sends or updates the chat's card for one kind of event; a repeat
 // inside the window edits it and counts, so a storm reads as one numbered line.
 func (t *Tgbot) liveNotice(chatID int64, kind, body string) {
-	if liveBot() == nil {
+	b := liveBot()
+	if b == nil {
 		return
 	}
 	key := noticeKey{chatID: chatID, kind: kind}
@@ -82,11 +83,15 @@ func (t *Tgbot) liveNotice(chatID int64, kind, body string) {
 	st = noticeState{body: body, count: 1, at: time.Now()}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	sc, err := liveBot().SendMessage(ctx, &telego.SendMessageParams{
+	sc, err := b.SendMessage(ctx, &telego.SendMessageParams{
 		ChatID: tu.ID(chatID), MessageThreadID: adminTopic(chatID), Text: t.noticeText(body, 1), ParseMode: "HTML", ReplyMarkup: t.hideButton(),
 	})
 	if err != nil {
 		logger.Warning("Failed to send a notice:", safeTelegramLogError(err))
+		return
+	}
+	if sc == nil || sc.MessageID == 0 {
+		logger.Warning("Telegram returned no live notice message")
 		return
 	}
 	st.msgID = sc.MessageID
@@ -105,9 +110,13 @@ func (t *Tgbot) noticeText(body string, count int) string {
 // editNotice rewrites a live card. false means it could not be edited and the
 // caller must post a new one.
 func (t *Tgbot) editNotice(chatID int64, msgID int, text string) bool {
+	b := liveBot()
+	if b == nil {
+		return false
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	_, err := liveBot().EditMessageText(ctx, &telego.EditMessageTextParams{
+	_, err := b.EditMessageText(ctx, &telego.EditMessageTextParams{
 		ChatID: tu.ID(chatID), MessageID: msgID, Text: text, ParseMode: "HTML",
 		ReplyMarkup: t.hideButton(),
 	})
@@ -133,13 +142,16 @@ func (t *Tgbot) dropNoticeFor(chatID int64, msgID int) {
 // sendBackupFile uploads a file with its summary as caption. It has no hide button:
 // that button deletes the message, and this may be the admin's only copy.
 func (t *Tgbot) sendBackupFile(chatID int64, data []byte, name, caption string) bool {
-    if tgminiapp.Enabled() { return false } // raw DB and Xray config stay local
-	if liveBot() == nil || data == nil {
+	if tgminiapp.Enabled() {
+		return false // Raw DB and Xray config never leave the local host in Vela.
+	}
+	b := liveBot()
+	if b == nil || data == nil {
 		return false
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
-	_, err := liveBot().SendDocument(ctx, &telego.SendDocumentParams{
+	sent, err := b.SendDocument(ctx, &telego.SendDocumentParams{
 		ChatID: tu.ID(chatID), MessageThreadID: adminTopic(chatID),
 		Document:  tu.FileFromBytes(data, name),
 		Caption:   caption,
@@ -149,7 +161,7 @@ func (t *Tgbot) sendBackupFile(chatID int64, data []byte, name, caption string) 
 		logger.Warning("Failed to upload a file with a caption:", safeTelegramLogError(err))
 		return false
 	}
-	return true
+	return sent != nil && sent.MessageID != 0
 }
 
 // trimCaption cuts a summary down to what a caption can carry, on a line break

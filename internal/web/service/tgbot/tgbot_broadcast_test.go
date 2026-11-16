@@ -1029,3 +1029,17 @@ func TestCancelledBroadcastRecallsDeliveredCopies(t *testing.T) {
 		t.Errorf("deleteMessage calls = %d, want one per delivered copy (%d)", got, delivered)
 	}
 }
+
+func TestBroadcastCopyRejectsStoppedBot(t *testing.T) {
+	original := liveBot()
+	setTestBot(nil)
+	t.Cleanup(func() { setTestBot(original) })
+	_, err := deliverBroadcastCopy(1001, broadcastDraft{FromChatID: 1001, MessageIDs: []int{1}})
+	if !errors.Is(err, errBotStopped) {
+		t.Fatalf("broadcast copy after stop = %v; want errBotStopped", err)
+	}
+	if (&Tgbot{}).finalizeBroadcastCard(&broadcastRunner{chatID: 1001, messageID: 1}, "synthetic") {
+		t.Fatal("cannot edit broadcast card when Bot is stopped")
+	}
+	markupBroadcastCopy(1001, 1)
+}

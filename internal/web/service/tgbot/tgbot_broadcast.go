@@ -501,6 +501,10 @@ func (t *Tgbot) broadcastSummaryText(result broadcastResult) string {
 // finalizeBroadcastCard turns the progress card into the summary; false means
 // the card is gone and the summary needs its own message to be seen at all.
 func (t *Tgbot) finalizeBroadcastCard(runner *broadcastRunner, summary string) bool {
+	b := liveBot()
+	if b == nil || runner == nil || runner.messageID == 0 {
+		return false
+	}
 	params := telego.EditMessageTextParams{
 		ChatID:    tu.ID(runner.chatID),
 		MessageID: runner.messageID,
@@ -510,7 +514,9 @@ func (t *Tgbot) finalizeBroadcastCard(runner *broadcastRunner, summary string) b
 		// "🙈 Скрыть" every other finished message offers.
 		ReplyMarkup: t.hideButton(),
 	}
-	_, err := liveBot().EditMessageText(context.Background(), &params)
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	_, err := b.EditMessageText(ctx, &params)
 	if err == nil || isTelegramNotModifiedError(err) {
 		return true
 	}
@@ -620,17 +626,21 @@ func deliverBroadcastCopy(chatID int64, draft broadcastDraft) ([]int, error) {
 	from := tu.ID(draft.FromChatID)
 	var ids []int
 	err := callTelegramAPI(func(ctx context.Context) error {
+		b := liveBot()
+		if b == nil {
+			return errBotStopped
+		}
 		var err error
 		switch {
 		case len(draft.MessageIDs) > 1:
 			var copied []telego.MessageID
-			copied, err = liveBot().CopyMessages(ctx, &telego.CopyMessagesParams{ChatID: tu.ID(chatID), FromChatID: from, MessageIDs: draft.MessageIDs})
+			copied, err = b.CopyMessages(ctx, &telego.CopyMessagesParams{ChatID: tu.ID(chatID), FromChatID: from, MessageIDs: draft.MessageIDs})
 			for _, m := range copied {
 				ids = append(ids, m.MessageID)
 			}
 		case len(draft.MessageIDs) == 1:
 			var copied *telego.MessageID
-			copied, err = liveBot().CopyMessage(ctx, &telego.CopyMessageParams{ChatID: tu.ID(chatID), FromChatID: from, MessageID: draft.MessageIDs[0]})
+			copied, err = b.CopyMessage(ctx, &telego.CopyMessageParams{ChatID: tu.ID(chatID), FromChatID: from, MessageID: draft.MessageIDs[0]})
 			if copied != nil {
 				ids = append(ids, copied.MessageID)
 			}
@@ -639,6 +649,9 @@ func deliverBroadcastCopy(chatID int64, draft broadcastDraft) ([]int, error) {
 	})
 	// Every recipient can put the message away (a client has no panel menu to
 	// clear it from); the content is untouched, only the keyboard is added.
+	if err == nil && len(ids) == 0 {
+		return nil, errors.New("Telegram returned no broadcast message IDs")
+	}
 	if err == nil {
 		for _, id := range ids {
 			markupBroadcastCopy(chatID, id)
@@ -651,7 +664,11 @@ func deliverBroadcastCopy(chatID int64, draft broadcastDraft) ([]int, error) {
 // failure here leaves the broadcast intact and is not worth retrying the send.
 func markupBroadcastCopy(chatID int64, messageID int) {
 	_ = callTelegramAPI(func(ctx context.Context) error {
-		_, err := liveBot().EditMessageReplyMarkup(ctx, &telego.EditMessageReplyMarkupParams{
+		b := liveBot()
+		if b == nil {
+			return errBotStopped
+		}
+		_, err := b.EditMessageReplyMarkup(ctx, &telego.EditMessageReplyMarkupParams{
 			ChatID:      tu.ID(chatID),
 			MessageID:   messageID,
 			ReplyMarkup: hideButtonMarkup(),
