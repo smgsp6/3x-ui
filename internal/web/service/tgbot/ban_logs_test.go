@@ -18,6 +18,7 @@ import (
 )
 
 func TestSendBanLogsFile(t *testing.T) {
+	t.Setenv("XUI_TG_MINIAPP_ENABLED", "false") // Preserve original 3x-ui behavior.
 	const (
 		previous = "3xipl-banned.prev.log"
 		current  = "3xipl-banned.log"
@@ -218,5 +219,40 @@ func TestSendBanLogsFileWithoutBot(t *testing.T) {
 	(&Tgbot{}).sendBanLogsFile(-1001)
 	if err := os.Remove(path); err != nil {
 		t.Fatalf("log file still open: %v", err)
+	}
+}
+
+// Vela must not export IP-containing ban logs to Telegram, even when a
+// whitelisted admin deliberately opens the legacy Bot menu.
+func TestVelaBanLogsAreNeverUploaded(t *testing.T) {
+	t.Setenv("XUI_TG_MINIAPP_ENABLED", "true")
+	t.Setenv("XUI_LOG_FOLDER", t.TempDir())
+	const privateLog = "192.0.2.42 synthetic private entry\n"
+	path := xray.GetIPLimitBannedLogPath()
+	if err := os.WriteFile(path, []byte(privateLog), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var mu sync.Mutex
+	var methods []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		methods = append(methods, filepath.Base(r.URL.Path))
+		mu.Unlock()
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"ok":true,"result":{"message_id":55,"date":0,"chat":{"id":1001,"type":"private"}}}`)
+	}))
+	t.Cleanup(srv.Close)
+	swapTestBot(t, srv.URL)
+
+	(&Tgbot{}).sendBanLogsFile(1001)
+	mu.Lock()
+	got := append([]string(nil), methods...)
+	mu.Unlock()
+	if !reflect.DeepEqual(got, []string{"sendMessage"}) {
+		t.Fatalf("Vela exposed private ban logs via methods %v", got)
+	}
+	contents, err := os.ReadFile(path)
+	if err != nil || string(contents) != privateLog {
+		t.Fatalf("Vela changed the local ban log (read error: %v)", err)
 	}
 }

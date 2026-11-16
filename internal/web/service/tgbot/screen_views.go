@@ -304,16 +304,21 @@ func (t *Tgbot) sendNotice(chatID int64, text string) {
 // sendNoticeReturningID posts one dismissable message and hands back its id, so
 // the caller can replace it later instead of leaving copies behind.
 func (t *Tgbot) sendNoticeReturningID(chatID int64, text string) int {
-	if liveBot() == nil || text == "" {
+	b := liveBot()
+	if b == nil || text == "" {
 		return 0
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	sent, err := liveBot().SendMessage(ctx, &telego.SendMessageParams{
+	sent, err := b.SendMessage(ctx, &telego.SendMessageParams{
 		ChatID: tu.ID(chatID), MessageThreadID: adminTopic(chatID), Text: text, ParseMode: "HTML", ReplyMarkup: t.hideButton(),
 	})
 	if err != nil {
-		logger.Warning("Failed to send a notice:", err)
+		logger.Warning("Failed to send a notice:", safeTelegramLogError(err))
+		return 0
+	}
+	if sent == nil {
+		logger.Warning("Telegram returned no notice message")
 		return 0
 	}
 	return sent.MessageID
@@ -321,6 +326,13 @@ func (t *Tgbot) sendNoticeReturningID(chatID int64, text string) int {
 
 // sendBanLogsFile delivers previous and current banned-IP logs with hide buttons.
 func (t *Tgbot) sendBanLogsFile(chatID int64) {
+	// Ban logs contain client IP addresses and related private network
+	// metadata. Keep them on the operator's server in Vela mode; never
+	// upload the raw files to Telegram, even for an admin chat.
+	if tgminiapp.Enabled() {
+		t.sendNotice(chatID, "Vela: Ban logs are available locally only; Telegram file delivery is disabled.")
+		return
+	}
 	bot := liveBot()
 	if bot == nil {
 		return

@@ -1372,3 +1372,16 @@ func TestScreenSendHandlesEmptyTelegramSuccessResponse(t *testing.T) {
 		t.Fatal("empty Telegram success response must not be saved as a live screen")
 	}
 }
+
+// A malformed Bot API reply must not dereference a nil notice message.
+// The notice layer also uses one connection snapshot during StopBot.
+func TestNoticeSendHandlesEmptyTelegramSuccessResponse(t *testing.T) {
+	srv, _ := recordingServer(t, false, map[string]any{
+		"sendMessage": map[string]any{"ok": true, "result": nil},
+	})
+	swapTestBot(t, srv.URL)
+	t.Cleanup(srv.Close)
+	if id := (&Tgbot{}).sendNoticeReturningID(1001, "synthetic"); id != 0 {
+		t.Fatalf("nil Telegram result produced a notice ID %d", id)
+	}
+}
