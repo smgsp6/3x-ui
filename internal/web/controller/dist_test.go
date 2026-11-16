@@ -71,3 +71,21 @@ func TestPWAHeadInjectionSkipsSubscriptionPage(t *testing.T) {
 		t.Fatalf("subpage injection = %q, want nil", got)
 	}
 }
+
+func TestInlineBootstrapStringCannotTerminateScript(t *testing.T) {
+	for _, input := range []string{
+		"/panel/",
+		"/admin/\" onclick=\"alert(1)",
+		"</script><script>window.pwned=true</script>",
+		"line1\nline2\u2028line3\u2029line4",
+	} {
+		literal := jsStringLiteral(input)
+		if strings.Contains(literal, "</script>") || strings.Contains(literal, "<script>") {
+			t.Fatalf("bootstrap literal contains executable HTML: %q", literal)
+		}
+		var decoded string
+		if err := json.Unmarshal([]byte(literal), &decoded); err != nil || decoded != input {
+			t.Fatalf("bootstrap literal does not preserve the original path")
+		}
+	}
+}
