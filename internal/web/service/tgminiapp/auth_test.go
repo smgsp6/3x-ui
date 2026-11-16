@@ -153,6 +153,40 @@ func TestTokenRequiresSecretFileAndRejectsSymlinks(t *testing.T) {
 	}
 }
 
+func TestBotTokenRejectsSymlinkedPathAncestors(t *testing.T) {
+	dir := t.TempDir()
+	secrets := filepath.Join(dir, "secrets")
+	if err := os.Mkdir(secrets, 0700); err != nil {
+		t.Fatal(err)
+	}
+	secretFile := filepath.Join(secrets, "vela_bot_token")
+	if err := os.WriteFile(secretFile, []byte("12345:fixture"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	alias := filepath.Join(dir, "secret-alias")
+	if err := os.Symlink(secrets, alias); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("XUI_TG_MINIAPP_BOT_TOKEN_FILE", filepath.Join(alias, "vela_bot_token"))
+	if token := BotToken(); token != "" {
+		t.Fatal("Bot Token reader followed a symlinked parent directory")
+	}
+	t.Setenv("XUI_TG_MINIAPP_BOT_TOKEN_FILE", secretFile)
+	if token := BotToken(); token != "12345:fixture" {
+		t.Fatal("regular Secret path was unexpectedly rejected")
+	}
+	// Do not accept ambiguous relative and traversal spellings.
+	for _, path := range []string{
+		filepath.Join("secrets", "vela_bot_token"),
+		secrets + "/../secrets/vela_bot_token",
+	} {
+		t.Setenv("XUI_TG_MINIAPP_BOT_TOKEN_FILE", path)
+		if token := BotToken(); token != "" {
+			t.Fatal("unsafe Docker Secret path accepted")
+		}
+	}
+}
+
 func TestBotTokenRejectsWritableSecretDirectory(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "unsafe")
 	if err := os.Mkdir(dir, 0700); err != nil {
