@@ -32,24 +32,26 @@ func CertAlertsEnabled() bool {
 // and forum topics are intentionally unsupported for security notifications.
 func AdminUserIDs() ([]int64, error) {
 	raw := strings.TrimSpace(os.Getenv("XUI_TG_MINIAPP_ADMIN_IDS"))
-	if raw == "" {
+	if raw == "" || len(raw) > 1024 {
 		return nil, ErrUnauthorized
 	}
-	seen := make(map[int64]bool)
+	parts := strings.Split(raw, ",")
+	if len(parts) > 32 {
+		return nil, ErrUnauthorized
+	}
+	seen := make(map[int64]bool, len(parts))
 	var ids []int64
-	for _, item := range strings.Split(raw, ",") {
+	for _, item := range parts {
 		v := strings.TrimSpace(item)
 		if v == "" || strings.ContainsAny(v, ":+-") {
 			return nil, ErrUnauthorized
 		}
 		id, err := strconv.ParseInt(v, 10, 64)
-		if err != nil || id <= 0 {
+		if err != nil || id <= 0 || strconv.FormatInt(id, 10) != v || seen[id] {
 			return nil, ErrUnauthorized
 		}
-		if !seen[id] {
-			ids = append(ids, id)
-			seen[id] = true
-		}
+		ids = append(ids, id)
+		seen[id] = true
 	}
 	return ids, nil
 }

@@ -35,16 +35,25 @@ func Enabled() bool {
 // permitting users when an operator accidentally mistypes a value.
 func AllowedUserID(id int64) bool {
 	raw := strings.TrimSpace(os.Getenv("XUI_TG_MINIAPP_ADMIN_IDS"))
-	if id <= 0 || raw == "" {
+	if id <= 0 || raw == "" || len(raw) > 1024 {
 		return false
 	}
+	parts := strings.Split(raw, ",")
+	if len(parts) > 32 {
+		return false
+	}
+	seen := make(map[int64]struct{}, len(parts))
 	authorized := false
-	for _, item := range strings.Split(raw, ",") {
+	for _, item := range parts {
 		part := strings.TrimSpace(item)
 		n, err := strconv.ParseInt(part, 10, 64)
-		if err != nil || n <= 0 {
+		if err != nil || n <= 0 || strconv.FormatInt(n, 10) != part {
 			return false
 		}
+		if _, duplicate := seen[n]; duplicate {
+			return false
+		}
+		seen[n] = struct{}{}
 		authorized = authorized || (n == id)
 	}
 	return authorized

@@ -225,3 +225,29 @@ func TestBotTokenSecretFile(t *testing.T) {
 		t.Fatal("missing file must fail closed")
 	}
 }
+
+func TestAdminAllowlistRejectsAmbiguityAndOverCapacity(t *testing.T) {
+	for _, value := range []string{
+		"1234567,1234567",
+		"01234567",
+		"1234567,0",
+		"1234567,",
+		strings.Repeat("1234567,", 33) + "1234568",
+		strings.Repeat("7", 1100),
+	} {
+		t.Setenv("XUI_TG_MINIAPP_ADMIN_IDS", value)
+		if AllowedUserID(1234567) {
+			t.Fatal("invalid allowlist granted Mini App admin access")
+		}
+		if _, err := AdminUserIDs(); err == nil {
+			t.Fatal("invalid allowlist accepted for Telegram Bot receiver")
+		}
+	}
+	t.Setenv("XUI_TG_MINIAPP_ADMIN_IDS", "1234567,7654321")
+	if !AllowedUserID(1234567) || !AllowedUserID(7654321) {
+		t.Fatal("valid multi-admin allowlist rejected")
+	}
+	if ids, err := AdminUserIDs(); err != nil || len(ids) != 2 {
+		t.Fatal("Bot receiver and session allowlist parsing disagree")
+	}
+}
