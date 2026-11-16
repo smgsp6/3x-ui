@@ -576,6 +576,12 @@ func (t *Tgbot) collectBroadcastRecipients() []int64 {
 			continue
 		}
 		for _, client := range clients {
+			// Vela never sends unsolicited copies to group/channel IDs, even
+			// if a legacy DB contains such a client binding. Private user IDs
+			// are positive; upstream's legacy broadcast behavior is unchanged.
+			if tgminiapp.Enabled() && client.TgID <= 0 {
+				continue
+			}
 			if client.TgID == 0 || seen[client.TgID] || checkAdmin(client.TgID) {
 				continue
 			}
