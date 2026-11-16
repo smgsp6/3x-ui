@@ -210,6 +210,7 @@ func (a *APIController) initRouter(g *gin.RouterGroup) {
 
 	api.GET("/openapi.json", ServeOpenAPISpec)
 	NewCertificateStatusController(api)
+	NewMiniAppStatusController(api)
 
 	// Inbounds API
 	inbounds := api.Group("/inbounds")
