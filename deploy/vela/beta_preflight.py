@@ -107,6 +107,16 @@ def validate_url(value: str) -> None:
         raise PreflightFailure("invalid Telegram HTTPS hostname")
     if "." not in host or host.startswith(".") or host.endswith(".") or ".." in host:
         raise PreflightFailure("invalid public Telegram hostname")
+    # Keep the read-only candidate gate consistent with Go's Bot WebApp URL
+    # check. Reject numeric-suffix aliases (127.1) and invalid DNS labels
+    # before a browser could resolve them as a loopback host.
+    labels = host.split(".")
+    if len(host) > 253 or any(
+        len(label) < 1 or len(label) > 63 or
+        label.startswith("-") or label.endswith("-")
+        for label in labels
+    ) or labels[-1].isdigit():
+        raise PreflightFailure("invalid public Telegram hostname")
     # All example.com/net/org subdomains are documentation placeholders too.
     # The published runtime.env.example uses vela.example.com; accepting that
     # value would incorrectly approve an unreachable Mini App for personal beta.
