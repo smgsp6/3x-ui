@@ -94,6 +94,14 @@ func pwaHeadInjection(basePath, pageName string) []byte {
 	return []byte(`<link rel="manifest" href="` + htmlpkg.EscapeString(basePath+"manifest.webmanifest") + `"><script data-cfasync="false" defer src="` + htmlpkg.EscapeString(basePath+"pwa-register.js") + `"></script>`)
 }
 
+// jsStringLiteral produces a JavaScript-safe string literal using Go's
+// HTML-escaping JSON encoder. A configured base path containing </script>
+// must never terminate the inline bootstrap element.
+func jsStringLiteral(value string) string {
+	encoded, _ := json.Marshal(value) // strings cannot fail JSON encoding
+	return string(encoded)
+}
+
 func serveDistPage(c *gin.Context, name string) {
 	body, err := fs.ReadFile(distFS, "dist/"+name)
 	if err != nil {
@@ -107,20 +115,14 @@ func serveDistPage(c *gin.Context, name string) {
 	}
 
 	if basePath != "/" {
-		body = bytes.ReplaceAll(body, []byte(`src="/assets/`), []byte(`src="`+basePath+`assets/`))
-		body = bytes.ReplaceAll(body, []byte(`href="/assets/`), []byte(`href="`+basePath+`assets/`))
+		// Vite emits root-relative asset URLs. Escape the prefix in HTML
+		// attribute context before inserting it into script/link attributes.
+		attributeBase := htmlpkg.EscapeString(basePath)
+		body = bytes.ReplaceAll(body, []byte(`src="/assets/`), []byte(`src="`+attributeBase+`assets/`))
+		body = bytes.ReplaceAll(body, []byte(`href="/assets/`), []byte(`href="`+attributeBase+`assets/`))
 	}
 
-	jsEscape := strings.NewReplacer(
-		`\`, `\\`,
-		`"`, `\"`,
-		"\n", `\n`,
-		"\r", `\r`,
-		"<", `<`,
-		">", `>`,
-		"&", `&`,
-	)
-	escapedBase := jsEscape.Replace(basePath)
+	escapedBase := jsStringLiteral(basePath)
 	csrfToken, err := session.EnsureCSRFToken(c)
 	if err != nil {
 		logger.Warning("Unable to mint CSRF token for", name+":", err)
@@ -133,11 +135,10 @@ func serveDistPage(c *gin.Context, name string) {
 	if nonce := c.GetString("csp_nonce"); nonce != "" {
 		nonceAttr = ` nonce="` + htmlpkg.EscapeString(nonce) + `"`
 	}
-	script := `<script data-cfasync="false"` + nonceAttr + `>window.X_UI_BASE_PATH="` + escapedBase + `"`
+	script := `<script data-cfasync="false"` + nonceAttr + `>window.X_UI_BASE_PATH=` + escapedBase
 	if name != "login.html" && name != "miniapp.html" {
-		escapedVer := jsEscape.Replace(config.GetPanelVersion())
-		script += `;window.X_UI_CUR_VER="` + escapedVer + `"`
-		script += `;window.X_UI_DB_TYPE="` + config.GetDBKind() + `"`
+		script += `;window.X_UI_CUR_VER=` + jsStringLiteral(config.GetPanelVersion())
+		script += `;window.X_UI_DB_TYPE=` + jsStringLiteral(config.GetDBKind())
 	}
 	// After the bootstrap redirects, panel/ is a distinct HTML document.
 	// Its official Telegram bridge needs to load again, but only for a
