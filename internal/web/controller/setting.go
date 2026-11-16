@@ -15,6 +15,7 @@ import (
 	"github.com/mhsanaei/3x-ui/v3/internal/web/service/discord"
 	"github.com/mhsanaei/3x-ui/v3/internal/web/service/email"
 	"github.com/mhsanaei/3x-ui/v3/internal/web/service/panel"
+	"github.com/mhsanaei/3x-ui/v3/internal/web/service/tgminiapp"
 	"github.com/mhsanaei/3x-ui/v3/internal/web/session"
 
 	"github.com/gin-gonic/gin"
@@ -330,9 +331,16 @@ func (a *SettingController) testSmtp(c *gin.Context) {
 	})
 }
 
+// Vela's signed Mini App starts the Telegram receiver independently of
+// the legacy notification setting. The legacy flag remains authoritative
+// when the Mini App feature is disabled.
+func telegramBotConfiguredForPanel(velaMode, legacyEnabled bool, legacyErr error) bool {
+	return velaMode || (legacyErr == nil && legacyEnabled)
+}
+
 func (a *SettingController) testTgBot(c *gin.Context) {
 	enabled, err := a.settingService.GetTgbotEnabled()
-	if err != nil || !enabled {
+	if !telegramBotConfiguredForPanel(tgminiapp.Enabled(), enabled, err) {
 		jsonMsg(c, I18nWeb(c, "pages.settings.tgBotNotEnabled"), errors.New("telegram bot disabled"))
 		return
 	}
@@ -353,7 +361,7 @@ func (a *SettingController) testTgBot(c *gin.Context) {
 // switch the API can read but never set, so the panel warns when lists can't open.
 func (a *SettingController) tgBotCapabilities(c *gin.Context) {
 	enabled, err := a.settingService.GetTgbotEnabled()
-	if err != nil || !enabled {
+	if !telegramBotConfiguredForPanel(tgminiapp.Enabled(), enabled, err) {
 		jsonMsg(c, I18nWeb(c, "pages.settings.tgBotNotEnabled"), errors.New("telegram bot disabled"))
 		return
 	}
