@@ -13,6 +13,7 @@ import (
 
 	"github.com/mhsanaei/3x-ui/v3/internal/logger"
 	"github.com/mhsanaei/3x-ui/v3/internal/util/common"
+	"github.com/mhsanaei/3x-ui/v3/internal/web/service/tgminiapp"
 
 	"github.com/mymmrac/telego"
 	tu "github.com/mymmrac/telego/telegoutil"
@@ -249,7 +250,11 @@ func (t *Tgbot) clearBroadcastPrompt(actor chatUser) {
 // handleBroadcastInput references the message the admin sent and shows the
 // confirmation preview. The router hands over only the admin /broadcast awaits.
 func (t *Tgbot) handleBroadcastInput(message *telego.Message, actor chatUser) {
-	logger.Debugf("broadcast: chat %d input (message_id=%d group=%q)", actor.chatID, message.MessageID, message.MediaGroupID)
+	if tgminiapp.Enabled() {
+		logger.Debug("Vela broadcast input received")
+	} else {
+		logger.Debugf("broadcast: chat %d input (message_id=%d group=%q)", actor.chatID, message.MessageID, message.MediaGroupID)
+	}
 	// The prompt has been answered: it is the admin's scratch space, not the
 	// broadcast, so it does not stay behind the preview card.
 	t.clearBroadcastPrompt(actor)
@@ -571,7 +576,7 @@ func broadcastDeliverOne(chatID int64, draft broadcastDraft, aborted func() bool
 		if !flood || attempt >= broadcastFloodRetries {
 			return nil, err
 		}
-		logger.Warningf("broadcast: chat %d is flood-limited, retrying in %s", chatID, wait)
+		logger.Warningf("broadcast: chat %d is flood-limited, retrying in %s", safeTelegramLogID(chatID), wait)
 		if !broadcastFloodWait(wait, aborted) {
 			return nil, errBroadcastAborted
 		}
