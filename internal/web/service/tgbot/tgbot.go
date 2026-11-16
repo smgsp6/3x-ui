@@ -56,6 +56,7 @@ var (
 	isRunning   bool
 	hostname    string
 	hashStorage *global.HashStorage
+	hashStorageMu sync.RWMutex // protects replacement during live Bot reload
 
 	// EventBus is set from web layer to publish login/security events.
 	EventBus *eventbus.Bus
@@ -321,7 +322,21 @@ func (t *Tgbot) I18nBot(name string, params ...string) string {
 
 // GetHashStorage returns the hash storage instance for callback queries.
 func (t *Tgbot) GetHashStorage() *global.HashStorage {
+	return currentHashStorage()
+}
+
+// Callers keep the snapshot for the entire operation. Replacing the
+// process-wide pointer on reload must not race with running Bot handlers.
+func currentHashStorage() *global.HashStorage {
+	hashStorageMu.RLock()
+	defer hashStorageMu.RUnlock()
 	return hashStorage
+}
+
+func setHashStorage(storage *global.HashStorage) {
+	hashStorageMu.Lock()
+	hashStorage = storage
+	hashStorageMu.Unlock()
 }
 
 // getCachedStatus returns cached server status if it's fresh enough (less than 5 seconds old)
@@ -377,7 +392,7 @@ func (t *Tgbot) Start(i18nFS embed.FS) error {
 	StopBot()
 
 	// Initialize hash storage to store callback queries
-	hashStorage = global.NewHashStorage(20 * time.Minute)
+	setHashStorage(global.NewHashStorage(20 * time.Minute))
 
 	// Initialize worker pool for concurrent message processing (max 10 concurrent handlers)
 	messageWorkerPool = make(chan struct{}, 10)
@@ -742,16 +757,25 @@ func (t *Tgbot) encodeQuery(query string) string {
 		return query
 	}
 
-	return hashStorage.SaveHash(query)
+	storage := currentHashStorage()
+	if storage == nil {
+		// An unset or already-disabled callback store must never panic.
+		return ""
+	}
+	return storage.SaveHash(query)
 }
 
 // decodeQuery decodes a hashed query string back to its original form.
 func (t *Tgbot) decodeQuery(query string) (string, error) {
-	if !hashStorage.IsMD5(query) {
+	storage := currentHashStorage()
+	if storage == nil {
+		return "", common.NewError("callback storage unavailable")
+	}
+	if !storage.IsMD5(query) {
 		return query, nil
 	}
 
-	decoded, exists := hashStorage.GetValue(query)
+	decoded, exists := storage.GetValue(query)
 	if !exists {
 		return "", common.NewError("hash not found in storage!")
 	}
