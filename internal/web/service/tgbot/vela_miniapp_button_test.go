@@ -30,39 +30,28 @@ func TestVelaPrivateAdminGetsOfficialWebAppLaunchButton(t *testing.T) {
 	}
 }
 
-// Verify the actual /start -> screen rendering -> Telegram Bot API payload,
-// not only a keyboard builder. This is offline: recordingServer is loopback.
-func TestVelaAdminStartSendsOfficialWebAppButtonToTelegramAPI(t *testing.T) {
+// Verify the actual Bot API outgoing keyboard payload, not just the
+// homeRows helper. Uses the repository's loopback recording server and sends
+// no Telegram traffic or credentials.
+func TestVelaWebAppButtonSentThroughTelegramAPI(t *testing.T) {
 	t.Setenv("XUI_TG_MINIAPP_ENABLED", "true")
 	t.Setenv("XUI_TG_MINIAPP_ADMIN_IDS", "1001")
 	t.Setenv("XUI_TG_MINIAPP_URL", "https://panel.vela-ci.org/private/")
-	_, calls := newScreenTgbot(t, false)
-	bot := initReportDB(t)
-	setTestAdmins(t, 1001)
-	bot.resolveScreenArt()
-	bot.answerCommand(&telego.Message{
-		MessageID: 420,
-		Chat: telego.Chat{ID: 1001, Type: "private"},
-		From: &telego.User{ID: 1001},
-		Text: "/start",
-	}, 1001, true)
+	bot, calls := newScreenTgbot(t, false)
+	bot.renderScreen(1001, bot.newScreen("main", "synthetic panel", bot.homeRows(1001)...))
 	found := false
 	for _, call := range calls() {
 		if call.Method != "sendPhoto" && call.Method != "sendMessage" {
 			continue
 		}
-		markup, ok := call.Payload["reply_markup"].(map[string]any)
-		if !ok {
-			// Telego sends file-backed photos as multipart with the reply
-			// markup JSON encoded as a form field, not a JSON object.
-			if raw, isText := call.Payload["reply_markup"].(string); isText {
-				if json.Unmarshal([]byte(raw), &markup) != nil {
-					t.Fatal("Telegram API reply markup could not be decoded")
-				}
+		var markup map[string]any
+		switch raw := call.Payload["reply_markup"].(type) {
+		case map[string]any:
+			markup = raw
+		case string:
+			if err := json.Unmarshal([]byte(raw), &markup); err != nil {
+				t.Fatal("recorded Telegram reply markup could not be decoded")
 			}
-		}
-		if markup == nil {
-			continue
 		}
 		rows, ok := markup["inline_keyboard"].([]any)
 		if !ok {
@@ -83,14 +72,14 @@ func TestVelaAdminStartSendsOfficialWebAppButtonToTelegramAPI(t *testing.T) {
 					continue
 				}
 				if webApp["url"] != "https://panel.vela-ci.org/private/" {
-					t.Fatal("Telegram /start sent an unexpected WebApp destination")
+					t.Fatal("outgoing Telegram WebApp destination differs from approved HTTPS URL")
 				}
 				found = true
 			}
 		}
 	}
 	if !found {
-		t.Fatal("Telegram /start did not send official web_app payload")
+		t.Fatal("outgoing Telegram API message omitted the approved web_app button")
 	}
 }
 
