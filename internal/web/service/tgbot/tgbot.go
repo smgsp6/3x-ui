@@ -58,6 +58,7 @@ var (
 	adminTopics map[int64]int // admin chat -> forum topic (message_thread_id)
 	isRunning   bool
 	hostname    string
+	hostnameMu sync.RWMutex
 	hashStorage *global.HashStorage
 	hashStorageMu sync.RWMutex // protects replacement during live Bot reload
 
@@ -722,14 +723,28 @@ func inAdminTopic(document *telego.SendDocumentParams) *telego.SendDocumentParam
 }
 
 // SetHostname sets the hostname for the liveBot().
+// The server hostname may be refreshed by a Bot reload while another
+// Telegram handler is composing a message. Snapshot it under the same lock.
+func currentBotHostname() string {
+	hostnameMu.RLock()
+	defer hostnameMu.RUnlock()
+	return hostname
+}
+
+func setBotHostname(value string) {
+	hostnameMu.Lock()
+	hostname = value
+	hostnameMu.Unlock()
+}
+
 func (t *Tgbot) SetHostname() {
 	host, err := os.Hostname()
 	if err != nil {
 		logger.Error("get hostname error:", err)
-		hostname = ""
+		setBotHostname("")
 		return
 	}
-	hostname = host
+	setBotHostname(host)
 }
 
 // Stop safely stops the Telegram bot's Long Polling operation.

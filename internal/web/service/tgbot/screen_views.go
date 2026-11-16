@@ -81,7 +81,7 @@ func (t *Tgbot) homeSummary() string {
 		online = len(process.GetOnlineClients())
 	}
 	body := ""
-	body += t.I18nBot("tgbot.messages.hostname", "Hostname=="+hostname)
+	body += t.I18nBot("tgbot.messages.hostname", "Hostname=="+currentBotHostname())
 	body += t.I18nBot("tgbot.messages.version", "Version=="+panelVersion())
 	body += t.I18nBot("tgbot.messages.inboundsCount", "Count=="+strconv.Itoa(len(inbounds)))
 	body += t.I18nBot("tgbot.messages.clientsCount", "Count=="+strconv.Itoa(clients))
@@ -260,7 +260,7 @@ func (t *Tgbot) sendBackupScreen(chatID int64) {
 	if err != nil {
 		logger.Error("Error in getting db backup:", err)
 	}
-	summary := t.I18nBot("tgbot.messages.hostname", "Hostname=="+hostname)
+	summary := t.I18nBot("tgbot.messages.hostname", "Hostname=="+currentBotHostname())
 	summary += t.I18nBot("tgbot.messages.backupTime", "Time=="+time.Now().Format("2006-01-02 15:04:05"))
 
 	if dbData == nil {
@@ -289,7 +289,7 @@ func (t *Tgbot) sendBackupScreen(chatID int64) {
 
 // screenBanLogs sends the ban log file as a notice, never as a screen.
 func (t *Tgbot) screenBanLogs(chatID int64) {
-	output := t.I18nBot("tgbot.messages.hostname", "Hostname=="+hostname)
+	output := t.I18nBot("tgbot.messages.hostname", "Hostname=="+currentBotHostname())
 	output += t.I18nBot("tgbot.messages.datetime", "DateTime=="+time.Now().Format("2006-01-02 15:04:05"))
 	t.sendNotice(chatID, output)
 	t.sendBanLogsFile(chatID)

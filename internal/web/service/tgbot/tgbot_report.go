@@ -101,7 +101,7 @@ func (t *Tgbot) sendReport(chatID int64, body string) {
 
 // backupSummary is the caption that travels with a scheduled backup.
 func (t *Tgbot) backupSummary() string {
-	summary := t.I18nBot("tgbot.messages.hostname", "Hostname=="+hostname)
+	summary := t.I18nBot("tgbot.messages.hostname", "Hostname=="+currentBotHostname())
 	summary += t.I18nBot("tgbot.messages.backupTime", "Time=="+time.Now().Format("2006-01-02 15:04:05"))
 	return trimCaption(summary+"\n\n"+t.depleteReport(), botCaptionLimit)
 }
@@ -161,7 +161,7 @@ func (t *Tgbot) prepareServerUsageInfo() string {
 		onlines = process.GetOnlineClients()
 	}
 
-	info += t.I18nBot("tgbot.messages.hostname", "Hostname=="+hostname)
+	info += t.I18nBot("tgbot.messages.hostname", "Hostname=="+currentBotHostname())
 	info += t.I18nBot("tgbot.messages.version", "Version=="+config.GetPanelVersion())
 	info += t.I18nBot("tgbot.messages.xrayVersion", "XrayVersion=="+fmt.Sprint(t.lastStatus.Xray.Version))
 
