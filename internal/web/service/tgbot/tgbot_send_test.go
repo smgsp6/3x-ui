@@ -172,3 +172,29 @@ func TestCallbackAnswerIsPlainText(t *testing.T) {
 		t.Errorf("answerCallbackQuery texts = %q, want the e-mail shown verbatim", texts)
 	}
 }
+
+
+// Regression: StopBot may remove the live Bot between IsRunning and an API
+// send. Simulate this state without any network or Telegram credentials.
+func TestBotShutdownDoesNotDereferenceNilConnection(t *testing.T) {
+	original := liveBot()
+	tgBotMutex.Lock()
+	originalRunning := isRunning
+	isRunning = true
+	tgBotMutex.Unlock()
+	setTestBot(nil)
+	t.Cleanup(func() {
+		setTestBot(original)
+		tgBotMutex.Lock()
+		isRunning = originalRunning
+		tgBotMutex.Unlock()
+	})
+	service := &Tgbot{}
+	if id := service.SendMsgToTgbot(1001, "synthetic test"); id != 0 {
+		t.Fatalf("stopped Bot returned message ID %d, want 0", id)
+	}
+	service.sendCallbackAnswerTgBot("synthetic-callback", "ok")
+	service.editMessageTgBot(1001, 42, "synthetic test")
+	service.deleteMessageTgBot(1001, 42)
+	service.editMessageCallbackTgBot(1001, 42, nil)
+}
