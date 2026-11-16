@@ -29,6 +29,61 @@ func TestVelaPrivateAdminGetsOfficialWebAppLaunchButton(t *testing.T) {
 	}
 }
 
+// Verify the actual /start -> screen rendering -> Telegram Bot API payload,
+// not only a keyboard builder. This is offline: recordingServer is loopback.
+func TestVelaAdminStartSendsOfficialWebAppButtonToTelegramAPI(t *testing.T) {
+	t.Setenv("XUI_TG_MINIAPP_ENABLED", "true")
+	t.Setenv("XUI_TG_MINIAPP_ADMIN_IDS", "1001")
+	t.Setenv("XUI_TG_MINIAPP_URL", "https://panel.vela-ci.example.test/private/")
+	_, calls := newScreenTgbot(t, false)
+	bot := initReportDB(t)
+	setTestAdmins(t, 1001)
+	bot.resolveScreenArt()
+	bot.answerCommand(&telego.Message{
+		MessageID: 420,
+		Chat: telego.Chat{ID: 1001, Type: "private"},
+		From: &telego.User{ID: 1001},
+		Text: "/start",
+	}, 1001, true)
+	found := false
+	for _, call := range calls() {
+		if call.Method != "sendPhoto" && call.Method != "sendMessage" {
+			continue
+		}
+		markup, ok := call.Payload["reply_markup"].(map[string]any)
+		if !ok {
+			continue
+		}
+		rows, ok := markup["inline_keyboard"].([]any)
+		if !ok {
+			continue
+		}
+		for _, rawRow := range rows {
+			buttons, ok := rawRow.([]any)
+			if !ok {
+				continue
+			}
+			for _, rawButton := range buttons {
+				button, ok := rawButton.(map[string]any)
+				if !ok {
+					continue
+				}
+				webApp, ok := button["web_app"].(map[string]any)
+				if !ok {
+					continue
+				}
+				if webApp["url"] != "https://panel.vela-ci.example.test/private/" {
+					t.Fatal("Telegram /start sent an unexpected WebApp destination")
+				}
+				found = true
+			}
+		}
+	}
+	if !found {
+		t.Fatal("Telegram /start did not send official web_app payload")
+	}
+}
+
 func TestVelaLaunchButtonNeverAppearsInGroupOrUnapprovedChat(t *testing.T) {
 	t.Setenv("XUI_TG_MINIAPP_ENABLED", "true")
 	t.Setenv("XUI_TG_MINIAPP_ADMIN_IDS", "1001")
