@@ -269,7 +269,7 @@ func (t *Tgbot) acceptBroadcastDraft(actor chatUser, ids []int) {
 	if err != nil {
 		broadcastDropCompose(actor)
 		userStateMgr.clear(actor)
-		logger.Warningf("broadcast: chat %d message %v cannot be copied: %v", chatId, ids, err)
+		logger.Warningf("broadcast: chat %d message %v cannot be copied: %v", safeTelegramLogID(chatId), safeTelegramLogMessageIDs(ids), safeTelegramLogError(err))
 		t.clearBroadcastDraft(actor, ids, nil)
 		t.SendMsgToTgbot(chatId, t.I18nBot("tgbot.messages.broadcastNotCopyable"))
 		return
@@ -425,10 +425,10 @@ func (t *Tgbot) runBroadcast(runner *broadcastRunner, draft broadcastDraft, reci
 			// 403 means the chat never started the bot or blocked it; a long
 			// recipient list would turn these into log spam at warning level.
 			unreachable++
-			logger.Debugf("broadcast: chat %d cannot receive bot messages: %v", chatID, err)
+			logger.Debugf("broadcast: chat %d cannot receive bot messages: %v", safeTelegramLogID(chatID), safeTelegramLogError(err))
 		default:
 			failed++
-			logger.Warningf("broadcast: chat %d not delivered: %v", chatID, err)
+			logger.Warningf("broadcast: chat %d not delivered: %v", safeTelegramLogID(chatID), safeTelegramLogError(err))
 		}
 		done := i + 1
 		if done%broadcastProgressEvery == 0 || time.Since(lastProgress) >= broadcastProgressInterval {
@@ -509,7 +509,7 @@ func (t *Tgbot) finalizeBroadcastCard(runner *broadcastRunner, summary string) b
 	if err == nil || isTelegramNotModifiedError(err) {
 		return true
 	}
-	logger.Warning("broadcast: progress card edit failed:", err)
+	logger.Warning("broadcast: progress card edit failed:", safeTelegramLogError(err))
 	return false
 }
 

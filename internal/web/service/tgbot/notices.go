@@ -86,7 +86,7 @@ func (t *Tgbot) liveNotice(chatID int64, kind, body string) {
 		ChatID: tu.ID(chatID), MessageThreadID: adminTopic(chatID), Text: t.noticeText(body, 1), ParseMode: "HTML", ReplyMarkup: t.hideButton(),
 	})
 	if err != nil {
-		logger.Warning("Failed to send a notice:", err)
+		logger.Warning("Failed to send a notice:", safeTelegramLogError(err))
 		return
 	}
 	st.msgID = sc.MessageID
@@ -114,7 +114,7 @@ func (t *Tgbot) editNotice(chatID int64, msgID int, text string) bool {
 	if err == nil || isTelegramNotModifiedError(err) {
 		return true
 	}
-	logger.Debug("Notice not editable, posting a new one:", err)
+	logger.Debug("Notice not editable, posting a new one:", safeTelegramLogError(err))
 	return false
 }
 
@@ -146,7 +146,7 @@ func (t *Tgbot) sendBackupFile(chatID int64, data []byte, name, caption string) 
 		ParseMode: "HTML",
 	})
 	if err != nil {
-		logger.Warning("Failed to upload a file with a caption:", err)
+		logger.Warning("Failed to upload a file with a caption:", safeTelegramLogError(err))
 		return false
 	}
 	return true

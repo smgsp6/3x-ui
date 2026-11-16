@@ -54,3 +54,15 @@ func TestUpstreamBotTransportOverridesPreserved(t *testing.T) {
 		t.Fatal("existing upstream Telegram Bot transport must not change")
 	}
 }
+
+func TestVelaBroadcastLogNeverPrintsPrivateChatOrMessageID(t *testing.T) {
+	t.Setenv("XUI_TG_MINIAPP_ENABLED", "true")
+	if safeTelegramLogID(987654321) != 0 || safeTelegramLogMessageIDs([]int{123, 456}) != nil {
+		t.Fatal("Vela broadcast log contains private Telegram identifiers")
+	}
+	t.Setenv("XUI_TG_MINIAPP_ENABLED", "false")
+	if safeTelegramLogID(987654321) != 987654321 ||
+		len(safeTelegramLogMessageIDs([]int{123, 456})) != 2 {
+		t.Fatal("upstream broadcast logging behavior must remain available")
+	}
+}

@@ -100,6 +100,21 @@ func safeTelegramLogError(err error) error {
 	return err
 }
 
+// Avoid writing private Telegram chat and message IDs in Vela broadcast logs.
+func safeTelegramLogID(id int64) int64 {
+	if tgminiapp.Enabled() {
+		return 0
+	}
+	return id
+}
+
+func safeTelegramLogMessageIDs(ids []int) []int {
+	if tgminiapp.Enabled() {
+		return nil
+	}
+	return ids
+}
+
 func safeTelegramLogPanic(value any) any {
 	if tgminiapp.Enabled() {
 		return "Vela Telegram handler panicked (private details withheld)"

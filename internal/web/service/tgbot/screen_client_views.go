@@ -301,7 +301,7 @@ func (t *Tgbot) sendNoticeNoKeyboard(chatID int64, text string) {
 		ReplyMarkup: tu.ReplyKeyboardRemove(),
 	})
 	if err != nil {
-		logger.Warning("Failed to send a notice:", err)
+		logger.Warning("Failed to send a notice:", safeTelegramLogError(err))
 	}
 }
 

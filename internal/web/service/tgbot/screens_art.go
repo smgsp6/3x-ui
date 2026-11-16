@@ -61,7 +61,7 @@ func (t *Tgbot) resolveScreenArt() {
 
 	me, err := b.GetMe(ctx)
 	if err != nil {
-		logger.Warning("Failed to read the bot identity for screen art:", err)
+		logger.Warning("Failed to read the bot identity for screen art:", safeTelegramLogError(err))
 		return
 	}
 
@@ -71,7 +71,7 @@ func (t *Tgbot) resolveScreenArt() {
 		UserID: me.ID, Limit: 1,
 	})
 	if err != nil {
-		logger.Debug("Failed to read the bot's profile photos for screen art:", err)
+		logger.Debug("Failed to read the bot's profile photos for screen art:", safeTelegramLogError(err))
 		return
 	}
 

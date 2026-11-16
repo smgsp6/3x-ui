@@ -90,7 +90,7 @@ func (t *Tgbot) refreshInlineCapability() {
 	defer cancel()
 	me, err := liveBot().GetMe(ctx)
 	if err != nil {
-		logger.Debug("Cannot read the bot capability for inline mode:", err)
+		logger.Debug("Cannot read the bot capability for inline mode:", safeTelegramLogError(err))
 		return
 	}
 	recordInlineCapability(me.SupportsInlineQueries)
@@ -228,7 +228,7 @@ func (t *Tgbot) answerInline(queryID string, results []telego.InlineQueryResult,
 	})
 	if err != nil {
 		// A stale query id is normal (the user kept typing); never a failure.
-		logger.Debug("answerInlineQuery failed:", err)
+		logger.Debug("answerInlineQuery failed:", safeTelegramLogError(err))
 	}
 }
 
