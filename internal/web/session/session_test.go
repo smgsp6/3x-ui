@@ -185,3 +185,75 @@ func TestMiniAppRevocationCannotResurrectOldCookies(t *testing.T) {
 	stolenCookieReplay, _ := request("/protected", rotatedCookie)
 	checkStatus(http.StatusUnauthorized, stolenCookieReplay)
 }
+
+func TestMiniAppIdentityNeverTrustsScopedAPITokenOrForgedSessionField(t *testing.T) {
+	t.Setenv("XUI_TG_MINIAPP_ENABLED", "true")
+	t.Setenv("XUI_TG_MINIAPP_ADMIN_IDS", "1001")
+	dbtest.InitDB(t, filepath.Join(t.TempDir(), "x-ui.db"))
+
+	var admin model.User
+	if err := database.GetDB().First(&admin).Error; err != nil {
+		t.Fatal(err)
+	}
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(sessions.Sessions(sessionCookieName, cookie.NewStore([]byte("01234567890123456789012345678901"))))
+	router.GET("/login", func(c *gin.Context) {
+		if err := SetTelegramMiniAppLoginUser(c, &admin, 1001); err != nil {
+			c.Status(http.StatusForbidden)
+			return
+		}
+		c.Status(http.StatusNoContent)
+	})
+	router.GET("/valid", func(c *gin.Context) {
+		if IsTelegramMiniAppLogin(c) {
+			c.Status(http.StatusNoContent)
+		} else {
+			c.Status(http.StatusForbidden)
+		}
+	})
+	router.GET("/scoped-token", func(c *gin.Context) {
+		// The protected panel API may inject a monitor/node identity, but
+		// that is not proof of a Telegram WebApp browser session.
+		SetAPIAuthUser(c, &admin)
+		sessions.Default(c).Set(telegramMiniAppUserKey, int64(1001))
+		if IsTelegramMiniAppLogin(c) {
+			c.Status(http.StatusNoContent)
+		} else {
+			c.Status(http.StatusForbidden)
+		}
+	})
+	request := func(path string, savedCookie *http.Cookie) *httptest.ResponseRecorder {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		if savedCookie != nil {
+			req.AddCookie(savedCookie)
+		}
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		return rec
+	}
+
+	if code := request("/scoped-token", nil).Code; code != http.StatusForbidden {
+		t.Fatalf("forged Telegram ID + scoped API identity returned %d, want 403", code)
+	}
+	auth := request("/login", nil)
+	if auth.Code != http.StatusNoContent {
+		t.Fatalf("signed Mini App login returned %d", auth.Code)
+	}
+	var cookie *http.Cookie
+	for _, candidate := range auth.Result().Cookies() {
+		if candidate.Name == sessionCookieName {
+			cookie = candidate
+		}
+	}
+	if cookie == nil {
+		t.Fatal("signed Telegram login did not issue cookie")
+	}
+	if code := request("/valid", cookie).Code; code != http.StatusNoContent {
+		t.Fatalf("valid Telegram WebApp session returned %d, want 204", code)
+	}
+	if code := request("/scoped-token", cookie).Code; code != http.StatusForbidden {
+		t.Fatalf("scoped API token bypassed Telegram session check: %d", code)
+	}
+}
