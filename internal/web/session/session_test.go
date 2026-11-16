@@ -301,3 +301,73 @@ func TestMiniAppPolicyNonceTracksBotTokenRotation(t *testing.T) {
 		t.Fatal("restoring an old Bot Secret resurrected a stale session")
 	}
 }
+
+func TestMiniAppBotTokenRotationRevokesSignedBrowserCookie(t *testing.T) {
+	t.Setenv("XUI_TG_MINIAPP_ENABLED", "true")
+	t.Setenv("XUI_TG_MINIAPP_ADMIN_IDS", "1001")
+	file := configureMiniAppTestBotToken(t)
+	dbtest.InitDB(t, filepath.Join(t.TempDir(), "x-ui.db"))
+	var admin model.User
+	if err := database.GetDB().First(&admin).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(sessions.Sessions(sessionCookieName, cookie.NewStore([]byte("01234567890123456789012345678901"))))
+	router.GET("/login", func(c *gin.Context) {
+		if err := SetTelegramMiniAppLoginUser(c, &admin, 1001); err != nil {
+			c.Status(http.StatusForbidden)
+			return
+		}
+		c.Status(http.StatusNoContent)
+	})
+	router.GET("/protected", func(c *gin.Context) {
+		if IsTelegramMiniAppLogin(c) {
+			c.Status(http.StatusNoContent)
+		} else {
+			c.Status(http.StatusUnauthorized)
+		}
+	})
+	check := func(path string, stored *http.Cookie) (*httptest.ResponseRecorder, *http.Cookie) {
+		t.Helper()
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		if stored != nil {
+			req.AddCookie(stored)
+		}
+		out := httptest.NewRecorder()
+		router.ServeHTTP(out, req)
+		for _, item := range out.Result().Cookies() {
+			if item.Name == sessionCookieName {
+				return out, item
+			}
+		}
+		return out, nil
+	}
+	initial, cookie := check("/login", nil)
+	if initial.Code != http.StatusNoContent || cookie == nil {
+		t.Fatal("test Mini App login did not issue a signed cookie")
+	}
+	valid, _ := check("/protected", cookie)
+	if valid.Code != http.StatusNoContent {
+		t.Fatal("valid Mini App cookie was not accepted before Bot Token rotation")
+	}
+	if err := os.WriteFile(file, []byte("12345:rotated_token"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	invalid, _ := check("/protected", cookie)
+	if invalid.Code != http.StatusUnauthorized {
+		t.Fatal("stolen cookie remained authorized after Bot Token rotation")
+	}
+	if err := os.WriteFile(file, []byte("12345:synthetic_token"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	replay, _ := check("/protected", cookie)
+	if replay.Code != http.StatusUnauthorized {
+		t.Fatal("restoring a prior Bot Token resurrected a revoked cookie")
+	}
+	fresh, freshCookie := check("/login", nil)
+	if fresh.Code != http.StatusNoContent || freshCookie == nil {
+		t.Fatal("fresh Mini App login was blocked after Bot Token recovery")
+	}
+}
