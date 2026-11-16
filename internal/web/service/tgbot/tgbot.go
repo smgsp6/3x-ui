@@ -409,21 +409,21 @@ func (t *Tgbot) Start(i18nFS embed.FS) error {
 	adminTopics = parsedAdminTopics
 	tgBotMutex.Unlock()
 
-	// Get Telegram bot proxy URL
-	tgBotProxy, err := t.settingService.GetTgBotProxy()
-	if err != nil {
-		logger.Warning("Failed to get Telegram bot proxy URL:", safeTelegramLogError(err))
+	// On a fresh Vela installation the upstream Telegram notification
+	// preferences might not exist yet. Do not read their proxy/API endpoint
+	// settings when the Bot Token comes from a private Docker Secret.
+	// Keep all upstream options for the original bot mode.
+	tgBotProxy, tgBotAPIServer := "", ""
+	if !tgminiapp.Enabled() {
+		tgBotProxy, err = t.settingService.GetTgBotProxy()
+		if err != nil {
+			logger.Warning("Failed to get Telegram bot proxy URL:", safeTelegramLogError(err))
+		}
+		tgBotAPIServer, err = t.settingService.GetTgBotAPIServer()
+		if err != nil {
+			logger.Warning("Failed to get Telegram bot API server URL:", safeTelegramLogError(err))
+		}
 	}
-
-	// Get Telegram bot API server URL
-	tgBotAPIServer, err := t.settingService.GetTgBotAPIServer()
-	if err != nil {
-		logger.Warning("Failed to get Telegram bot API server URL:", safeTelegramLogError(err))
-	}
-
-	// Never inherit a custom Telegram Bot API destination or proxy from
-	// the original 3x-ui database into a private Vela Bot Token session.
-	tgBotProxy, tgBotAPIServer = botConnectionOptions(tgBotProxy, tgBotAPIServer)
 
 	// Create new Telegram bot instance
 	stop := make(chan struct{})
@@ -536,6 +536,9 @@ func panelEgressDial(resolve func() string) fasthttp.DialFunc {
 
 // NewBot creates a new Telegram bot instance with optional proxy and API server settings.
 func (t *Tgbot) NewBot(token string, proxyUrl string, apiServerUrl string, stopped <-chan struct{}) (*telego.Bot, error) {
+	// Enforce at the connection creation boundary as well as at Start:
+	// no caller can redirect the private Bot Token to an inherited API host.
+	proxyUrl, apiServerUrl = botConnectionOptions(proxyUrl, apiServerUrl)
 	// Validate proxy URL if provided
 	if proxyUrl != "" {
 		if !isSupportedBotProxyScheme(proxyUrl) {
