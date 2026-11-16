@@ -226,6 +226,32 @@ func TestBotTokenSecretFile(t *testing.T) {
 	}
 }
 
+// A malformed token must not be interpolated into /bot<TOKEN>/ requests.
+func TestBotTokenRejectsMalformedBotIdentifiers(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "token")
+	t.Setenv("XUI_TG_MINIAPP_BOT_TOKEN_FILE", file)
+	for _, raw := range []string{
+		"0:secret", "001:secret", "not-id:secret", "123:bad/secret",
+		"123:bad?secret", "123:bad:extra", "123:", ":secret",
+		"9223372036854775808:secret", "123:secret\r", "123:token\xff",
+	} {
+		if err := os.WriteFile(file, []byte(raw), 0600); err != nil {
+			t.Fatal(err)
+		}
+		if token := BotToken(); token != "" {
+			t.Fatal("malformed Telegram Bot Token accepted")
+		}
+	}
+	for _, raw := range []string{"123:valid_Secret-09", "123:valid_Secret-09\n"} {
+		if err := os.WriteFile(file, []byte(raw), 0600); err != nil {
+			t.Fatal(err)
+		}
+		if token := BotToken(); token != "123:valid_Secret-09" {
+			t.Fatal("valid Telegram Bot Token was rejected")
+		}
+	}
+}
+
 func TestAdminAllowlistRejectsAmbiguityAndOverCapacity(t *testing.T) {
 	for _, value := range []string{
 		"1234567,1234567",

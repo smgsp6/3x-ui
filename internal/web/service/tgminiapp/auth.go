@@ -246,6 +246,13 @@ func BotToken() string {
 			return ""
 		}
 	}
+	if len(id) > 1 && id[0] == '0' {
+		return ""
+	}
+	botID, err := strconv.ParseInt(id, 10, 64)
+	if err != nil || botID <= 0 {
+		return ""
+	}
 	for _, c := range secret {
 		if !(c >= 'a' && c <= 'z') && !(c >= 'A' && c <= 'Z') &&
 			!(c >= '0' && c <= '9') && c != '-' && c != '_' {
