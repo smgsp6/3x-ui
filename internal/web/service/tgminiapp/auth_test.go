@@ -87,8 +87,16 @@ func TestMiniAppURL(t *testing.T) {
 		raw  string
 		good bool
 	}{
-		{"https://vela.example.test/", true},
-		{"https://vela.example.test:8443/panel/", true},
+		{"https://admin.vela-ci.org/", true},
+		{"https://admin.vela-ci.org:8443/panel/", true},
+		{"https://vela.example.test/", false},
+		{"https://vela.example.com/", false},
+		{"https://panel.example.net/", false},
+		{"https://example.org/", false},
+		{"https://localhost/", false},
+		{"https://127.0.0.1/", false},
+		{"https://admin.vela-ci.org:99999/", false},
+		{"https://admin.vela-ci.org:0/", false},
 		{"http://vela.example.test/", false},
 		{"https://admin:pass@vela.example.test/", false},
 		{"https://vela.example.test/?token=secret", false},
