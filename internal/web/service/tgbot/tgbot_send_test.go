@@ -229,3 +229,18 @@ func TestVelaConnectionCheckNeverReturnsBotCredentials(t *testing.T) {
 		t.Fatal("Vela connection check returned private Bot API error details")
 	}
 }
+
+
+// A Bot API gateway returning ok=true with a null result must not make Vela
+// claim that Telegram connectivity is healthy.
+func TestConnectionRejectsMalformedEmptyBotIdentity(t *testing.T) {
+	mock := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"ok": true, "result": nil})
+	}))
+	t.Cleanup(mock.Close)
+	swapTestBot(t, mock.URL)
+	if err := (&Tgbot{}).TestConnection(); err == nil {
+		t.Fatal("empty Telegram bot identity was accepted as a healthy connection")
+	}
+}
