@@ -772,17 +772,25 @@ func stopBotLocked() {
 		_ = handler.StopWithContext(shutdownCtx)
 	}
 
-	if done != nil {
-		// Only wait for the receiver captured above. A concurrent reload
-		// may already have started another independent polling generation.
-		select {
-		case <-done:
-		case <-shutdownCtx.Done():
-			logger.Warning("Telegram receiver did not exit before shutdown deadline")
-		}
+	if !awaitBotReceiver(shutdownCtx, done) {
+		logger.Warning("Telegram receiver did not exit before shutdown deadline")
 	}
 	if cancel != nil {
 		logger.Info("Telegram bot successfully stopped.")
+	}
+}
+
+// awaitBotReceiver is bounded by the caller's shutdown deadline. A nil
+// receiver means polling never started, and requires no waiting.
+func awaitBotReceiver(ctx context.Context, done <-chan struct{}) bool {
+	if done == nil {
+		return true
+	}
+	select {
+	case <-done:
+		return true
+	case <-ctx.Done():
+		return false
 	}
 }
 
