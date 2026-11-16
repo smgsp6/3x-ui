@@ -153,3 +153,19 @@ func TestStopBotWaitsForStartupCriticalSection(t *testing.T) {
 		t.Fatal("StopBot failed to complete after startup lock was released")
 	}
 }
+
+func TestAwaitBotReceiverHonorsShutdownDeadline(t *testing.T) {
+	if !awaitBotReceiver(context.Background(), nil) {
+		t.Fatal("a receiver that never started should not block shutdown")
+	}
+	finished := make(chan struct{})
+	close(finished)
+	if !awaitBotReceiver(context.Background(), finished) {
+		t.Fatal("an exited receiver was not recognized")
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if awaitBotReceiver(ctx, make(chan struct{})) {
+		t.Fatal("an unresponsive receiver bypassed the shutdown deadline")
+	}
+}
