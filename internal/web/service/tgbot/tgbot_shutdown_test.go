@@ -114,3 +114,35 @@ func TestStopBotWaitsOnlyForRetiredGeneration(t *testing.T) {
 	}
 	close(newDone)
 }
+
+// Startup holds the lifecycle lock until its connection is fully installed.
+// StopBot must not complete while a startup is still in that protected region.
+func TestStopBotWaitsForStartupCriticalSection(t *testing.T) {
+	StopBot()
+	startupLocked := make(chan struct{})
+	releaseStartup := make(chan struct{})
+	go func() {
+		botLifecycleMu.Lock()
+		close(startupLocked)
+		<-releaseStartup
+		botLifecycleMu.Unlock()
+	}()
+	<-startupLocked
+	stopped := make(chan struct{})
+	go func() {
+		StopBot()
+		close(stopped)
+	}()
+	select {
+	case <-stopped:
+		close(releaseStartup)
+		t.Fatal("StopBot overtook an in-progress startup")
+	case <-time.After(25 * time.Millisecond):
+	}
+	close(releaseStartup)
+	select {
+	case <-stopped:
+	case <-time.After(3 * time.Second):
+		t.Fatal("StopBot failed to complete after startup lock was released")
+	}
+}
