@@ -45,8 +45,10 @@ var (
 	botCancel context.CancelFunc
 	// tgBotMutex protects concurrent access to botCancel variable
 	tgBotMutex sync.Mutex
-	// botWG waits for the OnReceive Long Polling goroutine to finish.
-	botWG sync.WaitGroup
+	// botReceiverDone belongs to precisely one polling generation. Waiting on
+	// a global WaitGroup could accidentally wait for a replacement receiver
+	// that starts after StopBot released tgBotMutex.
+	botReceiverDone chan struct{}
 
 	botHandler  *th.BotHandler
 	adminIds    []int64
@@ -691,6 +693,8 @@ func StopBot() {
 	tgBotMutex.Lock()
 	cancel := botCancel
 	botCancel = nil
+	done := botReceiverDone
+	botReceiverDone = nil
 	handler := botHandler
 	botHandler = nil
 	isRunning = false
@@ -721,9 +725,12 @@ func StopBot() {
 		timeoutCancel()
 	}
 
+	if done != nil {
+		// Only wait for the receiver captured above. A concurrent reload
+		// may already have started another independent polling generation.
+		<-done
+	}
 	if cancel != nil {
-		// A receiver may still be initializing when StopBot runs.
-		botWG.Wait()
 		logger.Info("Telegram bot successfully stopped.")
 	}
 }

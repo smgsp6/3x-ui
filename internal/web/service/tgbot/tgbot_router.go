@@ -102,9 +102,10 @@ func (t *Tgbot) OnReceive() {
 	ctx, cancel := context.WithCancel(context.Background())
 	botCancel = cancel
 	isRunning = true
-	// Add to WaitGroup before releasing the lock so StopBot() can't return
-	// before this receiver goroutine is accounted for.
-	botWG.Add(1)
+	// Capture a generation-specific completion channel before StopBot may
+	// snapshot the receiver, preventing waits on a later replacement bot.
+	done := make(chan struct{})
+	botReceiverDone = done
 	tgBotMutex.Unlock()
 
 	// Failed initial polling must not leave the receiver marked as running.
@@ -112,12 +113,12 @@ func (t *Tgbot) OnReceive() {
 	if err != nil || updates == nil {
 		cancel()
 		finishBotReceiver(pollBot)
-		botWG.Done()
+		close(done)
 		logger.Warning("Telegram receiver could not start:", safeTelegramLogError(err))
 		return
 	}
 	go func() {
-		defer botWG.Done()
+		defer close(done)
 		defer cancel()
 		defer finishBotReceiver(pollBot)
 		h, err := th.NewBotHandler(pollBot, updates)

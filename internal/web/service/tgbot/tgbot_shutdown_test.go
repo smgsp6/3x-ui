@@ -3,6 +3,7 @@ package tgbot
 import (
     "context"
     "testing"
+    "time"
 
     "github.com/mymmrac/telego"
 )
@@ -43,14 +44,15 @@ func TestStopBotCancelsPendingReceiver(t *testing.T) {
     t.Cleanup(StopBot)
     ctx, cancel := context.WithCancel(context.Background())
     defer cancel()
-    botWG.Add(1)
+    done := make(chan struct{})
     finished := make(chan struct{})
     go func() {
-        defer botWG.Done()
         <-ctx.Done()
         close(finished)
+        close(done)
     }()
     tgBotMutex.Lock()
+    botReceiverDone = done
     botCancel = cancel
     isRunning = true
     tgBotMutex.Unlock()
@@ -64,4 +66,51 @@ func TestStopBotCancelsPendingReceiver(t *testing.T) {
     if (&Tgbot{}).IsRunning() {
         t.Fatal("StopBot left the cancelled receiver marked running")
     }
+}
+
+// A shutdown must never wait for a NEW polling generation after the old
+// generation has been cancelled. That made reloads hang indefinitely with
+// the old package-global WaitGroup.
+func TestStopBotWaitsOnlyForRetiredGeneration(t *testing.T) {
+    StopBot()
+    t.Cleanup(StopBot)
+    oldCtx, oldCancel := context.WithCancel(context.Background())
+    defer oldCancel()
+    oldDone := make(chan struct{})
+    tgBotMutex.Lock()
+    botCancel = oldCancel
+    botReceiverDone = oldDone
+    isRunning = true
+    tgBotMutex.Unlock()
+
+    returned := make(chan struct{})
+    go func() {
+        StopBot()
+        close(returned)
+    }()
+    // Cancellation proves StopBot has released the receiver lock.
+    select {
+    case <-oldCtx.Done():
+    case <-time.After(3 * time.Second):
+        t.Fatal("StopBot did not cancel the old receiver")
+    }
+
+    // Simulate another reload installing a fresh receiver while the old
+    // generation has not yet finished cleanup.
+    newCtx, newCancel := context.WithCancel(context.Background())
+    defer newCancel()
+    newDone := make(chan struct{})
+    tgBotMutex.Lock()
+    botCancel = newCancel
+    botReceiverDone = newDone
+    isRunning = true
+    tgBotMutex.Unlock()
+    close(oldDone)
+    select {
+    case <-returned:
+    case <-time.After(3 * time.Second):
+        close(newDone)
+        t.Fatal("StopBot waited for the replacement receiver")
+    }
+    close(newDone)
 }
