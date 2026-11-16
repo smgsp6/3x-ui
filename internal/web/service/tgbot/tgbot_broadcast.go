@@ -103,6 +103,7 @@ var broadcastAlbumDebounce = 900 * time.Millisecond
 // errBroadcastAborted reports a recipient abandoned because the run was
 // cancelled or the bot stopped, which is not a delivery failure.
 var errBroadcastAborted = errors.New("broadcast aborted")
+var errBroadcastNonPrivate = errors.New("Vela broadcast destination must be a private Telegram chat")
 
 // broadcastResetAll drops every composition and cancels the active run; the
 // bot calls it on stop so no timer, token or runner slot outlives the receiver.
@@ -439,6 +440,9 @@ func (t *Tgbot) runBroadcast(runner *broadcastRunner, draft broadcastDraft, reci
 			break
 		}
 		switch {
+		case errors.Is(err, errBroadcastNonPrivate):
+			// An old client binding to a group/channel is skipped, not sent.
+			continue
 		case err == nil:
 			sent++
 			delivered[chatID] = ids
@@ -595,6 +599,9 @@ func (t *Tgbot) collectBroadcastRecipients() []int64 {
 // broadcastDeliverOne retries a recipient through flood-control waits so a 429
 // never drops them; after broadcastFloodRetries waits it gives up on them.
 func broadcastDeliverOne(chatID int64, draft broadcastDraft, aborted func() bool) ([]int, error) {
+	if tgminiapp.Enabled() && chatID <= 0 {
+		return nil, errBroadcastNonPrivate
+	}
 	for attempt := 0; ; attempt++ {
 		ids, err := broadcastSender(chatID, draft)
 		if err == nil {
@@ -645,6 +652,11 @@ func broadcastRetryAfter(err error) (time.Duration, bool) {
 // deliverBroadcastCopy copies the admin's message into one chat (an album rides
 // one copyMessages call, no forward header) and returns the created ids.
 func deliverBroadcastCopy(chatID int64, draft broadcastDraft) ([]int, error) {
+	// Defend the final network call even if a future caller bypasses the
+	// recipient collector or passes a stale list from an older deployment.
+	if tgminiapp.Enabled() && chatID <= 0 {
+		return nil, errBroadcastNonPrivate
+	}
 	from := tu.ID(draft.FromChatID)
 	var ids []int
 	err := callTelegramAPI(func(ctx context.Context) error {
