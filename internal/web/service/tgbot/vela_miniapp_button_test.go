@@ -1,6 +1,7 @@
 package tgbot
 
 import (
+	"encoding/json"
 	"testing"
 
 	"github.com/mymmrac/telego"
@@ -52,6 +53,15 @@ func TestVelaAdminStartSendsOfficialWebAppButtonToTelegramAPI(t *testing.T) {
 		}
 		markup, ok := call.Payload["reply_markup"].(map[string]any)
 		if !ok {
+			// Telego sends file-backed photos as multipart with the reply
+			// markup JSON encoded as a form field, not a JSON object.
+			if raw, isText := call.Payload["reply_markup"].(string); isText {
+				if json.Unmarshal([]byte(raw), &markup) != nil {
+					t.Fatal("Telegram API reply markup could not be decoded")
+				}
+			}
+		}
+		if markup == nil {
 			continue
 		}
 		rows, ok := markup["inline_keyboard"].([]any)
