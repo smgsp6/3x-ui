@@ -182,9 +182,13 @@ func TestBotShutdownDoesNotDereferenceNilConnection(t *testing.T) {
 	originalRunning := isRunning
 	isRunning = true
 	tgBotMutex.Unlock()
-	setTestBot(nil)
+	botMu.Lock()
+	bot = nil
+	botMu.Unlock()
 	t.Cleanup(func() {
-		setTestBot(original)
+		botMu.Lock()
+		bot = original
+		botMu.Unlock()
 		tgBotMutex.Lock()
 		isRunning = originalRunning
 		tgBotMutex.Unlock()
