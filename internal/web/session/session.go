@@ -232,7 +232,17 @@ func IsLogin(c *gin.Context) bool {
 // not merely an enabled Mini App deployment. Never expose Telegram UI or SDK
 // to ordinary panel logins just because the server feature flag is set.
 func IsTelegramMiniAppLogin(c *gin.Context) bool {
-	if !tgminiapp.Enabled() || GetLoginUser(c) == nil {
+	if !tgminiapp.Enabled() {
+		return false
+	}
+	// Scoped API-token and mTLS identities are intentionally allowed to use
+	// some panel APIs, but they are NOT Telegram WebApp browser sessions.
+	// GetLoginUser would otherwise short-circuit on apiAuthUserKey before
+	// checking the cookie nonce, epoch and revocation registry.
+	if _, apiIdentity := c.Get(apiAuthUserKey); apiIdentity {
+		return false
+	}
+	if GetLoginUser(c) == nil {
 		return false
 	}
 	id, ok := sessions.Default(c).Get(telegramMiniAppUserKey).(int64)
