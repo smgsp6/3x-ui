@@ -1325,3 +1325,31 @@ func TestAdminTappingTheClientCardQRCodeDrawsTheCode(t *testing.T) {
 		t.Error("the qr screen was never drawn")
 	}
 }
+
+// Stopping Telegram during menu rendering must not dereference a removed
+// connection. All screen operations should fail closed, without network calls.
+func TestScreenOperationsHandleStoppedBotWithoutPanic(t *testing.T) {
+	previous := liveBot()
+	botMu.Lock()
+	bot = nil
+	botMu.Unlock()
+	t.Cleanup(func() {
+		botMu.Lock()
+		bot = previous
+		botMu.Unlock()
+	})
+	service := &Tgbot{}
+	preview := &screen{kind: "main", pages: []string{"synthetic"}, pageMax: 1}
+	if service.editScreen(1001, &screen{msgID: 99}, preview) {
+		t.Fatal("missing Bot cannot edit a Telegram screen")
+	}
+	if id := service.replaceScreen(1001, preview); id != 0 {
+		t.Fatal("missing Bot must not send a Telegram screen")
+	}
+	service.renderScreen(1001, preview)
+	service.deleteIncoming(&telego.Message{Chat: telego.Chat{ID: 1001}})
+	if service.deleteOwnMessage(1001, 99) {
+		t.Fatal("missing Bot cannot delete a Telegram message")
+	}
+	service.answerSilent("synthetic-callback")
+}
