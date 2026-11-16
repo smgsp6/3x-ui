@@ -65,9 +65,15 @@ func initReportDB(t *testing.T) *Tgbot {
 	t.Helper()
 	dbtest.InitDB(t, filepath.Join(t.TempDir(), "x-ui.db"))
 
+	tgBotMutex.Lock()
 	origRunning := isRunning
-	t.Cleanup(func() { isRunning = origRunning })
 	isRunning = true
+	tgBotMutex.Unlock()
+	t.Cleanup(func() {
+		tgBotMutex.Lock()
+		isRunning = origRunning
+		tgBotMutex.Unlock()
+	})
 	return &Tgbot{}
 }
 
