@@ -49,12 +49,19 @@ func commandAllowed(level userLevel, command string) bool {
 // sentForChat reports that no account stands behind message.From: a post by an
 // anonymous admin or a channel carries a placeholder user shared by everybody.
 func sentForChat(message *telego.Message) bool {
-	return message.SenderChat != nil || message.From.IsBot
+	// Telegram service/channel messages need not carry a User. A nil
+	// sender is never an administrator and must not reach commands that
+	// dereference From or mutate panel state.
+	return message == nil || message.From == nil ||
+		message.SenderChat != nil || message.From.IsBot
 }
 
 // gateCommand reports whether a command reaches answerCommand, and as whom. A
 // stranger's refused command gets no reply, so the bot reveals nothing to probe.
 func (t *Tgbot) gateCommand(message *telego.Message) (isAdmin bool, ok bool) {
+	if message == nil || message.From == nil {
+		return false, false
+	}
 	level := levelStranger
 	if !sentForChat(message) {
 		level = t.levelOf(message.From.ID)
