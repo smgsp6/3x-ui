@@ -397,7 +397,13 @@ func (t *Tgbot) Start(i18nFS embed.FS) error {
 	}
 	botMu.Unlock()
 	if err != nil {
-		logger.Error("Failed to initialize Telegram bot API:", err)
+		if tgminiapp.Enabled() {
+			// Telegram client errors may contain the request URL, which
+			// embeds the Bot Token. Never emit it to Docker or CI logs.
+			logger.Warning("Vela Telegram bot initialization failed")
+		} else {
+			logger.Error("Failed to initialize Telegram bot API:", err)
+		}
 		return err
 	}
 
