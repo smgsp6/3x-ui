@@ -3,6 +3,8 @@ package tgbot
 import (
 	"slices"
 	"testing"
+
+	"github.com/mymmrac/telego"
 )
 
 // A revoked Telegram ID must lose privileged Bot commands and be removed from
@@ -53,5 +55,39 @@ func TestLegacyTelegramRecipientsRemainUnchanged(t *testing.T) {
 	})
 	if got := adminSnapshot(); !slices.Equal(got, []int64{-1001234, 111}) {
 		t.Fatalf("legacy Bot recipient behavior changed: %v", got)
+	}
+}
+
+// Conversation state is not an authorization grant. A removed administrator
+// must not finish a previously started client wizard or broadcast draft.
+func TestVelaWizardInputRevalidatesAdminOnEveryMessage(t *testing.T) {
+	t.Setenv("XUI_TG_MINIAPP_ENABLED", "true")
+	t.Setenv("XUI_TG_MINIAPP_ADMIN_IDS", "111")
+	withAdmins(t, 111)
+	message := telego.Message{
+		Chat: telego.Chat{ID: 111, Type: telego.ChatTypePrivate},
+		From: &telego.User{ID: 111},
+		Text: "client-name",
+	}
+	if !canContinueAdminWizard(message) {
+		t.Fatal("valid administrator cannot continue the wizard")
+	}
+	t.Setenv("XUI_TG_MINIAPP_ADMIN_IDS", "222")
+	if canContinueAdminWizard(message) {
+		t.Fatal("revoked administrator can continue a privileged wizard")
+	}
+	t.Setenv("XUI_TG_MINIAPP_ADMIN_IDS", "111")
+	message.From = nil
+	if canContinueAdminWizard(message) {
+		t.Fatal("anonymous sender can use an old admin wizard state")
+	}
+	message.From = &telego.User{ID: 111, IsBot: true}
+	if canContinueAdminWizard(message) {
+		t.Fatal("bot-impersonated sender can use admin wizard state")
+	}
+	message.From = &telego.User{ID: 111}
+	message.SenderChat = &message.Chat
+	if canContinueAdminWizard(message) {
+		t.Fatal("anonymous chat sender can use admin wizard state")
 	}
 }
