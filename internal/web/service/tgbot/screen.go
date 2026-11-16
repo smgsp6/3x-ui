@@ -190,6 +190,10 @@ func (t *Tgbot) screens() *screenStore { return screens }
 // editScreen edits the tracked message into the new screen. false means the
 // caller must replace it: the message is gone, too old, or of another type.
 func (t *Tgbot) editScreen(chatID int64, prev *screen, next *screen) bool {
+	b := liveBot()
+	if b == nil || prev == nil || next == nil {
+		return false
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -197,7 +201,7 @@ func (t *Tgbot) editScreen(chatID int64, prev *screen, next *screen) bool {
 	switch {
 	case next.hasPhoto || next.attachment != nil:
 		_, err = requestScreenPhoto(next, func(photo telego.InputFile) (*telego.Message, error) {
-			return liveBot().EditMessageMedia(ctx, &telego.EditMessageMediaParams{
+			return b.EditMessageMedia(ctx, &telego.EditMessageMediaParams{
 				ChatID: tu.ID(chatID), MessageID: prev.msgID,
 				Media:       &telego.InputMediaPhoto{Type: "photo", Media: photo, Caption: next.text, ParseMode: "HTML"},
 				ReplyMarkup: next.markup,
@@ -206,12 +210,12 @@ func (t *Tgbot) editScreen(chatID int64, prev *screen, next *screen) bool {
 	case prev.hasPhoto:
 		// A photo message cannot become a text one: drop the picture and let
 		// its caption carry the screen.
-		_, err = liveBot().EditMessageCaption(ctx, &telego.EditMessageCaptionParams{
+		_, err = b.EditMessageCaption(ctx, &telego.EditMessageCaptionParams{
 			ChatID: tu.ID(chatID), MessageID: prev.msgID,
 			Caption: next.text, ParseMode: "HTML", ReplyMarkup: next.markup,
 		})
 	default:
-		_, err = liveBot().EditMessageText(ctx, &telego.EditMessageTextParams{
+		_, err = b.EditMessageText(ctx, &telego.EditMessageTextParams{
 			ChatID:      tu.ID(chatID),
 			MessageID:   prev.msgID,
 			Text:        next.text,
@@ -222,13 +226,17 @@ func (t *Tgbot) editScreen(chatID int64, prev *screen, next *screen) bool {
 	if err == nil || isTelegramNotModifiedError(err) {
 		return true
 	}
-	logger.Debug("Screen not editable, replacing:", err)
+	logger.Debug("Screen not editable, replacing:", safeTelegramLogError(err))
 	return false
 }
 
 // replaceScreen sends the new screen BEFORE deleting the old one: with a slow
 // send, delete-first leaves the chat empty and reads as broken.
 func (t *Tgbot) replaceScreen(chatID int64, sc *screen) int {
+	b := liveBot()
+	if b == nil || sc == nil {
+		return 0
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
@@ -238,18 +246,22 @@ func (t *Tgbot) replaceScreen(chatID int64, sc *screen) int {
 	switch {
 	case sc.hasPhoto || sc.attachment != nil:
 		sent, err = requestScreenPhoto(sc, func(photo telego.InputFile) (*telego.Message, error) {
-			return liveBot().SendPhoto(ctx, &telego.SendPhotoParams{
+			return b.SendPhoto(ctx, &telego.SendPhotoParams{
 				ChatID: tu.ID(chatID), MessageThreadID: adminTopic(chatID), Photo: photo,
 				Caption: sc.text, ParseMode: "HTML", ReplyMarkup: sc.markup,
 			})
 		})
 	default:
-		sent, err = liveBot().SendMessage(ctx, &telego.SendMessageParams{
+		sent, err = b.SendMessage(ctx, &telego.SendMessageParams{
 			ChatID: tu.ID(chatID), MessageThreadID: adminTopic(chatID), Text: sc.text, ParseMode: "HTML", ReplyMarkup: sc.markup,
 		})
 	}
 	if err != nil {
 		logger.Warning("Failed to send a screen:", safeTelegramLogError(err))
+		return 0
+	}
+	if sent == nil {
+		logger.Warning("Telegram returned no screen message")
 		return 0
 	}
 	if hadPrev && prev.msgID != 0 && !t.deleteOwnMessage(chatID, prev.msgID) {
@@ -405,13 +417,17 @@ func (t *Tgbot) deleteScreenMessage(chatID int64, msgID int) { t.deleteOwnMessag
 // deleteIncoming removes a message the user sent: the wizard's text replies and
 // the pilot taps must not pile up in the chat.
 func (t *Tgbot) deleteIncoming(message *telego.Message) {
-	if message == nil || liveBot() == nil {
+	if message == nil {
+		return
+	}
+	b := liveBot()
+	if b == nil {
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	if err := liveBot().DeleteMessage(ctx, &telego.DeleteMessageParams{ChatID: tu.ID(message.Chat.ID), MessageID: message.MessageID}); err != nil {
-		logger.Debug("Cannot delete a user message:", err)
+	if err := b.DeleteMessage(ctx, &telego.DeleteMessageParams{ChatID: tu.ID(message.Chat.ID), MessageID: message.MessageID}); err != nil {
+		logger.Debug("Cannot delete a user message:", safeTelegramLogError(err))
 	}
 }
 
@@ -434,7 +450,7 @@ func (t *Tgbot) deleteOwnMessage(chatID int64, msgID int) bool {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	if err := b.DeleteMessage(ctx, &telego.DeleteMessageParams{ChatID: tu.ID(chatID), MessageID: msgID}); err != nil {
-		logger.Debug("Cannot delete a bot message:", err)
+		logger.Debug("Cannot delete a bot message:", safeTelegramLogError(err))
 		return false
 	}
 	return true
@@ -460,13 +476,14 @@ func hideButtonMarkup() *telego.InlineKeyboardMarkup {
 // answerSilent acknowledges a callback without a toast, for taps whose only
 // effect is visible in the message itself.
 func (t *Tgbot) answerSilent(callbackID string) {
-	if liveBot() == nil {
+	b := liveBot()
+	if b == nil {
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
-	if err := liveBot().AnswerCallbackQuery(ctx, &telego.AnswerCallbackQueryParams{CallbackQueryID: callbackID}); err != nil {
-		logger.Debug("Answer callback query failed:", err)
+	if err := b.AnswerCallbackQuery(ctx, &telego.AnswerCallbackQueryParams{CallbackQueryID: callbackID}); err != nil {
+		logger.Debug("Answer callback query failed:", safeTelegramLogError(err))
 	}
 }
 
