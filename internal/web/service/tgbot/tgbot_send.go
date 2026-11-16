@@ -2,6 +2,7 @@ package tgbot
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"html"
 	"strings"
@@ -266,6 +267,10 @@ func (t *Tgbot) TestConnection() error {
 		// contain /bot<TOKEN>/ in the request URL.
 		return fmt.Errorf("API unreachable: %w", safeTelegramLogError(err))
 	}
-	_ = me
+	if me == nil || !me.IsBot || me.ID == 0 {
+		// A malformed upstream "ok" response is not proof that the Bot Token
+		// works. Never announce a successful connection for an empty identity.
+		return errors.New("Telegram returned no valid Bot identity")
+	}
 	return nil
 }
