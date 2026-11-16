@@ -8,6 +8,7 @@ import (
 	"github.com/mhsanaei/3x-ui/v3/internal/web/middleware"
 	"github.com/mhsanaei/3x-ui/v3/internal/web/service"
 	"github.com/mhsanaei/3x-ui/v3/internal/web/service/panel"
+	"github.com/mhsanaei/3x-ui/v3/internal/web/service/tgbot"
 	"github.com/mhsanaei/3x-ui/v3/internal/web/service/tgminiapp"
 	"github.com/mhsanaei/3x-ui/v3/internal/web/session"
 )
@@ -66,6 +67,28 @@ func NewMiniAppController(g *gin.RouterGroup) {
 			return
 		}
 		c.JSON(http.StatusOK, gin.H{"success": true})
+	})
+}
+
+// NewMiniAppStatusController reports sanitized local readiness indicators
+// only after the existing panel API authentication AND a verified Telegram
+// session. The public /tg-miniapp/health endpoint intentionally checks only
+// the local HTTPS auth surface, not Telegram network connectivity.
+func NewMiniAppStatusController(api *gin.RouterGroup) {
+	api.GET("/tg-miniapp/status", func(c *gin.Context) {
+		c.Header("Cache-Control", "no-store")
+		if !session.IsTelegramMiniAppLogin(c) {
+			c.AbortWithStatus(http.StatusForbidden)
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"obj": gin.H{
+				"botRunning":       (&tgbot.Tgbot{}).IsRunning(),
+				"launchConfigured": tgminiapp.MiniAppURL() != "",
+				"authConfigured":   tgminiapp.BotToken() != "",
+			},
+		})
 	})
 }
 
