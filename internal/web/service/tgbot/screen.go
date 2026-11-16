@@ -260,11 +260,13 @@ func (t *Tgbot) replaceScreen(chatID int64, sc *screen) int {
 		logger.Warning("Failed to send a screen:", safeTelegramLogError(err))
 		return 0
 	}
-	if sent == nil {
-		logger.Warning("Telegram returned no screen message")
+	if sent == nil || sent.MessageID <= 0 {
+		// Never discard the old screen for a malformed successful Bot API
+		// response: Telegram can only edit/delete a positive message ID.
+		logger.Warning("Telegram returned no valid screen message")
 		return 0
 	}
-	if hadPrev && prev.msgID != 0 && !t.deleteOwnMessage(chatID, prev.msgID) {
+	if hadPrev && prev != nil && prev.msgID != 0 && !t.deleteOwnMessage(chatID, prev.msgID) {
 		t.editMessageCallbackTgBot(chatID, prev.msgID, &telego.InlineKeyboardMarkup{
 			InlineKeyboard: [][]telego.InlineKeyboardButton{},
 		})

@@ -317,8 +317,8 @@ func (t *Tgbot) sendNoticeReturningID(chatID int64, text string) int {
 		logger.Warning("Failed to send a notice:", safeTelegramLogError(err))
 		return 0
 	}
-	if sent == nil {
-		logger.Warning("Telegram returned no notice message")
+	if sent == nil || sent.MessageID <= 0 {
+		logger.Warning("Telegram returned no valid notice message")
 		return 0
 	}
 	return sent.MessageID

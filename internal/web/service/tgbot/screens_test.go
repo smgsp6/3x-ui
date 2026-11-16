@@ -1385,3 +1385,43 @@ func TestNoticeSendHandlesEmptyTelegramSuccessResponse(t *testing.T) {
 		t.Fatalf("nil Telegram result produced a notice ID %d", id)
 	}
 }
+
+
+// Successful HTTP responses with an invalid ID must not remove a previously
+// displayed menu. This is a fail-closed guard, not a Telegram API simulation.
+func TestScreenSendRejectsZeroTelegramMessageID(t *testing.T) {
+	srv, calls := recordingServer(t, false, map[string]any{
+		"sendMessage": map[string]any{"ok": true, "result": map[string]any{
+			"message_id": 0, "date": 0, "chat": map[string]any{"id": 1001, "type": "private"},
+		}},
+	})
+	swapTestBot(t, srv.URL)
+	t.Cleanup(srv.Close)
+	previous := &screen{kind: "main", msgID: 77}
+	screens.put(1001, previous)
+	next := &screen{kind: "main", text: "synthetic"}
+	if id := (&Tgbot{}).replaceScreen(1001, next); id != 0 {
+		t.Fatalf("invalid Telegram reply produced screen ID %d", id)
+	}
+	if current, ok := screens.get(1001); !ok || current != previous {
+		t.Fatal("malformed Telegram reply replaced the previously valid screen")
+	}
+	for _, call := range calls() {
+		if call.Method == "deleteMessage" || call.Method == "editMessageReplyMarkup" {
+			t.Fatal("malformed Telegram reply deleted or edited the previous screen")
+		}
+	}
+}
+
+func TestNoticeSendRejectsZeroTelegramMessageID(t *testing.T) {
+	srv, _ := recordingServer(t, false, map[string]any{
+		"sendMessage": map[string]any{"ok": true, "result": map[string]any{
+			"message_id": 0, "date": 0, "chat": map[string]any{"id": 1001, "type": "private"},
+		}},
+	})
+	swapTestBot(t, srv.URL)
+	t.Cleanup(srv.Close)
+	if id := (&Tgbot{}).sendNoticeReturningID(1001, "synthetic"); id != 0 {
+		t.Fatalf("invalid Telegram reply produced notice ID %d", id)
+	}
+}
