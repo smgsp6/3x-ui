@@ -234,8 +234,23 @@ func BotToken() string {
 	// Secret may end in one newline, but must not contain any other whitespace
 	// or control characters that could be passed to the Telegram client.
 	token := strings.TrimSuffix(string(data), "\n")
-	if token == "" || strings.ContainsAny(token, "\r\n\t \x00") {
+	// Telegram credentials are an ASCII numeric bot ID, a colon, and a
+	// URL-safe secret. Reject control characters, path separators and any
+	// other unexpected byte before constructing /bot<TOKEN>/ HTTP URLs.
+	id, secret, ok := strings.Cut(token, ":")
+	if !ok || id == "" || secret == "" {
 		return ""
+	}
+	for _, c := range id {
+		if c < '0' || c > '9' {
+			return ""
+		}
+	}
+	for _, c := range secret {
+		if !(c >= 'a' && c <= 'z') && !(c >= 'A' && c <= 'Z') &&
+			!(c >= '0' && c <= '9') && c != '-' && c != '_' {
+			return ""
+		}
 	}
 	return token
 }
