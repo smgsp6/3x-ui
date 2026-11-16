@@ -269,6 +269,11 @@ func (t *Tgbot) handleBroadcastInput(message *telego.Message, actor chatUser) {
 // acceptBroadcastDraft validates the draft with a self-copy — the admin sees
 // exactly what recipients will get — and shows the confirmation preview.
 func (t *Tgbot) acceptBroadcastDraft(actor chatUser, ids []int) {
+	if tgminiapp.Enabled() && !checkAdmin(actor.userID) {
+		broadcastDropCompose(actor)
+		userStateMgr.clear(actor)
+		return
+	}
 	chatId := actor.chatID
 	previewIDs, err := broadcastSender(chatId, broadcastDraft{FromChatID: chatId, MessageIDs: ids})
 	if err != nil {
@@ -369,6 +374,10 @@ func (t *Tgbot) broadcastCancelKeyboard() *telego.InlineKeyboardMarkup {
 // confirmBroadcast turns the pending draft into a run: it claims the single
 // runner slot, replaces the preview with a progress card, and starts delivery.
 func (t *Tgbot) confirmBroadcast(actor chatUser, token string, messageID int, queryID string) {
+	if tgminiapp.Enabled() && !checkAdmin(actor.userID) {
+		t.sendCallbackAnswerTgBot(queryID, "")
+		return
+	}
 	chatId := actor.chatID
 	runner := broadcastRegisterRunner(actor)
 	if runner == nil {
@@ -405,7 +414,14 @@ func (t *Tgbot) runBroadcast(runner *broadcastRunner, draft broadcastDraft, reci
 	// One copyMessages call carries a whole album, so the pause scales with
 	// the batch size to stay under the same per-second ceiling.
 	pause := broadcastSendDelay * time.Duration(max(1, len(draft.MessageIDs)))
-	aborted := func() bool { return runner.cancel.Load() || !t.IsRunning() }
+	aborted := func() bool {
+		// Revoking the initiating Vela administrator must stop an in-flight
+		// broadcast and trigger the same best-effort recall as Cancel.
+		if tgminiapp.Enabled() && !checkAdmin(runner.actor.userID) {
+			runner.cancel.Store(true)
+		}
+		return runner.cancel.Load() || !t.IsRunning()
+	}
 	sent, failed, unreachable := 0, 0, 0
 	lastProgress := time.Now()
 	canceled := false

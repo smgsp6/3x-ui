@@ -93,6 +93,15 @@ func guardReceiverUpdates(h *th.BotHandler, receiver *telego.Bot) {
 	})
 }
 
+// Only a still-authorized human administrator may continue an existing
+// multi-step wizard or broadcast prompt. Checking authorization only when
+// the initial button was tapped leaves revoked admins able to finish a
+// privileged operation using the previously stored conversation state.
+func canContinueAdminWizard(message telego.Message) bool {
+	return message.From != nil && !sentForChat(&message) &&
+		checkAdmin(message.From.ID)
+}
+
 // OnReceive starts the message receiving loop for the Telegram liveBot().
 func (t *Tgbot) OnReceive() {
 	params := telego.GetUpdatesParams{
@@ -231,6 +240,14 @@ func (t *Tgbot) OnReceive() {
 			userStateMgr.maybePrune(time.Hour)
 			actor := messageActor(message)
 			if userState, exists := userStateMgr.get(actor); exists {
+				if !canContinueAdminWizard(message) {
+					// Retire abandoned wizard/broadcast state without echoing
+					// private details back to a removed administrator.
+					userStateMgr.clear(actor)
+					addClientDrafts.reset(actor)
+					broadcastDropCompose(actor)
+					return nil
+				}
 				if userState == broadcastAwaitingText {
 					t.handleBroadcastInput(&message, actor)
 					return nil
