@@ -151,6 +151,34 @@ func MiniAppURL() string {
 			return ""
 		}
 	}
+	// Reject non-canonical/shortened numeric IPv4 aliases (e.g. 127.1)
+	// and malformed DNS labels. Some URL clients resolve those to loopback
+	// even though net.ParseIP does not consider them canonical IP addresses.
+	labels := strings.Split(host, ".")
+	if len(host) > 253 || len(labels) < 2 {
+		return ""
+	}
+	for _, label := range labels {
+		if len(label) < 1 || len(label) > 63 || label[0] == '-' || label[len(label)-1] == '-' {
+			return ""
+		}
+		for _, ch := range label {
+			if !(ch >= 'a' && ch <= 'z') && !(ch >= '0' && ch <= '9') && ch != '-' {
+				return ""
+			}
+		}
+	}
+	lastLabel := labels[len(labels)-1]
+	numericSuffix := true
+	for _, ch := range lastLabel {
+		if ch < '0' || ch > '9' {
+			numericSuffix = false
+			break
+		}
+	}
+	if numericSuffix {
+		return ""
+	}
 	if port := u.Port(); port != "" {
 		value, err := strconv.Atoi(port)
 		if err != nil || value < 1 || value > 65535 {
