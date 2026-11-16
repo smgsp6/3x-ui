@@ -1043,3 +1043,59 @@ func TestBroadcastCopyRejectsStoppedBot(t *testing.T) {
 	}
 	markupBroadcastCopy(1001, 1)
 }
+
+func TestVelaBroadcastRevocationStopsAndRecallsPendingCopies(t *testing.T) {
+	t.Setenv("XUI_TG_MINIAPP_ENABLED", "true")
+	t.Setenv("XUI_TG_MINIAPP_ADMIN_IDS", "111")
+	withAdmins(t, 111)
+	srv, calls := recordingServer(t, false)
+	swapTestBot(t, srv.URL)
+	t.Cleanup(srv.Close)
+	broadcastLocalizer(t)
+	setBroadcastRunning(t, true)
+	initReportDB(t)
+	t.Cleanup(func() { resetBroadcastState(t) })
+
+	runner := &broadcastRunner{actor: chatUser{chatID: 111, userID: 111}, chatID: 111, messageID: 5}
+	delivered := 0
+	swapBroadcastSender(t, func(int64, broadcastDraft) ([]int, error) {
+		delivered++
+		if delivered == 1 {
+			// Simulate removing this administrator mid-broadcast.
+			t.Setenv("XUI_TG_MINIAPP_ADMIN_IDS", "222")
+		}
+		return []int{800 + delivered}, nil
+	}, func(time.Duration) {})
+
+	(&Tgbot{}).runBroadcast(runner, broadcastDraft{FromChatID: 111, MessageIDs: []int{7}}, []int64{1, 2, 3})
+	if delivered != 1 {
+		t.Fatalf("revoked administrator continued delivering to %d recipients", delivered)
+	}
+	if !runner.cancel.Load() {
+		t.Fatal("broadcast was not cancelled when sender lost administrator privileges")
+	}
+	if got := countMethod(calls(), "deleteMessage"); got == 0 {
+		t.Fatal("already delivered message was not recalled after administrator revocation")
+	}
+}
+
+func TestVelaRevokedAdminCannotFinalizeDelayedBroadcastAlbum(t *testing.T) {
+	t.Setenv("XUI_TG_MINIAPP_ENABLED", "true")
+	t.Setenv("XUI_TG_MINIAPP_ADMIN_IDS", "222")
+	withAdmins(t, 111)
+	resetBroadcastState(t)
+	t.Cleanup(func() { resetBroadcastState(t) })
+	calls := 0
+	swapBroadcastSender(t, func(int64, broadcastDraft) ([]int, error) {
+		calls++
+		return []int{5}, nil
+	}, func(time.Duration) {})
+	actor := chatUser{chatID: 111, userID: 111}
+	(&Tgbot{}).acceptBroadcastDraft(actor, []int{10})
+	if calls != 0 {
+		t.Fatal("album debounce sent a draft after the administrator was revoked")
+	}
+	if _, _, ok := broadcastPendingDraft(actor); ok {
+		t.Fatal("revoked administrator retained a broadcast confirmation token")
+	}
+}
