@@ -760,21 +760,26 @@ func stopBotLocked() {
 	addClientDrafts.resetAll()
 	broadcastResetAll()
 
-	// Cancel incoming polling before draining the handler. A handler that is
-	// still receiving updates must not keep shutdown waiting indefinitely.
+	// Cancel incoming polling before draining the handler. Use a single
+	// shutdown deadline for the handler AND receiver completion: a broken
+	// Telegram network client must not hang panel shutdown indefinitely.
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 12*time.Second)
+	defer shutdownCancel()
 	if cancel != nil {
 		cancel()
 	}
 	if handler != nil {
-		ctx, timeoutCancel := context.WithTimeout(context.Background(), 10*time.Second)
-		_ = handler.StopWithContext(ctx)
-		timeoutCancel()
+		_ = handler.StopWithContext(shutdownCtx)
 	}
 
 	if done != nil {
 		// Only wait for the receiver captured above. A concurrent reload
 		// may already have started another independent polling generation.
-		<-done
+		select {
+		case <-done:
+		case <-shutdownCtx.Done():
+			logger.Warning("Telegram receiver did not exit before shutdown deadline")
+		}
 	}
 	if cancel != nil {
 		logger.Info("Telegram bot successfully stopped.")
