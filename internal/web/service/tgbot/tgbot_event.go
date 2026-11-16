@@ -5,24 +5,28 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync"
 	"unicode"
 
 	"github.com/mhsanaei/3x-ui/v3/internal/eventbus"
 	"github.com/mhsanaei/3x-ui/v3/internal/web/service/tgminiapp"
 )
 
-var cachedHostname string
+var (
+	cachedHostname string
+	hostnameOnce sync.Once
+)
 
 func getHostname() string {
-	if cachedHostname != "" {
-		return cachedHostname
-	}
-	h, err := os.Hostname()
-	if err != nil {
-		cachedHostname = "unknown"
-	} else {
-		cachedHostname = h
-	}
+	// EventBus can invoke multiple notification callbacks at once.
+	hostnameOnce.Do(func() {
+		h, err := os.Hostname()
+		if err != nil {
+			cachedHostname = "unknown"
+		} else {
+			cachedHostname = h
+		}
+	})
 	return cachedHostname
 }
 
