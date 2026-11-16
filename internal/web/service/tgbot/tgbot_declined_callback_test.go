@@ -65,9 +65,9 @@ func TestUnroutableCallbackIsAnswered(t *testing.T) {
 func TestExpiredCallbackHashIsAnsweredAndReported(t *testing.T) {
 	calls := decliningServer(t)
 
-	origHash := hashStorage
-	hashStorage = global.NewHashStorage(time.Minute)
-	t.Cleanup(func() { hashStorage = origHash })
+	origHash := currentHashStorage()
+	setHashStorage(global.NewHashStorage(time.Minute))
+	t.Cleanup(func() { setHashStorage(origHash) })
 
 	// 32 hex characters — the shape decodeQuery looks up, and never stored.
 	tapCallback(t, &Tgbot{}, true, "0123456789abcdef0123456789abcdef")

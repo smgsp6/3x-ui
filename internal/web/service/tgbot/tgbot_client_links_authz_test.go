@@ -142,9 +142,9 @@ func TestHashedLinkCallbackServesOwnClient(t *testing.T) {
 	const longMail = "very-long-owner-address-for-hashed-buttons@example.com"
 	tb, calls := newLinksCallbackTgbot(t, longMail)
 
-	origStorage := hashStorage
-	hashStorage = global.NewHashStorage(20 * time.Minute)
-	t.Cleanup(func() { hashStorage = origStorage })
+	origStorage := currentHashStorage()
+	setHashStorage(global.NewHashStorage(20 * time.Minute))
+	t.Cleanup(func() { setHashStorage(origStorage) })
 
 	data := tb.encodeQuery("client_sub_links " + longMail)
 	if data == "client_sub_links "+longMail {
