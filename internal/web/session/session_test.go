@@ -2,6 +2,7 @@ package session
 
 import (
 	"net/http"
+	"os"
 	"net/http/httptest"
 	"path/filepath"
 	"testing"
@@ -83,6 +84,7 @@ func TestSetLoginUserReplacesThePreLoginCSRFToken(t *testing.T) {
  // cookies and the migrated SQLite admin. All identities and state are local.
 func TestMiniAppRevocationCannotResurrectOldCookies(t *testing.T) {
 	t.Setenv("XUI_TG_MINIAPP_ENABLED", "true")
+	configureMiniAppTestBotToken(t)
 	t.Setenv("XUI_TG_MINIAPP_ADMIN_IDS", "1001")
 	dbtest.InitDB(t, filepath.Join(t.TempDir(), "x-ui.db"))
 
@@ -188,6 +190,7 @@ func TestMiniAppRevocationCannotResurrectOldCookies(t *testing.T) {
 
 func TestMiniAppIdentityNeverTrustsScopedAPITokenOrForgedSessionField(t *testing.T) {
 	t.Setenv("XUI_TG_MINIAPP_ENABLED", "true")
+	configureMiniAppTestBotToken(t)
 	t.Setenv("XUI_TG_MINIAPP_ADMIN_IDS", "1001")
 	dbtest.InitDB(t, filepath.Join(t.TempDir(), "x-ui.db"))
 
@@ -255,5 +258,46 @@ func TestMiniAppIdentityNeverTrustsScopedAPITokenOrForgedSessionField(t *testing
 	}
 	if code := request("/scoped-token", cookie).Code; code != http.StatusForbidden {
 		t.Fatalf("scoped API token bypassed Telegram session check: %d", code)
+	}
+}
+
+// Every positive Vela test uses a synthetic file-backed token, exactly like
+// production: an environment variable containing raw credentials is not used.
+func configureMiniAppTestBotToken(t *testing.T) string {
+	t.Helper()
+	file := filepath.Join(t.TempDir(), "bot-token")
+	if err := os.WriteFile(file, []byte("12345:synthetic_token"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("XUI_TG_MINIAPP_BOT_TOKEN_FILE", file)
+	return file
+}
+
+func TestMiniAppPolicyNonceTracksBotTokenRotation(t *testing.T) {
+	t.Setenv("XUI_TG_MINIAPP_ENABLED", "true")
+	t.Setenv("XUI_TG_MINIAPP_ADMIN_IDS", "1001")
+	file := configureMiniAppTestBotToken(t)
+	original := miniAppPolicyNonce()
+	if original == "" {
+		t.Fatal("a valid Mini App Secret failed to establish a policy")
+	}
+	if err := os.WriteFile(file, []byte("12345:rotated_token"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	rotated := miniAppPolicyNonce()
+	if rotated == "" || rotated == original {
+		t.Fatal("Bot Token rotation did not revoke existing sessions")
+	}
+	if err := os.Remove(file); err != nil {
+		t.Fatal(err)
+	}
+	if nonce := miniAppPolicyNonce(); nonce != "" {
+		t.Fatal("missing Bot Secret cannot retain session authorization")
+	}
+	if err := os.WriteFile(file, []byte("12345:synthetic_token"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if restored := miniAppPolicyNonce(); restored == "" || restored == original || restored == rotated {
+		t.Fatal("restoring an old Bot Secret resurrected a stale session")
 	}
 }

@@ -2,6 +2,7 @@ package session
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/base64"
 	"encoding/gob"
@@ -36,20 +37,35 @@ const (
 var miniAppPolicy = struct {
 	sync.Mutex
 	allowlist string
+	tokenHash [sha256.Size]byte
 	nonce     string
 }{}
 
 func miniAppPolicyNonce() string {
+	// A Bot Token rotation revokes old Mini App credentials just like an
+	// administrator allowlist change. Store only the token fingerprint, never
+	// the credential itself in session metadata or logs.
+	token := tgminiapp.BotToken()
 	miniAppPolicy.Lock()
 	defer miniAppPolicy.Unlock()
+	if token == "" {
+		// If the Secret disappears, fail closed and prevent replay even if
+		// the identical Secret is later restored.
+		miniAppPolicy.nonce = ""
+		miniAppPolicy.tokenHash = [sha256.Size]byte{}
+		return ""
+	}
+	fingerprint := sha256.Sum256([]byte(token))
 	allowlist := os.Getenv("XUI_TG_MINIAPP_ADMIN_IDS")
-	if miniAppPolicy.nonce == "" || miniAppPolicy.allowlist != allowlist {
+	if miniAppPolicy.nonce == "" || miniAppPolicy.allowlist != allowlist ||
+		miniAppPolicy.tokenHash != fingerprint {
 		var random [32]byte
 		if _, err := rand.Read(random[:]); err != nil {
 			miniAppPolicy.nonce = ""
 			return "" // fail closed if secure randomness is unavailable
 		}
 		miniAppPolicy.allowlist = allowlist
+		miniAppPolicy.tokenHash = fingerprint
 		miniAppPolicy.nonce = base64.RawURLEncoding.EncodeToString(random[:])
 	}
 	return miniAppPolicy.nonce
