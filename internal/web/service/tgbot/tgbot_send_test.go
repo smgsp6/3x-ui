@@ -202,3 +202,30 @@ func TestBotShutdownDoesNotDereferenceNilConnection(t *testing.T) {
 	service.deleteMessageTgBot(1001, 42)
 	service.editMessageCallbackTgBot(1001, 42, nil)
 }
+
+
+// The panel can surface TestConnection errors to an operator. Telegram HTTP
+// errors may contain the Bot Token, so the return value must be redacted,
+// not merely the logger output. This exercises a loopback Bot API stub.
+func TestVelaConnectionCheckNeverReturnsBotCredentials(t *testing.T) {
+	t.Setenv("XUI_TG_MINIAPP_ENABLED", "true")
+	mock := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusUnauthorized)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"ok": false, "error_code": 401,
+			"description": "synthetic upstream error containing " + testBotToken,
+		})
+	}))
+	defer mock.Close()
+	swapTestBot(t, mock.URL)
+	err := (&Tgbot{}).TestConnection()
+	if err == nil {
+		t.Fatal("synthetic Telegram API rejection must not succeed")
+	}
+	if strings.Contains(err.Error(), testBotToken) ||
+		strings.Contains(err.Error(), "synthetic upstream error") ||
+		strings.Contains(err.Error(), "/bot") {
+		t.Fatal("Vela connection check returned private Bot API error details")
+	}
+}
