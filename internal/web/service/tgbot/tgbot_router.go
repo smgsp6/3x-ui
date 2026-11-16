@@ -56,6 +56,19 @@ func (t *Tgbot) chooseInboundClient(callbackQuery *telego.CallbackQuery, chatId 
 		t.inboundSummaryText(inbound)+"\n"+t.I18nBot("tgbot.answers.chooseClient", "Inbound=="+inbound.Remark), rows...))
 }
 
+// finishBotReceiver only clears the receiver that still owns the current
+// connection. A stale goroutine must not clear a restarted receiver.
+func finishBotReceiver(receiver *telego.Bot) {
+	tgBotMutex.Lock()
+	defer tgBotMutex.Unlock()
+	if liveBot() != receiver {
+		return
+	}
+	botHandler = nil
+	botCancel = nil
+	isRunning = false
+}
+
 // OnReceive starts the message receiving loop for the Telegram liveBot().
 func (t *Tgbot) OnReceive() {
 	params := telego.GetUpdatesParams{
@@ -86,12 +99,30 @@ func (t *Tgbot) OnReceive() {
 	botWG.Add(1)
 	tgBotMutex.Unlock()
 
-	// Get updates channel using the same Bot for the loop and handler.
-	updates, _ := pollBot.UpdatesViaLongPolling(ctx, &params)
+	// Failed initial polling must not leave the receiver marked as running.
+	updates, err := pollBot.UpdatesViaLongPolling(ctx, &params)
+	if err != nil || updates == nil {
+		cancel()
+		finishBotReceiver(pollBot)
+		botWG.Done()
+		logger.Warning("Telegram receiver could not start:", safeTelegramLogError(err))
+		return
+	}
 	go func() {
 		defer botWG.Done()
-		h, _ := th.NewBotHandler(pollBot, updates)
+		defer cancel()
+		defer finishBotReceiver(pollBot)
+		h, err := th.NewBotHandler(pollBot, updates)
+		if err != nil || h == nil {
+			logger.Warning("Telegram handler could not start:", safeTelegramLogError(err))
+			return
+		}
 		tgBotMutex.Lock()
+		// StopBot may cancel before a delayed handler reaches this lock.
+		if ctx.Err() != nil {
+			tgBotMutex.Unlock()
+			return
+		}
 		botHandler = h
 		tgBotMutex.Unlock()
 
