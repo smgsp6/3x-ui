@@ -1353,3 +1353,22 @@ func TestScreenOperationsHandleStoppedBotWithoutPanic(t *testing.T) {
 	}
 	service.answerSilent("synthetic-callback")
 }
+
+
+// Some API adapters return a nil Message with no error for a malformed
+// success response. A menu must never crash or delete the prior screen.
+func TestScreenSendHandlesEmptyTelegramSuccessResponse(t *testing.T) {
+	srv, _ := recordingServer(t, false, map[string]any{
+		"sendMessage": map[string]any{"ok": true, "result": nil},
+	})
+	swapTestBot(t, srv.URL)
+	t.Cleanup(srv.Close)
+	service := &Tgbot{}
+	sc := &screen{kind: "main", text: "synthetic", pages: []string{"synthetic"}, pageMax: 1}
+	if id := service.replaceScreen(1001, sc); id != 0 {
+		t.Fatalf("nil Telegram result produced an invalid screen ID %d", id)
+	}
+	if sc.msgID != 0 {
+		t.Fatal("empty Telegram success response must not be saved as a live screen")
+	}
+}
