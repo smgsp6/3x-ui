@@ -94,7 +94,9 @@ def main():
 
     status, _, _ = http("/panel/api/openapi.json")
     require(status == 401, "unauthenticated panel API must reject requests")
-    print("02/26 anonymous admin API rejected")
+    status, _, _ = http("/panel/api/tg-miniapp/status")
+    require(status in (401, 403), "anonymous caller received private Mini App status")
+    print("02/26 anonymous admin and private Mini App status APIs rejected")
 
     original_csrf = csrf_token()
     require(any(c.secure for c in jar), "Mini App cookie must have Secure flag")
@@ -122,6 +124,18 @@ def main():
             "signed allowlisted Telegram admin failed to login")
     status, _, _ = http("/panel/api/openapi.json")
     require(status == 200, "authenticated Mini App admin cannot access API")
+    status, diagnostic_body, _ = http("/panel/api/tg-miniapp/status")
+    require(status == 200, "authenticated Telegram admin cannot read sanitized readiness")
+    diagnostic = json.loads(diagnostic_body)
+    values = diagnostic.get("obj", {})
+    require(diagnostic.get("success") is True and
+            set(values) == {"botRunning", "authConfigured", "launchConfigured"} and
+            all(type(value) is bool for value in values.values()) and
+            values["authConfigured"] is True,
+            "Telegram readiness returned unexpected data or untyped status")
+    require(str(ADMIN_ID).encode() not in diagnostic_body and
+            token.encode() not in diagnostic_body,
+            "Telegram readiness leaked synthetic administrator ID or Bot Token")
     # The bootstrap and authenticated SPA are distinct documents.
     # Verify the official SDK and Mini App mode survive the navigation.
     panel_request = request.Request(BASE + "/panel/", headers={
@@ -643,7 +657,8 @@ def main():
     status, _, _ = http("/panel/api/openapi.json")
     require(status == 401, "logout did not revoke admin API permissions")
     for route in ("/panel/api/inbounds/list", "/panel/api/clients/list",
-                  "/panel/api/server/status", "/panel/api/certificates/status"):
+                  "/panel/api/server/status", "/panel/api/certificates/status",
+                  "/panel/api/tg-miniapp/status"):
         status, _, _ = http(route)
         require(status == 401, "logout left a sensitive management API accessible")
     # The unauthenticated panel redirect may show the public Telegram login
