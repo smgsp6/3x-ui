@@ -22,6 +22,10 @@ func TestStopBotRetiresPendingConnection(t *testing.T) {
 	bot = receiver
 	botStop = stopped
 	botMu.Unlock()
+	tgBotMutex.Lock()
+	adminIds = []int64{918273}
+	adminTopics = map[int64]int{918273: 5}
+	tgBotMutex.Unlock()
 
 	StopBot()
 	if liveBot() != nil {
@@ -34,6 +38,9 @@ func TestStopBotRetiresPendingConnection(t *testing.T) {
 	}
 	if (&Tgbot{}).IsRunning() {
 		t.Fatal("shutdown left receiver marked running")
+	}
+	if len(adminSnapshot()) != 0 {
+		t.Fatal("shutdown retained prior Telegram administrator permissions")
 	}
 }
 
