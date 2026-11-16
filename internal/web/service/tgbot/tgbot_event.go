@@ -8,6 +8,7 @@ import (
 	"unicode"
 
 	"github.com/mhsanaei/3x-ui/v3/internal/eventbus"
+	"github.com/mhsanaei/3x-ui/v3/internal/web/service/tgminiapp"
 )
 
 var cachedHostname string
@@ -44,6 +45,16 @@ func (t *Tgbot) HandleEvent(e eventbus.Event) {
 // eventNoticeKind is the live card a repeat of this event edits. A login success
 // must not fold into the failure card from the same IP: outcome is part of the key.
 func (t *Tgbot) eventNoticeKind(e eventbus.Event) string {
+	if tgminiapp.Enabled() {
+		// Source can be an IP address, email or private outbound/node tag.
+		// Vela intentionally coalesces notifications by public event type.
+		if e.Type == eventbus.EventLoginAttempt {
+			if data, ok := e.Data.(*eventbus.LoginEventData); ok {
+				return string(e.Type) + ":" + data.Status
+			}
+		}
+		return string(e.Type)
+	}
 	if e.Type == eventbus.EventLoginAttempt {
 		if data, ok := e.Data.(*eventbus.LoginEventData); ok {
 			return string(e.Type) + ":" + e.Source + ":" + data.Status
@@ -76,7 +87,38 @@ func oneLine(s string) string {
 	}, s)
 }
 
+// Vela notifications are generic by design. Never serialize an untrusted
+// event payload: sources can contain client IPs, names, paths, credentials,
+// Xray errors, or a deliberately forged HTML message.
+func velaEventSummary(e eventbus.Event) string {
+	switch e.Type {
+	case eventbus.EventOutboundDown:
+		return "⚠️ Vela：出站连接异常，请在本机管理面板检查。"
+	case eventbus.EventOutboundUp:
+		return "✅ Vela：出站连接已恢复。"
+	case eventbus.EventXrayCrash:
+		return "🚨 Vela：Xray 运行异常，请在本机管理面板检查。"
+	case eventbus.EventNodeDown:
+		return "⚠️ Vela：节点连接异常，请在本机管理面板检查。"
+	case eventbus.EventNodeUp:
+		return "✅ Vela：节点连接已恢复。"
+	case eventbus.EventCPUHigh:
+		return "⚠️ Vela：服务器 CPU 负载过高。"
+	case eventbus.EventMemoryHigh:
+		return "⚠️ Vela：服务器内存占用过高。"
+	case eventbus.EventLoginAttempt:
+		if data, ok := e.Data.(*eventbus.LoginEventData); ok && data.Status == "success" {
+			return "🔐 Vela：管理面板发生一次成功登录。"
+		}
+		return "⚠️ Vela：管理面板发生一次失败登录，请检查本机安全日志。"
+	}
+	return "" // unknown future event types are opt-out until reviewed
+}
+
 func (t *Tgbot) formatEventMessage(e eventbus.Event) string {
+	if tgminiapp.Enabled() {
+		return velaEventSummary(e)
+	}
 	host := getHostname()
 	header := fmt.Sprintf("<b>📡 %s</b>\n", host)
 
