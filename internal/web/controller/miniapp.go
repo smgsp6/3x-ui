@@ -23,6 +23,15 @@ func NewMiniAppController(g *gin.RouterGroup) {
 			c.AbortWithStatus(http.StatusServiceUnavailable)
 			return
 		}
+		// Never report deployment readiness when a malformed or missing
+		// allowlist makes every valid Telegram login impossible. The HTTPS
+		// smoke fixture uses a local test hostname and is intentionally not
+		// checked for public DNS reachability here.
+		ids, allowlistErr := tgminiapp.AdminUserIDs()
+		if allowlistErr != nil || len(ids) == 0 {
+			c.AbortWithStatus(http.StatusServiceUnavailable)
+			return
+		}
 		admin, err := (&panel.UserService{}).GetFirstUser()
 		if err != nil || admin == nil {
 			c.AbortWithStatus(http.StatusServiceUnavailable)
