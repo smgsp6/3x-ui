@@ -161,7 +161,7 @@ class BetaGateTests(unittest.TestCase):
             with self.subTest(raw=raw):
                 self.put('secrets/vela_bot_token', raw)
                 self.assert_refused('bot secret')
-        self.put('secrets/vela_bot_token', '123:synthetic_secret-09\\n')
+        self.put('secrets/vela_bot_token', '123:synthetic_secret-09\n')
         gate.validate(self.home, self.template)
 
     def test_token_parent_exposure_refused(self):
