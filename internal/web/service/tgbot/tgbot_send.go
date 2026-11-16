@@ -261,7 +261,10 @@ func (t *Tgbot) TestConnection() error {
 	}
 	me, err := b.GetMe(context.Background())
 	if err != nil {
-		return fmt.Errorf("API unreachable: %w", err)
+		// This error may be returned through an administrative connection
+		// check, not just written to the logger. Telegram HTTP errors can
+		// contain /bot<TOKEN>/ in the request URL.
+		return fmt.Errorf("API unreachable: %w", safeTelegramLogError(err))
 	}
 	_ = me
 	return nil
