@@ -640,8 +640,21 @@ func (t *Tgbot) IsRunning() bool {
 // replace it under: a torn slice header is not a harmless race.
 func adminSnapshot() []int64 {
 	tgBotMutex.Lock()
-	defer tgBotMutex.Unlock()
-	return slices.Clone(adminIds)
+	configured := slices.Clone(adminIds)
+	tgBotMutex.Unlock()
+	if !tgminiapp.Enabled() {
+		return configured // preserve upstream chat/topic notification behavior
+	}
+	// Telegram's cached admin list is only a snapshot from Bot startup.
+	// Re-check the current Mini App allowlist before each privileged command
+	// and outbound notice, so removal takes effect without trusting old IDs.
+	allowed := make([]int64, 0, len(configured))
+	for _, id := range configured {
+		if tgminiapp.AllowedUserID(id) {
+			allowed = append(allowed, id)
+		}
+	}
+	return allowed
 }
 
 // parseAdminChats reads "chatId[:topicId],..."; the optional topic targets a
