@@ -75,6 +75,18 @@ var (
 	}
 )
 
+// botConnectionOptions deliberately discards legacy database-managed proxy
+// and Bot API endpoint settings while Vela Mini App mode is enabled. Those
+// fields can redirect requests embedding /bot<TOKEN>/ to an unrelated host.
+// The trusted panel egress bridge still works via PanelEgressProxyURL.
+// Preserve original legacy bot behavior when Mini App mode is disabled.
+func botConnectionOptions(proxyURL, apiServerURL string) (string, string) {
+	if tgminiapp.Enabled() {
+		return "", ""
+	}
+	return proxyURL, apiServerURL
+}
+
 // safeTelegramLogError keeps a Bot Token from appearing in backend logs
 // through Telegram HTTP errors (whose request URLs can embed /bot<TOKEN>/).
 // The original 3x-ui message contents remain unchanged when Vela is off.
@@ -408,6 +420,10 @@ func (t *Tgbot) Start(i18nFS embed.FS) error {
 	if err != nil {
 		logger.Warning("Failed to get Telegram bot API server URL:", safeTelegramLogError(err))
 	}
+
+	// Never inherit a custom Telegram Bot API destination or proxy from
+	// the original 3x-ui database into a private Vela Bot Token session.
+	tgBotProxy, tgBotAPIServer = botConnectionOptions(tgBotProxy, tgBotAPIServer)
 
 	// Create new Telegram bot instance
 	stop := make(chan struct{})
