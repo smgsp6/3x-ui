@@ -615,8 +615,13 @@ func (t *Tgbot) NewBot(token string, proxyUrl string, apiServerUrl string, stopp
 	// Create robust fasthttp client
 	client := t.createRobustFastHTTPClient(proxyUrl, t.settingService.PanelEgressProxyURL)
 
-	// Build bot options
+	// Build bot options. The upstream SDK's default logs may include URLs
+	// containing /bot<TOKEN>/ and Telegram request details. Vela suppresses
+	// those logs entirely; panel-level failures use sanitized messages.
 	var options []telego.BotOption
+	if tgminiapp.Enabled() {
+		options = append(options, telego.WithDiscardLogger())
+	}
 	options = append(options, telego.WithAPICaller(stoppableCaller{
 		inner:   ta.FastHTTPCaller{Client: client},
 		stopped: stopped,
