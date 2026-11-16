@@ -196,6 +196,28 @@ func TestCollectBroadcastRecipients(t *testing.T) {
 	}
 }
 
+func TestVelaBroadcastNeverTargetsGroupOrChannelRecipients(t *testing.T) {
+	t.Setenv("XUI_TG_MINIAPP_ENABLED", "true")
+	t.Setenv("XUI_TG_MINIAPP_ADMIN_IDS", "222")
+	tb := newStaleButtonTgbot(t)
+	setBroadcastAdmins(t, []int64{222})
+	createBroadcastInbound(t, "mixed-chats", broadcastClientsJSON(t, -10012345, -911, 111, 222))
+
+	velaRecipients := tb.collectBroadcastRecipients()
+	slices.Sort(velaRecipients)
+	if !slices.Equal(velaRecipients, []int64{111}) {
+		t.Fatalf("Vela broadcast included non-private Telegram chats: %v", velaRecipients)
+	}
+
+	// The upstream legacy Bot remains unchanged if Vela is disabled.
+	t.Setenv("XUI_TG_MINIAPP_ENABLED", "false")
+	legacyRecipients := tb.collectBroadcastRecipients()
+	slices.Sort(legacyRecipients)
+	if !slices.Equal(legacyRecipients, []int64{-10012345, -911, 111}) {
+		t.Fatalf("legacy broadcast recipients changed: %v", legacyRecipients)
+	}
+}
+
 func assertBroadcastResult(t *testing.T, got, want broadcastResult) {
 	t.Helper()
 	got.Elapsed, want.Elapsed = 0, 0
