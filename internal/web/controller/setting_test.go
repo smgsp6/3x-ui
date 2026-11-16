@@ -2,6 +2,7 @@ package controller
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -235,5 +236,27 @@ func TestTestDiscordEndpoint(t *testing.T) {
 
 	if !strings.Contains(resp.Body.String(), `"success":true`) || !strings.Contains(resp.Body.String(), "pages.settings.discordTestSuccess") {
 		t.Fatalf("expected success, got %s", resp.Body.String())
+	}
+}
+
+func TestVelaBotDiagnosticsIgnoreLegacyNotificationSwitch(t *testing.T) {
+	offline := errors.New("synthetic legacy settings unavailable")
+	for _, tt := range []struct {
+		name string
+		vela, enabled bool
+		err error
+		want bool
+	}{
+		{"miniapp bypasses disabled legacy switch", true, false, nil, true},
+		{"miniapp bypasses legacy settings read errors", true, false, offline, true},
+		{"upstream disabled remains disabled", false, false, nil, false},
+		{"upstream settings error fails closed", false, true, offline, false},
+		{"upstream enabled remains enabled", false, true, nil, true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := telegramBotConfiguredForPanel(tt.vela, tt.enabled, tt.err); got != tt.want {
+				t.Fatalf("Bot configured = %t, want %t", got, tt.want)
+			}
+		})
 	}
 }
