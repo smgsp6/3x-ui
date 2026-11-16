@@ -710,15 +710,19 @@ func StopBot() {
 	addClientDrafts.resetAll()
 	broadcastResetAll()
 
+	// Cancel incoming polling before draining the handler. A handler that is
+	// still receiving updates must not keep shutdown waiting indefinitely.
+	if cancel != nil {
+		cancel()
+	}
 	if handler != nil {
-		_ = handler.Stop()
+		ctx, timeoutCancel := context.WithTimeout(context.Background(), 10*time.Second)
+		_ = handler.StopWithContext(ctx)
+		timeoutCancel()
 	}
 
 	if cancel != nil {
-		logger.Info("Sending cancellation signal to Telegram liveBot()...")
-		// Cancels the context passed to UpdatesViaLongPolling; this closes updates channel
-		// and lets botHandler.Start() exit cleanly.
-		cancel()
+		// A receiver may still be initializing when StopBot runs.
 		botWG.Wait()
 		logger.Info("Telegram bot successfully stopped.")
 	}

@@ -260,7 +260,9 @@ func (t *Tgbot) OnReceive() {
 				}
 			} else {
 				if message.UsersShared != nil {
-					if checkAdmin(message.From.ID) {
+					// Telegram channel/service messages can have no sender.
+					// Never dereference From unless Telegram supplied one.
+					if message.From != nil && checkAdmin(message.From.ID) {
 						for _, sharedUser := range message.UsersShared.Users {
 							userID := sharedUser.UserID
 							needRestart, err := t.clientService.SetClientTelegramUserID(&t.inboundService, message.UsersShared.RequestID, userID)
@@ -281,6 +283,11 @@ func (t *Tgbot) OnReceive() {
 			return nil
 		}, th.AnyMessage())
 
+		// StopBot can run while registration is in progress. Never start
+		// processing a queued update after that Bot has been retired.
+		if ctx.Err() != nil || liveBot() != pollBot {
+			return
+		}
 		if err := h.Start(); err != nil && ctx.Err() == nil {
 			logger.Warning("Telegram receiver exited unexpectedly:", safeTelegramLogError(err))
 		}
