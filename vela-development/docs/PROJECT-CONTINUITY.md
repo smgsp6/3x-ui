@@ -181,3 +181,16 @@ python3 /path/to/vela-phase12/apply_to_repo.py .
 - 本轮完整整仓 CI `43750432591` 需以最终状态为准；编辑本节时隐私/备份恢复已通过，React+Go 后续仍运行中。
 - **距离个人试用的真实阻断**：独立测试 VPS + 单独测试 Bot + 真实 HTTPS 域名的人工授权、Telegram 手机 WebView 实机、真实主机防火墙与外部 Xray 节点、停机恢复验证。无真实生产凭据、节点或主机信息写入 GitHub。未发布正式镜像，签名稳定版更新仍被禁用。
 - 永远只在 `smgsp6/3x-ui:vela-dev` 修改；`main`、Go module、上游 14 种语言和原版 Xray 功能不变。真实线上服务器须有操作者明确授权才可触及。
+
+## 2026-11-16 · 内测安全收口：Bot Token / API 认证（本轮后续）
+
+- 最新已核实可见的旧 CI 成功基线为 `d20e69e94fbc2afd29ceaad7707f7fdfc7d0e72d`（HTTPS 26 项：Actions `43750834946`）及 `6681ee53e99976b1bae4afaabeee442ad7d57566`（整仓 CI：Actions `43750432591`）。**不能把它们视为下述最新提交的测试结果。**
+- `9d3d47607d72373c5fb0efb259292e8c70a51aa5`：新增 `safeTelegramLogError` / `safeTelegramLogPanic`，在 Vela 模式统一隐藏常见 Telegram API 发送、屏幕、按钮和长轮询初始化错误中可能包含的 Bot Token；关闭 Vela 时继续原版的详细错误信息。Go 合成凭据回归 `vela_bot_logging_test.go`。
+- `767046eedfc86638bae7f6d788355ed831f34e5c` / `a996126a92621d6c19f704803649e019e428979e` / `970b3786386898da41e8294edc0407e8e02556a3`：严格隔离 Vela Bot 的出站配置，**忽略旧版 DB 自定义 Bot API URL 和 Telegram 代理**，避免向不受信任的 API 目标发送带 Token 的请求；`NewBot` 自身再次执行此规则，而非只在 `Start` 中筛掉配置；原版模式不变。Vela 仍可使用独立的面板 Xray 出站桥接。
+- `4e79231e285fa416a6fc781a4847e3ea01917156` / `1e09c2437df632450ba20f6e8195cbeac65c1de6`：`session.IsTelegramMiniAppLogin` 拒绝 `apiAuthUserKey` 注入的 Scoped API/mTLS 身份，强制通过完整 Cookie、nonce、登录 epoch、进程内撤销登记验证。Go 回归覆盖真实本地 SQLite 签名 Cookie、伪造 Telegram 字段和 API 身份组合。
+- `cc755c2139af9149d2ffb088bea50d8ae3a3be44` / `58b24aa195bed6954d8c4d9b8952211d664ed078`：扩展 Vela 错误脱敏到通知、内联查询、屏幕艺术、广播发送失败；广播日志同时保护 chat/message/group ID，原版日志行为不变。
+- **验收阻断**：经 GitHub API 确认，最新代码已有提交，但 `vela-dev` Actions 列表仍停留在较早提交。GitHub 连接的可用工具提供读日志、修改源码和重跑旧 Job，但**没有启动最新 SHA workflow_dispatch 的动作**；切勿重跑旧 Job 并假称验证最新代码。需在 GitHub Actions UI 选择 `vela-dev` 手动触发下面工作流，确认所有 Job 绿色后才将本轮标记“CI 通过”：
+  - `https://github.com/smgsp6/3x-ui/actions/workflows/vela-build-smoke.yml`
+  - `https://github.com/smgsp6/3x-ui/actions/workflows/vela-pr-check.yml`
+  - `https://github.com/smgsp6/3x-ui/actions/workflows/vela-miniapp-https-auth.yml`
+- **用户个人内测阻断未变**：真实 Telegram Android/iOS WebView、独立测试 VPS Host Network、真实 HTTPS 域名、真实 TCP+UDP 对外网络、隔离数据备份/恢复。生产主机未获授权，禁止连接或执行任何安装；勿记录实际令牌、服务器 IP/域名、SSH 密钥或管理员 ID。
