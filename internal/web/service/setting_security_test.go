@@ -295,3 +295,45 @@ func TestGetSecret_FallbacksOnEmptyDatabaseSetting(t *testing.T) {
 		t.Fatalf("persisted secret = %q, want %q", persisted, secret)
 	}
 }
+
+
+func TestVelaWebBasePathDoesNotAllowExternalRedirects(t *testing.T) {
+	t.Setenv("XUI_TG_MINIAPP_ENABLED", "true")
+	for _, path := range []string{
+		"//example.org/", "/panel//", "/../", "/./", "/%2e%2e/",
+		"/panel?query/", "/panel#fragment/", "/panel\\evil/",
+		"/panel<script>/", "/panel:80/", "/panel space/",
+	} {
+		if validVelaWebBasePath(path) {
+			t.Fatalf("unsafe Mini App web base path accepted")
+		}
+	}
+	for _, path := range []string{"/", "/panel/", "/private_1/", "/team-1/panel_2/"} {
+		if !validVelaWebBasePath(path) {
+			t.Fatalf("safe Mini App web base path refused: %q", path)
+		}
+	}
+}
+
+func TestVelaWebBasePathStoredConfigurationFailsClosed(t *testing.T) {
+	t.Setenv("XUI_TG_MINIAPP_ENABLED", "true")
+	setupSettingTestDB(t)
+	settings := &SettingService{}
+	if err := settings.SetBasePath("//attacker.invalid/"); err == nil {
+		t.Fatal("Vela accepted a scheme-relative management base path")
+	}
+	// Legacy database rows may predate the Vela deployment. Startup must
+	// refuse those unsafe paths rather than silently enabling an open redirect.
+	if err := settings.saveSetting("webBasePath", "//attacker.invalid/"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := settings.GetBasePath(); err == nil {
+		t.Fatal("Vela loaded an unsafe existing management base path")
+	}
+	if err := settings.SetBasePath("/private_1/"); err != nil {
+		t.Fatalf("safe Vela management base path was rejected: %v", err)
+	}
+	if got, err := settings.GetBasePath(); err != nil || got != "/private_1/" {
+		t.Fatalf("Vela base path = %q, %v; want private path", got, err)
+	}
+}

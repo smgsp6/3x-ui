@@ -27,6 +27,7 @@ import (
 	"github.com/mhsanaei/3x-ui/v3/internal/util/reflect_util"
 	"github.com/mhsanaei/3x-ui/v3/internal/util/totp"
 	"github.com/mhsanaei/3x-ui/v3/internal/web/entity"
+	"github.com/mhsanaei/3x-ui/v3/internal/web/service/tgminiapp"
 	"github.com/mhsanaei/3x-ui/v3/internal/xray"
 	"github.com/mhsanaei/3x-ui/v3/internal/xray/dnsconf"
 )
@@ -820,12 +821,36 @@ func (s *SettingService) GetPanelGuid() (string, error) {
 	return guid, nil
 }
 
+// A Vela WebApp base path is used in browser redirects and script URLs.
+// Reject scheme-relative prefixes, traversal and encoded separators before
+// a trusted-but-mistyped setting could send an admin to another origin.
+// Legacy 3x-ui retains its original base-path behavior when Vela is off.
+func validVelaWebBasePath(path string) bool {
+	if path == "/" {
+		return true
+	}
+	if len(path) < 3 || len(path) > 256 || path[0] != '/' ||
+		path[len(path)-1] != '/' || strings.Contains(path, "//") {
+		return false
+	}
+	for _, c := range path[1:len(path)-1] {
+		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+			(c >= '0' && c <= '9') || c == '-' || c == '_' || c == '/') {
+			return false
+		}
+	}
+	return true
+}
+
 func (s *SettingService) SetBasePath(basePath string) error {
 	if !strings.HasPrefix(basePath, "/") {
 		basePath = "/" + basePath
 	}
 	if !strings.HasSuffix(basePath, "/") {
 		basePath += "/"
+	}
+	if tgminiapp.Enabled() && !validVelaWebBasePath(basePath) {
+		return errors.New("Vela web base path is unsafe")
 	}
 	return s.setString("webBasePath", basePath)
 }
@@ -835,7 +860,11 @@ func (s *SettingService) GetBasePath() (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return normalizeBasePath(basePath), nil
+	basePath = normalizeBasePath(basePath)
+	if tgminiapp.Enabled() && !validVelaWebBasePath(basePath) {
+		return "", errors.New("Vela web base path is unsafe")
+	}
+	return basePath, nil
 }
 
 func (s *SettingService) GetTimeLocation() (*time.Location, error) {
