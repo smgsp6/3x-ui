@@ -123,7 +123,7 @@ func SetLoginUser(c *gin.Context, user *model.User) error {
 // SetTelegramMiniAppLoginUser binds a signed Telegram identity to the same
 // normal panel user session; changing the admin allowlist revokes access.
 func SetTelegramMiniAppLoginUser(c *gin.Context, user *model.User, telegramID int64) error {
-    if user == nil || telegramID <= 0 || !tgminiapp.AllowedUserID(telegramID) {
+    if !tgminiapp.Enabled() || user == nil || telegramID <= 0 || !tgminiapp.AllowedUserID(telegramID) {
         return http.ErrNoCookie
     }
 	policyNonce := miniAppPolicyNonce()
