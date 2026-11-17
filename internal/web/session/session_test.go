@@ -371,3 +371,69 @@ func TestMiniAppBotTokenRotationRevokesSignedBrowserCookie(t *testing.T) {
 		t.Fatal("fresh Mini App login was blocked after Bot Token recovery")
 	}
 }
+
+ 
+// A cookie minted by Telegram must never be reinterpreted as an ordinary
+// legacy password session if the Mini App feature is disabled. Revocation
+// must survive re-enabling the flag within the same running process.
+func TestDisablingMiniAppRevokesTelegramCookieWithoutLegacyFallback(t *testing.T) {
+	t.Setenv("XUI_TG_MINIAPP_ENABLED", "true")
+	t.Setenv("XUI_TG_MINIAPP_ADMIN_IDS", "1001")
+	configureMiniAppTestBotToken(t)
+	dbtest.InitDB(t, filepath.Join(t.TempDir(), "x-ui.db"))
+	var admin model.User
+	if err := database.GetDB().First(&admin).Error; err != nil {
+		t.Fatal(err)
+	}
+
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(sessions.Sessions(sessionCookieName, cookie.NewStore([]byte("01234567890123456789012345678901"))))
+	router.GET("/login", func(c *gin.Context) {
+		if err := SetTelegramMiniAppLoginUser(c, &admin, 1001); err != nil {
+			c.Status(http.StatusForbidden)
+			return
+		}
+		c.Status(http.StatusNoContent)
+	})
+	router.GET("/protected", func(c *gin.Context) {
+		if IsLogin(c) {
+			c.Status(http.StatusNoContent)
+		} else {
+			c.Status(http.StatusUnauthorized)
+		}
+	})
+	request := func(path string, sessionCookie *http.Cookie) *httptest.ResponseRecorder {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		if sessionCookie != nil {
+			req.AddCookie(sessionCookie)
+		}
+		resp := httptest.NewRecorder()
+		router.ServeHTTP(resp, req)
+		return resp
+	}
+	login := request("/login", nil)
+	if login.Code != http.StatusNoContent {
+		t.Fatalf("Mini App test login returned %d", login.Code)
+	}
+	var original *http.Cookie
+	for _, c := range login.Result().Cookies() {
+		if c.Name == sessionCookieName {
+			original = c
+		}
+	}
+	if original == nil {
+		t.Fatal("Mini App session cookie missing")
+	}
+	if got := request("/protected", original).Code; got != http.StatusNoContent {
+		t.Fatalf("valid Mini App cookie returned %d", got)
+	}
+	t.Setenv("XUI_TG_MINIAPP_ENABLED", "false")
+	if got := request("/protected", original).Code; got != http.StatusUnauthorized {
+		t.Fatalf("Telegram cookie became a password login after disable: HTTP %d", got)
+	}
+	t.Setenv("XUI_TG_MINIAPP_ENABLED", "true")
+	if got := request("/protected", original).Code; got != http.StatusUnauthorized {
+		t.Fatalf("revoked Telegram cookie was replayed after re-enable: HTTP %d", got)
+	}
+}
