@@ -263,6 +263,12 @@ os.execv('/usr/bin/tar', ['/usr/bin/tar', *sys.argv[1:]])
         self.assertIn('stop', self.log.read_text())
         self.assertIn('start', self.log.read_text())
 
+    def test_health_check_refuses_plain_http_downgrade(self):
+        script = TOOL.read_text()
+        self.assertIn('https://127.0.0.1:', script)
+        self.assertNotIn('http://127.0.0.1:', script)
+        self.assertIn('grep -Eq "^204$"', script)
+
     def test_health_check_follows_custom_miniapp_base_path(self):
         (self.root / '.env').write_text('XUI_TG_MINIAPP_ADMIN_IDS=1001\nXUI_TG_MINIAPP_URL=https://vela.example.com/private/\n')
         result = self.run_cli('update')

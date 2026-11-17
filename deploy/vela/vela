@@ -207,6 +207,9 @@ if not port.isascii() or not port.isdecimal() or int(port) < 1 or int(port) > 65
 print(int(port))
 PYTHON
 }
+# A Vela panel may never pass the update gate after downgrading
+# the internal HTTPS listener to plaintext. Public certificate verification
+# is a separate end-to-end smoke check; loopback TLS must still be mandatory.
 health() {
   local attempt attempts=${VELA_HEALTH_ATTEMPTS:-15} retry_delay=${VELA_HEALTH_RETRY_SECS:-2} target port
   target=$(health_path) || die 'Mini App HTTPS URL 不合法，无法执行健康检查'
@@ -216,7 +219,7 @@ health() {
   [[ "$retry_delay" =~ ^[0-9]{1,2}$ ]] || die '非法重试间隔'
   for attempt in $(seq 1 "$attempts"); do
     if [[ "$(docker inspect -f '{{.State.Running}}' vela_panel 2>/dev/null || true)" == true ]] \
-      && docker exec -e "VELA_HEALTH_PATH=$target" -e "VELA_HEALTH_PORT=$port" vela_panel /bin/sh -c 'curl -ksS --connect-timeout 2 --max-time 4 -o /dev/null -w "%{http_code}" "https://127.0.0.1:${VELA_HEALTH_PORT}${VELA_HEALTH_PATH}" | grep -Eq "^204$" || curl -sS --connect-timeout 2 --max-time 4 -o /dev/null -w "%{http_code}" "http://127.0.0.1:${VELA_HEALTH_PORT}${VELA_HEALTH_PATH}" | grep -Eq "^204$"' >/dev/null 2>&1; then
+      && docker exec -e "VELA_HEALTH_PATH=$target" -e "VELA_HEALTH_PORT=$port" vela_panel /bin/sh -c 'curl -ksS --connect-timeout 2 --max-time 4 -o /dev/null -w "%{http_code}" "https://127.0.0.1:${VELA_HEALTH_PORT}${VELA_HEALTH_PATH}" | grep -Eq "^204$"' >/dev/null 2>&1; then
       return 0
     fi
     sleep "$retry_delay"
