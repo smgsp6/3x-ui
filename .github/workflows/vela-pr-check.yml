@@ -110,8 +110,10 @@ jobs:
           test -s internal/web/dist/login.html
       - name: Full Go tests (with embedded React assets present)
         run: go test ./...
-      - name: Mini App crypto and TLS race tests
-        run: go test -race ./internal/web/service/tgminiapp
+      - name: Mini App crypto, TLS and revocable-session race tests
+        run: go test -race ./internal/web/service/tgminiapp ./internal/web/session
+      - name: Telegram receiver lifecycle and authorization race tests
+        run: go test -race ./internal/web/service/tgbot
       - name: Build full Go panel executable
         run: go build -trimpath -o "${RUNNER_TEMP}/vela-ci" ./main.go
       - name: Runtime dependency audit
