@@ -432,6 +432,9 @@ func TestDisablingMiniAppRevokesTelegramCookieWithoutLegacyFallback(t *testing.T
 	if got := request("/protected", original).Code; got != http.StatusUnauthorized {
 		t.Fatalf("Telegram cookie became a password login after disable: HTTP %d", got)
 	}
+	if got := request("/login", nil).Code; got != http.StatusForbidden {
+		t.Fatalf("a disabled Mini App minted a new Telegram session: HTTP %d", got)
+	}
 	t.Setenv("XUI_TG_MINIAPP_ENABLED", "true")
 	if got := request("/protected", original).Code; got != http.StatusUnauthorized {
 		t.Fatalf("revoked Telegram cookie was replayed after re-enable: HTTP %d", got)
