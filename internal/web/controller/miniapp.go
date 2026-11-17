@@ -17,9 +17,11 @@ import (
 // sessions and the existing admin user instead of bypassing the panel API ACL.
 func NewMiniAppController(g *gin.RouterGroup) {
 	// Only this Vela-specific handler counts as a live upgrade target.
+	// A syntactically invalid/missing public WebApp URL must also fail readiness;
+	// successful local HTTPS alone would leave Telegram admins unable to launch.
 	g.GET("/tg-miniapp/health", func(c *gin.Context) {
 		c.Header("Cache-Control", "no-store")
-		if !tgminiapp.Enabled() || tgminiapp.BotToken() == "" {
+		if !tgminiapp.Enabled() || tgminiapp.BotToken() == "" || tgminiapp.MiniAppURL() == "" {
 			c.AbortWithStatus(http.StatusServiceUnavailable)
 			return
 		}

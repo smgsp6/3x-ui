@@ -93,7 +93,7 @@ jobs:
             -e XUI_ENABLE_FAIL2BAN=false -e XUI_DB_TYPE=sqlite \
             -e XUI_PORT=2053 \
             -e XUI_TG_MINIAPP_ENABLED=true \
-            -e XUI_TG_MINIAPP_URL=https://localhost:2053/ \
+            -e XUI_TG_MINIAPP_URL=https://ci.vela-test-domain.org/ \
             -e XUI_TG_MINIAPP_ADMIN_IDS=1001 \
             -e XUI_TG_MINIAPP_BOT_TOKEN_FILE=/run/secrets/vela_bot_token \
             vela-miniapp-https-ci:local >/dev/null
