@@ -83,10 +83,12 @@ func SetLoginUser(c *gin.Context, user *model.User) error {
     // Credential rotation from within Mini App must retain the signed Telegram
     // identity. A legacy caller cannot mint a Vela session via this function.
 	var tgID int64
-	var policyNonce, oldSessionID, newSessionID string
+	var policyNonce, newSessionID string
+	// Even the legacy login path must retire a previous Mini App session.
+	// Disabling Vela must never preserve a stolen signed Telegram cookie.
+	oldSessionID, _ := s.Get(telegramMiniAppSessionKey).(string)
 	if tgminiapp.Enabled() {
 		id, ok := s.Get(telegramMiniAppUserKey).(int64)
-		oldSessionID, _ = s.Get(telegramMiniAppSessionKey).(string)
 		policyNonce = miniAppPolicyNonce()
 		if !ok || !tgminiapp.AllowedUserID(id) || policyNonce == "" ||
 			s.Get(telegramMiniAppPolicyKey) != policyNonce ||
@@ -162,6 +164,19 @@ func GetLoginUser(c *gin.Context) *model.User {
 		}
 	}
 	s := sessions.Default(c)
+	if !tgminiapp.Enabled() && (s.Get(telegramMiniAppUserKey) != nil ||
+		s.Get(telegramMiniAppSessionKey) != nil || s.Get(telegramMiniAppPolicyKey) != nil) {
+		// A Telegram-origin cookie must not become an ordinary password login
+		// merely because the Mini App feature was disabled. Revoke its
+		// server-side ID so toggling the feature back on cannot resurrect it.
+		id, _ := s.Get(telegramMiniAppSessionKey).(string)
+		revokeMiniAppSession(id)
+		s.Clear()
+		if err := s.Save(); err != nil {
+			logger.Warning("session: failed to retire disabled Mini App cookie:", err)
+		}
+		return nil
+	}
 	if tgminiapp.Enabled() {
 		telegramID, ok := s.Get(telegramMiniAppUserKey).(int64)
 		nonce, hasNonce := s.Get(telegramMiniAppPolicyKey).(string)
