@@ -331,10 +331,10 @@ func getUserByID(id int) (*model.User, error) {
 
 func ClearSession(c *gin.Context) error {
 	s := sessions.Default(c)
-	if tgminiapp.Enabled() {
-		sessionID, _ := s.Get(telegramMiniAppSessionKey).(string)
-		revokeMiniAppSession(sessionID)
-	}
+	// Logout must invalidate server-side Mini App sessions even if the
+	// feature was disabled between authentication and this request.
+	sessionID, _ := s.Get(telegramMiniAppSessionKey).(string)
+	revokeMiniAppSession(sessionID)
 	s.Clear()
 	cookiePath := c.GetString("base_path")
 	if cookiePath == "" {
