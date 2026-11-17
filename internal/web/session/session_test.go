@@ -440,3 +440,51 @@ func TestDisablingMiniAppRevokesTelegramCookieWithoutLegacyFallback(t *testing.T
 		t.Fatalf("revoked Telegram cookie was replayed after re-enable: HTTP %d", got)
 	}
 }
+
+
+func TestLogoutRevokesMiniAppSessionEvenWhenFeatureWasDisabled(t *testing.T) {
+	id, err := issueMiniAppSession()
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { revokeMiniAppSession(id) })
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(sessions.Sessions(sessionCookieName, cookie.NewStore([]byte("01234567890123456789012345678901"))))
+	router.GET("/seed", func(c *gin.Context) {
+		s := sessions.Default(c)
+		s.Set(telegramMiniAppSessionKey, id)
+		if err := s.Save(); err != nil {
+			t.Error(err)
+		}
+		c.Status(http.StatusNoContent)
+	})
+	router.GET("/logout", func(c *gin.Context) {
+		if err := ClearSession(c); err != nil {
+			t.Error(err)
+		}
+		c.Status(http.StatusNoContent)
+	})
+	seed := httptest.NewRecorder()
+	router.ServeHTTP(seed, httptest.NewRequest(http.MethodGet, "/seed", nil))
+	var signed *http.Cookie
+	for _, item := range seed.Result().Cookies() {
+		if item.Name == sessionCookieName {
+			signed = item
+		}
+	}
+	if signed == nil || !miniAppSessionActive(id) {
+		t.Fatal("synthetic Mini App session was not established")
+	}
+	t.Setenv("XUI_TG_MINIAPP_ENABLED", "false")
+	req := httptest.NewRequest(http.MethodGet, "/logout", nil)
+	req.AddCookie(signed)
+	out := httptest.NewRecorder()
+	router.ServeHTTP(out, req)
+	if out.Code != http.StatusNoContent {
+		t.Fatalf("logout returned HTTP %d", out.Code)
+	}
+	if miniAppSessionActive(id) {
+		t.Fatal("a disabled Mini App preserved a replayable session after logout")
+	}
+}
