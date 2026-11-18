@@ -2,14 +2,15 @@ package session
 
 import (
 	"net/http"
-	"os"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/mhsanaei/3x-ui/v3/internal/database"
 	"github.com/mhsanaei/3x-ui/v3/internal/database/dbtest"
 	"github.com/mhsanaei/3x-ui/v3/internal/database/model"
+	"github.com/mhsanaei/3x-ui/v3/internal/web/service/tgminiapp"
 
 	"github.com/gin-contrib/sessions"
 	"github.com/gin-contrib/sessions/cookie"
@@ -80,8 +81,8 @@ func TestSetLoginUserReplacesThePreLoginCSRFToken(t *testing.T) {
 	}
 }
 
- // TestMiniAppRevocationCannotResurrectOldCookies verifies actual signed Gin
- // cookies and the migrated SQLite admin. All identities and state are local.
+// TestMiniAppRevocationCannotResurrectOldCookies verifies actual signed Gin
+// cookies and the migrated SQLite admin. All identities and state are local.
 func TestMiniAppRevocationCannotResurrectOldCookies(t *testing.T) {
 	t.Setenv("XUI_TG_MINIAPP_ENABLED", "true")
 	configureMiniAppTestBotToken(t)
@@ -96,7 +97,7 @@ func TestMiniAppRevocationCannotResurrectOldCookies(t *testing.T) {
 	router := gin.New()
 	router.Use(sessions.Sessions(sessionCookieName, cookie.NewStore([]byte("01234567890123456789012345678901"))))
 	router.GET("/login", func(c *gin.Context) {
-		if err := SetTelegramMiniAppLoginUser(c, &admin, 1001); err != nil {
+		if err := SetTelegramMiniAppLoginUser(c, &admin, 1001, tgminiapp.BotToken()); err != nil {
 			c.Status(http.StatusForbidden)
 			return
 		}
@@ -202,7 +203,7 @@ func TestMiniAppIdentityNeverTrustsScopedAPITokenOrForgedSessionField(t *testing
 	router := gin.New()
 	router.Use(sessions.Sessions(sessionCookieName, cookie.NewStore([]byte("01234567890123456789012345678901"))))
 	router.GET("/login", func(c *gin.Context) {
-		if err := SetTelegramMiniAppLoginUser(c, &admin, 1001); err != nil {
+		if err := SetTelegramMiniAppLoginUser(c, &admin, 1001, tgminiapp.BotToken()); err != nil {
 			c.Status(http.StatusForbidden)
 			return
 		}
@@ -316,7 +317,7 @@ func TestMiniAppBotTokenRotationRevokesSignedBrowserCookie(t *testing.T) {
 	router := gin.New()
 	router.Use(sessions.Sessions(sessionCookieName, cookie.NewStore([]byte("01234567890123456789012345678901"))))
 	router.GET("/login", func(c *gin.Context) {
-		if err := SetTelegramMiniAppLoginUser(c, &admin, 1001); err != nil {
+		if err := SetTelegramMiniAppLoginUser(c, &admin, 1001, tgminiapp.BotToken()); err != nil {
 			c.Status(http.StatusForbidden)
 			return
 		}
@@ -372,7 +373,6 @@ func TestMiniAppBotTokenRotationRevokesSignedBrowserCookie(t *testing.T) {
 	}
 }
 
- 
 // A cookie minted by Telegram must never be reinterpreted as an ordinary
 // legacy password session if the Mini App feature is disabled. Revocation
 // must survive re-enabling the flag within the same running process.
@@ -390,7 +390,7 @@ func TestDisablingMiniAppRevokesTelegramCookieWithoutLegacyFallback(t *testing.T
 	router := gin.New()
 	router.Use(sessions.Sessions(sessionCookieName, cookie.NewStore([]byte("01234567890123456789012345678901"))))
 	router.GET("/login", func(c *gin.Context) {
-		if err := SetTelegramMiniAppLoginUser(c, &admin, 1001); err != nil {
+		if err := SetTelegramMiniAppLoginUser(c, &admin, 1001, tgminiapp.BotToken()); err != nil {
 			c.Status(http.StatusForbidden)
 			return
 		}
@@ -441,7 +441,6 @@ func TestDisablingMiniAppRevokesTelegramCookieWithoutLegacyFallback(t *testing.T
 	}
 }
 
-
 func TestLogoutRevokesMiniAppSessionEvenWhenFeatureWasDisabled(t *testing.T) {
 	id, err := issueMiniAppSession()
 	if err != nil {
@@ -486,5 +485,31 @@ func TestLogoutRevokesMiniAppSessionEvenWhenFeatureWasDisabled(t *testing.T) {
 	}
 	if miniAppSessionActive(id) {
 		t.Fatal("a disabled Mini App preserved a replayable session after logout")
+	}
+}
+
+func TestMiniAppIssuanceRejectsTokenRotatedAfterVerification(t *testing.T) {
+	t.Setenv("XUI_TG_MINIAPP_ENABLED", "true")
+	t.Setenv("XUI_TG_MINIAPP_ADMIN_IDS", "1001")
+	file := configureMiniAppTestBotToken(t)
+	verifiedToken := tgminiapp.BotToken()
+	if verifiedToken == "" {
+		t.Fatal("fixture Secret is unavailable")
+	}
+	if err := os.WriteFile(file, []byte("12345:rotated_fixture"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(sessions.Sessions(sessionCookieName, cookie.NewStore([]byte("01234567890123456789012345678901"))))
+	router.POST("/auth", func(c *gin.Context) {
+		if err := SetTelegramMiniAppLoginUser(c, &model.User{Id: 1}, 1001, verifiedToken); err != http.ErrNoCookie {
+			t.Errorf("expected token rotation to block issuance, got %v", err)
+		}
+	})
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, httptest.NewRequest(http.MethodPost, "/auth", nil))
+	if len(response.Result().Cookies()) != 0 {
+		t.Fatal("rejected Mini App login issued a browser cookie")
 	}
 }

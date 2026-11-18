@@ -55,7 +55,7 @@ func NewMiniAppController(g *gin.RouterGroup) {
 			return
 		}
 
-		// Vela requires an explicit credential in a local Docker secret or env;
+		// Vela requires an explicit credential in a local Secret file;
 		// never silently authenticate with a different legacy bot token.
 		token := tgminiapp.BotToken()
 		if token == "" {
@@ -73,7 +73,11 @@ func NewMiniAppController(g *gin.RouterGroup) {
 			c.AbortWithStatus(http.StatusServiceUnavailable)
 			return
 		}
-		if err := session.SetTelegramMiniAppLoginUser(c, admin, telegramUser.ID); err != nil {
+		if err := session.SetTelegramMiniAppLoginUser(c, admin, telegramUser.ID, token); err != nil {
+			if err == http.ErrNoCookie {
+				c.AbortWithStatus(http.StatusUnauthorized)
+				return
+			}
 			c.AbortWithStatus(http.StatusInternalServerError)
 			return
 		}

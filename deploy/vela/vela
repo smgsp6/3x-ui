@@ -129,7 +129,7 @@ write_release_sequence() {
 safe_archive_path() {
   local archive=$1 name
   name=$(basename -- "$archive")
-  [[ "$archive" == "$ROOT/backups/$name" && "$name" =~ ^vela-[0-9]{8}T[0-9]{6}Z-[0-9]+\.tar\.gz$ && -f "$archive" && ! -L "$archive" ]]
+  [[ -d "$ROOT/backups" && ! -L "$ROOT/backups" && "$archive" == "$ROOT/backups/$name" && "$name" =~ ^vela-[0-9]{8}T[0-9]{6}Z-[0-9]+\.tar\.gz$ && -f "$archive" && ! -L "$archive" ]]
 }
 write_pending() {
   local old=$1 candidate=$2 archive=$3 previous_seq=$4 tmp
@@ -239,14 +239,15 @@ try:
         members = tar.getmembers()
         if not members:
             raise ValueError('empty backup archive')
-        seen = set()
+        seen = {}
+        roots = {'db', 'cert', 'acme'}
         for entry in members:
             name = entry.name.rstrip('/')
             if not name or name.startswith('/') or '\\' in name or name in seen:
                 raise ValueError('invalid archive path')
-            seen.add(name)
+            seen[name] = entry.isdir()
             pieces = name.split('/')
-            if pieces[0] not in {'db', 'cert', 'acme'} or any(p in {'', '.', '..'} for p in pieces):
+            if pieces[0] not in roots or any(p in {'', '.', '..'} for p in pieces):
                 raise ValueError('path outside expected data roots')
             if entry.isfile() or entry.isdir():
                 continue
@@ -262,6 +263,14 @@ try:
                     raise ValueError('link escapes its data directory')
                 continue
             raise ValueError('unsupported special file in backup')
+        if not all(seen.get(root) for root in roots):
+            raise ValueError('missing backup data directory')
+        for name in seen:
+            parent = posixpath.dirname(name)
+            while parent:
+                if seen.get(parent) is False:
+                    raise ValueError('archive entry lies beneath a non-directory')
+                parent = posixpath.dirname(parent)
 except (ValueError, tarfile.TarError, OSError) as exc:
     sys.exit(f'Unsafe or unreadable Vela backup archive: {exc}')
 PYTHON
@@ -305,11 +314,16 @@ backup_locked() {
 
 # Restore is deliberately only used for the archive this process just created.
 # A failed candidate's data is kept for investigation rather than destroyed.
-restore_after_failed_update() {
-  local old=$1 archive=$2 stamp
+restore_after_failed_update() (
+  local old=$1 archive=$2 stamp staging
   safe_archive_path "$archive" && verify_backup_archive "$archive" || die '备份不可信，禁止自动恢复；请人工检查'
   stamp=$(date -u +%Y%m%dT%H%M%SZ)-$$
-  compose "$old" stop -t 40 || true
+  # Extract before interrupting the service or moving its state. A truncated
+  # archive or extraction error leaves the live directories untouched.
+  staging=$(mktemp -d -- "$ROOT/.restore.XXXXXXXX") || die '无法创建恢复暂存目录'
+  trap 'rm -rf -- "$staging"' EXIT
+  tar -C "$staging" -xzf "$archive" || die '备份解包失败，当前数据未变更'
+  compose "$old" stop -t 40 || die '无法停止容器，当前数据未变更'
   [[ ! -L "$ROOT/failed-updates" ]] || die '拒绝使用符号链接故障数据目录'
   mkdir -p "$ROOT/failed-updates/$stamp"
   for item in db cert acme; do
@@ -318,10 +332,8 @@ restore_after_failed_update() {
     fi
     # Missing directories are expected when a previous recovery was killed
     # after moving some paths; the trusted backup will reconstruct all three.
+    mv -- "$staging/$item" "$ROOT/$item" || die '恢复数据失败；备份和隔离数据保留'
   done
-  if ! tar -C "$ROOT" -xzf "$archive"; then
-    die "备份恢复失败；快照保留在 $archive，故障数据在 $ROOT/failed-updates/$stamp"
-  fi
   write_current_image "$old"
   # Restore the signed sequence floor to the version corresponding to the
   # restored image; a future genuinely newer signed release remains possible.
@@ -331,7 +343,7 @@ restore_after_failed_update() {
   compose "$old" up -d --force-recreate || die '恢复旧镜像失败，需人工处理'
   health || die '旧镜像启动后健康检查失败；请检查日志'
   msg "已恢复旧镜像和更新前的数据。故障候选数据位于 $ROOT/failed-updates/$stamp"
-}
+)
 
 if [[ -L "$PENDING" ]]; then die '升级记录是符号链接，拒绝操作'; fi
 if [[ -e "$PENDING" && ! -f "$PENDING" ]]; then die '升级记录类型不安全'; fi

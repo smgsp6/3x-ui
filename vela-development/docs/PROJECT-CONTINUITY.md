@@ -194,3 +194,11 @@ python3 /path/to/vela-phase12/apply_to_repo.py .
   - `https://github.com/smgsp6/3x-ui/actions/workflows/vela-pr-check.yml`
   - `https://github.com/smgsp6/3x-ui/actions/workflows/vela-miniapp-https-auth.yml`
 - **用户个人内测阻断未变**：真实 Telegram Android/iOS WebView、独立测试 VPS Host Network、真实 HTTPS 域名、真实 TCP+UDP 对外网络、隔离数据备份/恢复。生产主机未获授权，禁止连接或执行任何安装；勿记录实际令牌、服务器 IP/域名、SSH 密钥或管理员 ID。
+
+
+## 2026-11-19 · 第十五阶段 CI 与安全验证
+
+- Bot 接收器排空修复 `1d0610cc2b9f5f95e8970bb8f4b1f92a158f119e`，恢复了自动触发；首轮维护步骤失败，随后被取消。修复工作流 Secrets 断言的提交 `0585e40049779aff25efc2d37782c301c69c6665` 的四个 Job 均成功。证据只对应相应提交。[首轮](https://github.com/smgsp6/3x-ui/actions/runs/44341392244) [复测](https://github.com/smgsp6/3x-ui/actions/runs/44341916477)
+- 本轮把 Telegram 登录会话绑定到验证签名时所用的 Secret。恢复工具现在先完整检查和解包快照，再停止容器并切换目录；解包失败、目录缺失或容器未能停止时保留现有数据和恢复记录。
+- 正式自动化使用 vela-dev 推送触发的 **Vela integration and privacy gate**。HTTPS/Xray 与 Docker 回滚合并在该门禁的 Docker Job 中。每次核对提交和运行须匹配精确 SHA。
+- 第十五阶段仍需独立审核、真实 Telegram 手机与经所有者批准的隔离部署环境。VPS、生产部署与发布不在本阶段自动流程内。使用[个人内测验收清单](../../docs/VELA-PERSONAL-BETA-ACCEPTANCE.md)。

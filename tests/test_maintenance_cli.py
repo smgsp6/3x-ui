@@ -79,6 +79,7 @@ if args[0] == 'compose':
         if image.endswith('b'*64):
             Path(os.environ['VELA_HOME'],'db','x-ui.db').write_text('migrated-db')
         sys.exit(0)
+    if 'stop' in args and os.environ.get('VELA_TEST_FAIL_STOP') == '1': sys.exit(1)
     if 'start' in args and os.environ.get('VELA_TEST_WRITES_ON_RESTART') == '1':
         Path(os.environ['VELA_HOME'],'db','x-ui.db').write_text('late-write-after-backup')
     if 'stop' in args or 'start' in args or 'config' in args or 'ps' in args or 'logs' in args: sys.exit(0)
@@ -455,6 +456,49 @@ os.execv('/usr/bin/tar', ['/usr/bin/tar', *sys.argv[1:]])
         self.assertFalse((self.root / 'failed-updates').exists())
         self.assertEqual((self.root / 'image.ref').read_text().strip(), OLD)
         self.assertNotIn(' up -d', self.log.read_text())
+
+    def test_recover_preserves_current_data_when_stop_or_extract_fails(self):
+        initial = self.run_cli('backup')
+        self.assertEqual(initial.returncode, 0, initial.stderr)
+        archive = next((self.root / 'backups').glob('vela-*.tar.gz'))
+        journal = self.root / '.pending-update'
+        journal.write_text(OLD + '\n' + NEW + '\n' + str(archive) + '\n0\n')
+        journal.chmod(0o600)
+        current = self.root / 'db' / 'x-ui.db'
+        current.write_text('candidate-data')
+        (self.root / 'image.ref').write_text(NEW + '\n')
+        self.state.write_text(NEW)
+        for failure, reason in (
+            ('VELA_TEST_FAIL_STOP', '无法停止容器'),
+            ('VELA_TEST_FAIL_TAR', '备份解包失败'),
+        ):
+            with self.subTest(failure=failure):
+                result = self.run_cli('recover', **{failure: '1'})
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(reason, result.stderr)
+                self.assertEqual(current.read_text(), 'candidate-data')
+                self.assertEqual((self.root / 'image.ref').read_text().strip(), NEW)
+                self.assertTrue(journal.exists())
+                self.assertFalse((self.root / 'failed-updates').exists())
+                self.assertFalse(list(self.root.glob('.restore.*')))
+
+    def test_recover_rejects_snapshot_missing_certificate_root(self):
+        initial = self.run_cli('backup')
+        self.assertEqual(initial.returncode, 0, initial.stderr)
+        archive = next((self.root / 'backups').glob('vela-*.tar.gz'))
+        with tarfile.open(archive, 'w:gz') as tf:
+            tf.add(self.root / 'db', arcname='db')
+            tf.add(self.root / 'acme', arcname='acme')
+        journal = self.root / '.pending-update'
+        journal.write_text(OLD + '\n' + NEW + '\n' + str(archive) + '\n0\n')
+        journal.chmod(0o600)
+        self.log.write_text('')
+        result = self.run_cli('recover')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('备份不可信', result.stderr)
+        self.assertNotIn(' stop ', self.log.read_text())
+        self.assertEqual((self.root / 'cert' / 'panel.pem').read_text(), 'cert bytes')
+        self.assertTrue(journal.exists())
 
     def test_update_bad_health_restores_both_image_and_database(self):
         result = self.run_cli('update', VELA_TEST_FAIL_HEALTH='1')

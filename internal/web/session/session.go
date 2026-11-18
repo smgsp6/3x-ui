@@ -21,12 +21,12 @@ import (
 )
 
 const (
-	loginUserKey      = "LOGIN_USER"
-	loginEpochKey     = "LOGIN_EPOCH"
-	apiAuthUserKey    = "api_auth_user"
-	telegramMiniAppUserKey = "TELEGRAM_MINIAPP_USER_ID"
+	loginUserKey             = "LOGIN_USER"
+	loginEpochKey            = "LOGIN_EPOCH"
+	apiAuthUserKey           = "api_auth_user"
+	telegramMiniAppUserKey   = "TELEGRAM_MINIAPP_USER_ID"
 	telegramMiniAppPolicyKey = "TELEGRAM_MINIAPP_POLICY_NONCE"
-	sessionCookieName = "3x-ui"
+	sessionCookieName        = "3x-ui"
 )
 
 // A Mini App cookie is bound to this process and the configured allowlist.
@@ -42,12 +42,18 @@ var miniAppPolicy = struct {
 }{}
 
 func miniAppPolicyNonce() string {
+	return miniAppPolicyNonceForToken("")
+}
+
+// A nonempty verifiedToken binds issuance to the Secret used for HMAC
+// validation, even if the file was rotated before the session was issued.
+func miniAppPolicyNonceForToken(verifiedToken string) string {
 	// A Bot Token rotation revokes old Mini App credentials just like an
 	// administrator allowlist change. Store only the token fingerprint, never
 	// the credential itself in session metadata or logs.
-	token := tgminiapp.BotToken()
 	miniAppPolicy.Lock()
 	defer miniAppPolicy.Unlock()
+	token := tgminiapp.BotToken()
 	if token == "" {
 		// If the Secret disappears, fail closed and prevent replay even if
 		// the identical Secret is later restored.
@@ -68,6 +74,9 @@ func miniAppPolicyNonce() string {
 		miniAppPolicy.tokenHash = fingerprint
 		miniAppPolicy.nonce = base64.RawURLEncoding.EncodeToString(random[:])
 	}
+	if verifiedToken != "" && subtle.ConstantTimeCompare([]byte(verifiedToken), []byte(token)) != 1 {
+		return ""
+	}
 	return miniAppPolicy.nonce
 }
 
@@ -80,8 +89,8 @@ func SetLoginUser(c *gin.Context, user *model.User) error {
 		return nil
 	}
 	s := sessions.Default(c)
-    // Credential rotation from within Mini App must retain the signed Telegram
-    // identity. A legacy caller cannot mint a Vela session via this function.
+	// Credential rotation from within Mini App must retain the signed Telegram
+	// identity. A legacy caller cannot mint a Vela session via this function.
 	var tgID int64
 	var policyNonce, newSessionID string
 	// Even the legacy login path must retire a previous Mini App session.
@@ -122,11 +131,11 @@ func SetLoginUser(c *gin.Context, user *model.User) error {
 
 // SetTelegramMiniAppLoginUser binds a signed Telegram identity to the same
 // normal panel user session; changing the admin allowlist revokes access.
-func SetTelegramMiniAppLoginUser(c *gin.Context, user *model.User, telegramID int64) error {
-    if !tgminiapp.Enabled() || user == nil || telegramID <= 0 || !tgminiapp.AllowedUserID(telegramID) {
-        return http.ErrNoCookie
-    }
-	policyNonce := miniAppPolicyNonce()
+func SetTelegramMiniAppLoginUser(c *gin.Context, user *model.User, telegramID int64, verifiedToken string) error {
+	if !tgminiapp.Enabled() || user == nil || verifiedToken == "" || telegramID <= 0 || !tgminiapp.AllowedUserID(telegramID) {
+		return http.ErrNoCookie
+	}
+	policyNonce := miniAppPolicyNonceForToken(verifiedToken)
 	if policyNonce == "" {
 		return http.ErrNoCookie
 	}
@@ -197,7 +206,7 @@ func GetLoginUser(c *gin.Context) *model.User {
 			return nil
 		}
 	}
-    obj := s.Get(loginUserKey)
+	obj := s.Get(loginUserKey)
 	if obj == nil {
 		return nil
 	}
