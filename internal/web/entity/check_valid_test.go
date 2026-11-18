@@ -1,9 +1,29 @@
 package entity
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 )
+
+func TestCheckValidVelaTLSDoesNotDisclosePaths(t *testing.T) {
+	t.Setenv("XUI_TG_MINIAPP_ENABLED", "true")
+	path := filepath.Join(t.TempDir(), "missing.pem")
+	cases := []struct {
+		cert       AllSetting
+		wantReason string
+	}{
+		{AllSetting{WebCertFile: path, WebKeyFile: path}, "panel TLS certificate or key is invalid"},
+		{AllSetting{SubCertFile: path, SubKeyFile: path}, "subscription TLS certificate or key is invalid"},
+	}
+	for _, tc := range cases {
+		settings := tc.cert
+		settings.WebPort, settings.SubPort = 2053, 2096
+		if err := settings.CheckValid(); err == nil || err.Error() != tc.wantReason {
+			t.Fatalf("unexpected TLS configuration error: %v", err)
+		}
+	}
+}
 
 func TestCheckValidSmtpFrom(t *testing.T) {
 	base := func() *AllSetting {

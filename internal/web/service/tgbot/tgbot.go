@@ -532,10 +532,13 @@ func (t *Tgbot) Start(i18nFS embed.FS) error {
 
 	// Off the start path: with Telegram unreachable these block for a minute,
 	// holding the panel's signal loop and the sub server behind them.
-	go func(b *telego.Bot) {
-		t.resolveScreenArtForBot(b)
-		t.trySetBotCommands(b)
-	}(startedBot)
+	if release := enterBotBackground(startedBot); release != nil {
+		go func() {
+			defer release()
+			t.resolveScreenArtForBot(startedBot)
+			t.trySetBotCommands(startedBot)
+		}()
+	}
 
 	logger.Info("Telegram bot receiver started")
 	go t.receive(startedBot)
@@ -864,6 +867,7 @@ func stopBotLocked(ctx context.Context) bool {
 	userStateMgr.reset()
 	addClientDrafts.resetAll()
 	broadcastResetAll()
+	resetScreenArt()
 
 	if cancel != nil {
 		logger.Info("Telegram bot successfully stopped.")

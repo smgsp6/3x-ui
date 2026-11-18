@@ -271,6 +271,45 @@ func TestVerifyTwoFactorCode(t *testing.T) {
 	}
 }
 
+func TestEnableTwoFactorRollsBackIfSessionEpochCannotChange(t *testing.T) {
+	setupSettingTestDB(t)
+	db := database.GetDB()
+	if db.Dialector.Name() != "sqlite" {
+		t.Skip("uses a SQLite trigger to inject a write failure")
+	}
+	var administrator model.User
+	if err := db.First(&administrator).Error; err != nil {
+		t.Fatal(err)
+	}
+	s := &SettingService{}
+	settings, err := s.GetAllSetting()
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings.TwoFactorEnable = true
+	settings.TwoFactorToken = "JBSWY3DPEHPK3PXP"
+	if err := db.Exec(`CREATE TRIGGER vela_test_reject_epoch BEFORE UPDATE OF login_epoch ON users
+		BEGIN SELECT RAISE(ABORT, 'synthetic epoch write error'); END`).Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := s.UpdateAllSettingWithTwoFactorCode(settings, SecretClears{}, ""); err == nil {
+		t.Fatal("two-factor settings committed despite a failed session epoch update")
+	}
+	if enabled, err := s.GetTwoFactorEnable(); err != nil || enabled {
+		t.Fatalf("two-factor change was not rolled back: %v", err)
+	}
+	if err := db.Exec("DROP TRIGGER vela_test_reject_epoch").Error; err != nil {
+		t.Fatal(err)
+	}
+	if err := s.UpdateAllSettingWithTwoFactorCode(settings, SecretClears{}, ""); err != nil {
+		t.Fatalf("two-factor settings retry failed: %v", err)
+	}
+	var updated model.User
+	if err := db.First(&updated, administrator.Id).Error; err != nil || updated.LoginEpoch != administrator.LoginEpoch+1 {
+		t.Fatalf("login epoch was not advanced with two-factor enable: %v", err)
+	}
+}
+
 func TestGetSecret_FallbacksOnEmptyDatabaseSetting(t *testing.T) {
 	setupSettingTestDB(t)
 	s := &SettingService{}
@@ -295,7 +334,6 @@ func TestGetSecret_FallbacksOnEmptyDatabaseSetting(t *testing.T) {
 		t.Fatalf("persisted secret = %q, want %q", persisted, secret)
 	}
 }
-
 
 func TestVelaWebBasePathDoesNotAllowExternalRedirects(t *testing.T) {
 	t.Setenv("XUI_TG_MINIAPP_ENABLED", "true")

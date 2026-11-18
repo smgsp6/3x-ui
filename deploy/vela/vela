@@ -70,6 +70,7 @@ require docker
 require flock
 require tar
 require stat
+case "$cmd" in backup|recover|update) require sync ;; esac
 check_secret "$ENVFILE"
 check_secret "$ROOT/secrets/vela_bot_token"
 docker compose version >/dev/null || die '没有安装 Docker Compose V2'
@@ -112,6 +113,18 @@ release_sequence() {
   (( value <= 9007199254740991 )) || die '版本序号超出安全范围'
   printf '%s' "$value"
 }
+persist_state_file() {
+  local temporary=$1 destination=$2
+  sync -- "$temporary" || die '无法将维护记录同步至磁盘'
+  mv -f -- "$temporary" "$destination" || die '无法替换维护记录'
+  sync -- "$ROOT" || die '无法将维护目录同步至磁盘'
+}
+
+clear_pending() {
+  rm -f -- "$PENDING" || die '无法清理升级记录'
+  sync -- "$ROOT" || die '无法将升级记录清理同步至磁盘'
+}
+
 write_release_sequence() {
   local value=$1 tmp
   [[ "$value" =~ ^(0|[1-9][0-9]{0,15})$ ]] || die '拒绝写入非法发行序号'
@@ -120,7 +133,7 @@ write_release_sequence() {
   tmp=$(mktemp "$ROOT/.release.sequence.XXXXXX")
   printf '%s\n' "$value" > "$tmp"
   chmod 600 "$tmp"
-  mv -f -- "$tmp" "$SEQUENCE_FILE"
+  persist_state_file "$tmp" "$SEQUENCE_FILE"
 }
 
 # A durable, non-executable upgrade record. We NEVER source it as shell code.
@@ -141,7 +154,7 @@ write_pending() {
   tmp=$(mktemp "$ROOT/.pending-update.XXXXXX")
   printf '%s\n%s\n%s\n%s\n' "$old" "$candidate" "$archive" "$previous_seq" > "$tmp"
   chmod 600 "$tmp"
-  mv -f -- "$tmp" "$PENDING"
+  persist_state_file "$tmp" "$PENDING"
 }
 read_pending() {
   [[ -f "$PENDING" && ! -L "$PENDING" ]] || die '找不到安全的升级恢复记录'
@@ -165,7 +178,7 @@ write_current_image() {
   tmp=$(mktemp "$ROOT/.image.ref.XXXXXX")
   printf '%s\n' "$image" >"$tmp"
   chmod 600 "$tmp"
-  mv -f -- "$tmp" "$CURRENT"
+  persist_state_file "$tmp" "$CURRENT"
 }
 # Never source .env as shell code. Use only the validated HTTPS URL path for
 # health checks; deployments with a custom webBasePath are not necessarily /.
@@ -303,7 +316,8 @@ backup_locked() {
   chmod 600 "$archive"
   # Do not deploy a candidate until the backup can be read. This checks archive
   # integrity, not application/database consistency (the process was stopped).
-  if ! tar -tzf "$archive" >/dev/null || ! verify_backup_archive "$archive"; then
+  if ! tar -tzf "$archive" >/dev/null || ! verify_backup_archive "$archive" ||
+     ! sync -- "$archive" "$ROOT/backups" "$ROOT"; then
     rm -f -- "$archive"
     [[ "$active" != true ]] || compose "$old" start || true
     die '备份完整性/路径安全检查失败，更新已中止'
@@ -359,6 +373,9 @@ PYTHON
     # after moving some paths; the trusted backup will reconstruct all three.
     mv -- "$staging/$item" "$ROOT/$item" || die '恢复数据失败；备份和隔离数据保留'
   done
+  # Flush restored files and directory renames before restarting the image
+  # or clearing the recovery journal, even if reset occurs immediately.
+  sync -f -- "$ROOT" || die '无法将恢复数据同步至磁盘；升级记录保留'
   write_current_image "$old"
   # Restore the signed sequence floor to the version corresponding to the
   # restored image; a future genuinely newer signed release remains possible.
@@ -426,7 +443,7 @@ case "$cmd" in
     else
       restore_after_failed_update "$PENDING_OLD" "$PENDING_ARCHIVE"
     fi
-    rm -f -- "$PENDING"
+    clear_pending
     msg '升级恢复完成。请检查数据库、客户端及节点状态后再更新。'
     ;;
   update)
@@ -497,13 +514,13 @@ PY
     if compose "$candidate" up -d --force-recreate && health; then
       write_current_image "$candidate"
       write_release_sequence "$candidate_sequence"
-      rm -f -- "$PENDING"
+      clear_pending
       msg '候选镜像初步健康检查通过。仍需检查节点同步、订阅和 Telegram 操作。'
       msg "更新前备份：$archive"
     else
       msg '升级健康检查失败，开始恢复旧镜像和旧数据库。'
       restore_after_failed_update "$old" "$archive"
-      rm -f -- "$PENDING"
+      clear_pending
       exit 1
     fi
     ;;

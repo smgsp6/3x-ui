@@ -329,6 +329,20 @@ os.execv('/usr/bin/tar', ['/usr/bin/tar', *sys.argv[1:]])
         self.assertEqual((self.root / 'image.ref').read_text().strip(), OLD)
         self.assertEqual((self.root / 'db' / 'x-ui.db').read_text(), 'original-db')
 
+    def test_update_keeps_old_service_when_backup_cannot_be_synced(self):
+        sync = self.fakebin / 'sync'
+        sync.write_text("#!/bin/sh\ncase \"${2:-}\" in *.tar.gz) exit 1 ;; esac\nexit 0\n")
+        sync.chmod(0o755)
+        result = self.run_cli('update')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('备份完整性/路径安全检查失败', result.stderr)
+        log = self.log.read_text()
+        self.assertIn(' start ', log)
+        self.assertNotIn(' up -d ', log)
+        self.assertEqual(self.state.read_text(), OLD)
+        self.assertEqual((self.root / '.pending-update').read_text().splitlines()[2], '')
+        self.assertFalse(list((self.root / 'backups').glob('*.tar.gz')))
+
     def test_backup_refuses_unknown_or_unstable_container_state(self):
         for settings, error in (
             ({'VELA_TEST_FAIL_STATE': '1'}, '无法确认容器状态'),

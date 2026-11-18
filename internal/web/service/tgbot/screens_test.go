@@ -578,6 +578,23 @@ func TestScreenKeepsArtFromTheBotAvatar(t *testing.T) {
 	}
 }
 
+func TestScreenArtSkipsProfileProbeWhenBotIdentityIsEmpty(t *testing.T) {
+	server, count := staleButtonServer(t, map[string]any{
+		"getMe":                map[string]any{"ok": true, "result": nil},
+		"getUserProfilePhotos": map[string]any{"ok": true, "result": nil},
+	})
+	defer server.Close()
+	swapTestBot(t, server.URL)
+
+	(&Tgbot{}).resolveScreenArt()
+	if count("getMe") != 1 || count("getUserProfilePhotos") != 0 {
+		t.Fatal("empty identity was used for a Telegram profile photo request")
+	}
+	if _, cached := artFileID("main"); cached {
+		t.Fatal("empty response populated the artwork cache")
+	}
+}
+
 // sentText is what a Telegram call would display, plus its chat; a screen travels as a multipart photo,
 // so reading only the JSON text would see nothing.
 type sentText struct {

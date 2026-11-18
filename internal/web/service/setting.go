@@ -16,6 +16,7 @@ import (
 
 	"github.com/google/uuid"
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"github.com/mhsanaei/3x-ui/v3/internal/config"
 	"github.com/mhsanaei/3x-ui/v3/internal/database"
@@ -641,7 +642,9 @@ func (s *SettingService) SetTgBotChatId(chatIds string) error {
 }
 
 func (s *SettingService) GetTgbotEnabled() (bool, error) {
-    if strings.EqualFold(strings.TrimSpace(os.Getenv("XUI_TG_MINIAPP_ENABLED")), "true") { return true, nil }
+	if strings.EqualFold(strings.TrimSpace(os.Getenv("XUI_TG_MINIAPP_ENABLED")), "true") {
+		return true, nil
+	}
 	return s.getBool("tgBotEnable")
 }
 
@@ -833,7 +836,7 @@ func validVelaWebBasePath(path string) bool {
 		path[len(path)-1] != '/' || strings.Contains(path, "//") {
 		return false
 	}
-	for _, c := range path[1:len(path)-1] {
+	for _, c := range path[1 : len(path)-1] {
 		if !((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
 			(c >= '0' && c <= '9') || c == '-' || c == '_' || c == '/') {
 			return false
@@ -1697,6 +1700,16 @@ type SecretClears struct {
 }
 
 func (s *SettingService) UpdateAllSetting(allSetting *entity.AllSetting, clears SecretClears) error {
+	return s.updateAllSetting(allSetting, clears, nil)
+}
+
+// UpdateAllSettingWithTwoFactorCode validates and commits browser/API settings
+// against the current authenticator, rather than an earlier settings snapshot.
+func (s *SettingService) UpdateAllSettingWithTwoFactorCode(allSetting *entity.AllSetting, clears SecretClears, code string) error {
+	return s.updateAllSetting(allSetting, clears, &code)
+}
+
+func (s *SettingService) updateAllSetting(allSetting *entity.AllSetting, clears SecretClears, code *string) error {
 	switch allSetting.SubHostSortMode {
 	case "":
 		allSetting.SubHostSortMode = "inbound-first"
@@ -1712,12 +1725,6 @@ func (s *SettingService) UpdateAllSetting(allSetting *entity.AllSetting, clears 
 	}
 	if err := s.preserveRedactedSecrets(allSetting, clears); err != nil {
 		return err
-	}
-	if allSetting.TwoFactorEnable {
-		if !totp.ValidSecret(allSetting.TwoFactorToken) {
-			return errors.New("two-factor secret must be a non-empty base32 key")
-		}
-		allSetting.TwoFactorToken = totp.NormalizeSecret(allSetting.TwoFactorToken)
 	}
 	if err := validateSettingsURLs(allSetting); err != nil {
 		return err
@@ -1741,13 +1748,51 @@ func (s *SettingService) UpdateAllSetting(allSetting *entity.AllSetting, clears 
 
 	db := database.GetDB()
 	return db.Transaction(func(tx *gorm.DB) error {
+		if code != nil {
+			// Match credential rotation's lock order before touching 2FA rows.
+			var users []model.User
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+				Select("id").Order("id ASC").Find(&users).Error; err != nil {
+				return err
+			}
+		}
 		var existing []*model.Setting
-		if err := tx.Find(&existing).Error; err != nil {
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Order("id ASC").Find(&existing).Error; err != nil {
 			return err
 		}
 		byKey := make(map[string]*model.Setting, len(existing))
 		for _, st := range existing {
-			byKey[st.Key] = st
+			if byKey[st.Key] == nil {
+				byKey[st.Key] = st
+			}
+		}
+		oldEnabled := false
+		if st := byKey["twoFactorEnable"]; st != nil && st.Value != "" {
+			enabled, err := strconv.ParseBool(st.Value)
+			if err != nil {
+				return err
+			}
+			oldEnabled = enabled
+		}
+		var oldToken string
+		if st := byKey["twoFactorToken"]; st != nil {
+			oldToken = st.Value
+		}
+		submittedToken := totp.NormalizeSecret(allSetting.TwoFactorToken)
+		if code != nil && oldEnabled &&
+			(!allSetting.TwoFactorEnable || (submittedToken != "" && submittedToken != totp.NormalizeSecret(oldToken))) &&
+			!totp.VerifyWithSkew(oldToken, strings.TrimSpace(*code), time.Now()) {
+			return errors.New("invalid two factor code")
+		}
+		if allSetting.TwoFactorEnable {
+			if strings.TrimSpace(allSetting.TwoFactorToken) == "" {
+				submittedToken = totp.NormalizeSecret(oldToken)
+			}
+			if !totp.ValidSecret(submittedToken) {
+				return errors.New("two-factor secret must be a non-empty base32 key")
+			}
+			allSetting.TwoFactorToken = submittedToken
 		}
 		for _, field := range fields {
 			key := field.Tag.Get("json")
@@ -1766,6 +1811,10 @@ func (s *SettingService) UpdateAllSetting(allSetting *entity.AllSetting, clears 
 			if err := tx.Create(&model.Setting{Key: key, Value: value}).Error; err != nil {
 				return err
 			}
+		}
+		if code != nil && !oldEnabled && allSetting.TwoFactorEnable {
+			return tx.Model(&model.User{}).Where("1 = 1").
+				Update("login_epoch", gorm.Expr("COALESCE(login_epoch, 0) + 1")).Error
 		}
 		return nil
 	})
@@ -1827,13 +1876,6 @@ func (s *SettingService) preserveRedactedSecrets(allSetting *entity.AllSetting, 
 			return err
 		}
 		allSetting.LdapPassword = value
-	}
-	if allSetting.TwoFactorEnable && strings.TrimSpace(allSetting.TwoFactorToken) == "" {
-		value, err := s.GetTwoFactorToken()
-		if err != nil {
-			return err
-		}
-		allSetting.TwoFactorToken = value
 	}
 	if !clears.SmtpPassword && strings.TrimSpace(allSetting.SmtpPassword) == "" {
 		value, err := s.GetSmtpPassword()

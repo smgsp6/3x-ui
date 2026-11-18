@@ -65,6 +65,9 @@ func (t *Tgbot) resolveScreenArtForBot(b *telego.Bot) {
 		logger.Warning("Failed to read the bot identity for screen art:", safeTelegramLogError(err))
 		return
 	}
+	if me == nil || me.ID <= 0 {
+		return
+	}
 
 	// Use getUserProfilePhotos, not getChat: getChat's ChatPhoto file_id is
 	// refused in sendPhoto ("can't use file of type ChatPhoto as Photo").
@@ -73,6 +76,9 @@ func (t *Tgbot) resolveScreenArtForBot(b *telego.Bot) {
 	})
 	if err != nil {
 		logger.Debug("Failed to read the bot's profile photos for screen art:", safeTelegramLogError(err))
+		return
+	}
+	if photos == nil {
 		return
 	}
 
@@ -93,7 +99,7 @@ func (t *Tgbot) resolveScreenArtForBot(b *telego.Bot) {
 	// The last entry is the largest size Telegram keeps.
 	sizes := photos.Photos[0]
 	fileID := sizes[len(sizes)-1].FileID
-	if fileID == rejectedAvatarID {
+	if fileID == "" || fileID == rejectedAvatarID {
 		return
 	}
 	rejectedAvatarID = ""
@@ -107,6 +113,10 @@ func (t *Tgbot) resolveScreenArtForBot(b *telego.Bot) {
 // ensureScreenArt refreshes stale cached art off the render path, at most one
 // probe in flight, so a just-uploaded picture shows without a restart.
 func (t *Tgbot) ensureScreenArt() {
+	source := liveBot()
+	if source == nil {
+		return
+	}
 	screenArtMu.RLock()
 	fromAvatar, at := artFromAvatar, artProbedAt
 	screenArtMu.RUnlock()
@@ -121,9 +131,15 @@ func (t *Tgbot) ensureScreenArt() {
 	if !artProbeRunning.CompareAndSwap(false, true) {
 		return
 	}
+	release := enterBotBackground(source)
+	if release == nil {
+		artProbeRunning.Store(false)
+		return
+	}
 	artProbes.Go(func() {
+		defer release()
 		defer artProbeRunning.Store(false)
-		t.resolveScreenArt()
+		t.resolveScreenArtForBot(source)
 	})
 }
 
@@ -195,7 +211,7 @@ func rejectArtFileID(fileID string) {
 	}
 }
 
-// resetScreenArt drops the cached file_ids; tests use it between mock servers.
+// resetScreenArt drops all file_ids tied to the previous Bot connection.
 func resetScreenArt() {
 	artProbes.Wait()
 	screenArtMu.Lock()

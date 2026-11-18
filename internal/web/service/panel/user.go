@@ -123,14 +123,6 @@ func (s *UserService) CheckUser(username string, password string, twoFactorCode 
 	return user, nil
 }
 
-func (s *UserService) BumpLoginEpoch() error {
-	db := database.GetDB()
-	return db.Model(model.User{}).
-		Where("1 = 1").
-		Update("login_epoch", gorm.Expr("login_epoch + 1")).
-		Error
-}
-
 func (s *UserService) UpdateUser(id int, expectedEpoch int64, username string, password string, twoFactorCode string) error {
 	if len(username) > MaxUsernameLength {
 		return fmt.Errorf("username can not be longer than %d bytes", MaxUsernameLength)

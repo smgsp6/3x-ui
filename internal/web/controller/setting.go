@@ -4,7 +4,6 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/mhsanaei/3x-ui/v3/internal/logger"
@@ -130,7 +129,6 @@ func (a *SettingController) updateSetting(c *gin.Context) {
 		return
 	}
 	allSetting := &form.AllSetting
-	oldTwoFactor, twoFactorErr := a.settingService.GetTwoFactorEnable()
 	oldPanelOutbound, _ := a.settingService.GetPanelOutbound()
 	oldTgEnable, _ := a.settingService.GetTgbotEnabled()
 	oldTgToken, _ := a.settingService.GetTgBotToken()
@@ -140,29 +138,12 @@ func (a *SettingController) updateSetting(c *gin.Context) {
 	oldDiscordToken, _ := a.settingService.GetDiscordBotToken()
 	oldDiscordChannelId, _ := a.settingService.GetDiscordChannelId()
 	oldDiscordRunTime, _ := a.settingService.GetDiscordRunTime()
-	if twoFactorErr == nil && oldTwoFactor {
-		// Rebinding the authenticator is the same class of change as turning 2FA
-		// off, so both need a current code. Blank still means "unchanged".
-		submittedToken := strings.TrimSpace(allSetting.TwoFactorToken)
-		storedToken, _ := a.settingService.GetTwoFactorToken()
-		if !allSetting.TwoFactorEnable || (submittedToken != "" && submittedToken != storedToken) {
-			if err := a.settingService.VerifyTwoFactorCode(form.TwoFactorCode); err != nil {
-				jsonMsg(c, I18nWeb(c, "pages.settings.toasts.modifySettings"), err)
-				return
-			}
-		}
-	}
-	err := a.settingService.UpdateAllSetting(allSetting, service.SecretClears{
+	err := a.settingService.UpdateAllSettingWithTwoFactorCode(allSetting, service.SecretClears{
 		TgBotToken:      form.ClearTgBotToken,
 		LdapPassword:    form.ClearLdapPassword,
 		SmtpPassword:    form.ClearSmtpPassword,
 		DiscordBotToken: form.ClearDiscordBotToken,
-	})
-	if err == nil && twoFactorErr == nil && !oldTwoFactor && allSetting.TwoFactorEnable {
-		if bumpErr := a.userService.BumpLoginEpoch(); bumpErr != nil {
-			err = bumpErr
-		}
-	}
+	}, form.TwoFactorCode)
 	if err == nil && form.PanelOutbound != oldPanelOutbound {
 		// The egress bridge lives in the generated config; reconcile the
 		// running core. One SOCKS inbound plus one routing rule — both

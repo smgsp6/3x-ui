@@ -22,6 +22,7 @@ func TestStopBotRetiresPendingConnection(t *testing.T) {
 	bot = receiver
 	botStop = stopped
 	botMu.Unlock()
+	cacheArtFileID("main", "synthetic-retired-file")
 	tgBotMutex.Lock()
 	adminIds = []int64{918273}
 	adminTopics = map[int64]int{918273: 5}
@@ -41,6 +42,9 @@ func TestStopBotRetiresPendingConnection(t *testing.T) {
 	}
 	if len(adminSnapshot()) != 0 {
 		t.Fatal("shutdown retained prior Telegram administrator permissions")
+	}
+	if _, cached := artFileID("main"); cached {
+		t.Fatal("shutdown retained artwork from the retired Bot")
 	}
 }
 

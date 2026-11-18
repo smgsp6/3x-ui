@@ -1,7 +1,6 @@
 package entity
 
 import (
-	"crypto/tls"
 	"math"
 	"net"
 	"net/mail"
@@ -11,6 +10,7 @@ import (
 
 	"github.com/mhsanaei/3x-ui/v3/internal/util/common"
 	"github.com/mhsanaei/3x-ui/v3/internal/util/cronspec"
+	"github.com/mhsanaei/3x-ui/v3/internal/web/service/tgminiapp"
 )
 
 type Msg struct {
@@ -302,15 +302,21 @@ func (s *AllSetting) CheckValid() error {
 	}
 
 	if s.WebCertFile != "" || s.WebKeyFile != "" {
-		_, err := tls.LoadX509KeyPair(s.WebCertFile, s.WebKeyFile)
+		_, err := tgminiapp.LoadServerTLSKeyPair(s.WebCertFile, s.WebKeyFile)
 		if err != nil {
+			if tgminiapp.Enabled() {
+				return common.NewError("panel TLS certificate or key is invalid")
+			}
 			return common.NewErrorf("cert file <%v> or key file <%v> invalid: %v", s.WebCertFile, s.WebKeyFile, err)
 		}
 	}
 
 	if s.SubCertFile != "" || s.SubKeyFile != "" {
-		_, err := tls.LoadX509KeyPair(s.SubCertFile, s.SubKeyFile)
+		_, err := tgminiapp.LoadServerTLSKeyPair(s.SubCertFile, s.SubKeyFile)
 		if err != nil {
+			if tgminiapp.Enabled() {
+				return common.NewError("subscription TLS certificate or key is invalid")
+			}
 			return common.NewErrorf("cert file <%v> or key file <%v> invalid: %v", s.SubCertFile, s.SubKeyFile, err)
 		}
 	}
