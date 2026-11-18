@@ -23,5 +23,5 @@ test('a stalled Mini App authentication request ends with recoverable feedback',
   });
   expect(fetchMock).toHaveBeenCalledTimes(1);
   expect(fetchMock.mock.calls[0]?.[1].signal?.aborted).toBe(true);
-  expect(screen.getByText(/请从 Telegram 机器人重新打开小程序/)).toBeVisible();
+  expect(screen.getByText(/请从 Telegram 机器人重新打开小程序/).getAttribute('aria-live')).toBe('polite');
 });

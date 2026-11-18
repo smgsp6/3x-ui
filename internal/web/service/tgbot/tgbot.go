@@ -3,6 +3,7 @@ package tgbot
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"embed"
 	"errors"
 	"fmt"
@@ -16,6 +17,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/mhsanaei/3x-ui/v3/internal/eventbus"
@@ -41,7 +43,8 @@ var (
 	// (the screen artwork warm-up) is still using the previous liveBot().
 	botMu sync.RWMutex
 	// botStop is closed by StopBot to end every in-flight call of the live bot.
-	botStop chan struct{}
+	botStop              chan struct{}
+	botCredentialAllowed func() bool
 
 	// botCancel stores the function to cancel the context, stopping Long Polling gracefully.
 	botCancel context.CancelFunc
@@ -136,6 +139,30 @@ func liveBot() *telego.Bot {
 	botMu.RLock()
 	defer botMu.RUnlock()
 	return bot
+}
+
+// botCredentialCheck permanently retires a connection once an observed
+// Secret change or mode switch invalidates it. Only a new Start may enable it.
+func botCredentialCheck(velaMode bool, token string) func() bool {
+	expected := sha256.Sum256([]byte(token))
+	var retired atomic.Bool
+	return func() bool {
+		if retired.Load() {
+			return false
+		}
+		if tgminiapp.Enabled() != velaMode || (velaMode && sha256.Sum256([]byte(tgminiapp.BotToken())) != expected) {
+			retired.Store(true)
+			return false
+		}
+		return !retired.Load()
+	}
+}
+
+func receiverIsAuthorized(receiver *telego.Bot) bool {
+	botMu.RLock()
+	active, allowed := bot, botCredentialAllowed
+	botMu.RUnlock()
+	return receiver != nil && receiver == active && (allowed == nil || allowed())
 }
 
 // clientDraft is one chat's add-client wizard state. Per-protocol secrets are
@@ -425,7 +452,8 @@ func (t *Tgbot) Start(i18nFS embed.FS) error {
 
 	// Get Telegram bot token
 	tgBotToken := ""
-	if tgminiapp.Enabled() {
+	velaMode := tgminiapp.Enabled()
+	if velaMode {
 		tgBotToken = tgminiapp.BotToken() // Never read the legacy DB token in Vela mode
 	} else {
 		tgBotToken, err = t.settingService.GetTgBotToken()
@@ -479,7 +507,8 @@ func (t *Tgbot) Start(i18nFS embed.FS) error {
 	// Create new Telegram bot instance. Do not expose a client-construction
 	// error to a caller that could print it outside this logging boundary.
 	stop := make(chan struct{})
-	startedBot, err := t.NewBot(tgBotToken, tgBotProxy, tgBotAPIServer, stop)
+	credentialAllowed := botCredentialCheck(velaMode, tgBotToken)
+	startedBot, err := t.newBot(tgBotToken, tgBotProxy, tgBotAPIServer, stop, credentialAllowed)
 	if err != nil {
 		if tgminiapp.Enabled() {
 			logger.Warning("Vela Telegram bot initialization failed")
@@ -497,6 +526,7 @@ func (t *Tgbot) Start(i18nFS embed.FS) error {
 	adminTopics = parsedAdminTopics
 	bot = startedBot
 	botStop = stop
+	botCredentialAllowed = credentialAllowed
 	botMu.Unlock()
 	tgBotMutex.Unlock()
 
@@ -584,8 +614,8 @@ func panelEgressDial(resolve func() string) fasthttp.DialFunc {
 	}
 }
 
-// NewBot creates a new Telegram bot instance with optional proxy and API server settings.
-func (t *Tgbot) NewBot(token string, proxyUrl string, apiServerUrl string, stopped <-chan struct{}) (*telego.Bot, error) {
+// newBot creates a new Telegram bot instance with optional proxy and API server settings.
+func (t *Tgbot) newBot(token string, proxyUrl string, apiServerUrl string, stopped <-chan struct{}, credentialAllowed func() bool) (*telego.Bot, error) {
 	// Enforce at the connection creation boundary as well as at Start:
 	// no caller can redirect the private Bot Token to an inherited API host.
 	proxyUrl, apiServerUrl = botConnectionOptions(proxyUrl, apiServerUrl)
@@ -622,8 +652,9 @@ func (t *Tgbot) NewBot(token string, proxyUrl string, apiServerUrl string, stopp
 		options = append(options, telego.WithDiscardLogger())
 	}
 	options = append(options, telego.WithAPICaller(stoppableCaller{
-		inner:   ta.FastHTTPCaller{Client: client},
-		stopped: stopped,
+		inner:             ta.FastHTTPCaller{Client: client},
+		stopped:           stopped,
+		credentialAllowed: credentialAllowed,
 	}))
 
 	if apiServerUrl != "" {
@@ -808,6 +839,7 @@ func stopBotLocked(ctx context.Context) bool {
 		botStop = nil
 	}
 	bot = nil
+	botCredentialAllowed = nil
 	botMu.Unlock()
 	tgBotMutex.Unlock()
 

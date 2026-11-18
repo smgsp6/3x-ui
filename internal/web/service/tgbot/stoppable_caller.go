@@ -12,8 +12,9 @@ var errBotStopped = errors.New("telegram bot stopped")
 // stoppableCaller returns as soon as its bot is stopped or the call's context
 // ends; fasthttp honours only deadlines, so a blocked route held panel restarts.
 type stoppableCaller struct {
-	inner   ta.Caller
-	stopped <-chan struct{}
+	inner             ta.Caller
+	stopped           <-chan struct{}
+	credentialAllowed func() bool
 }
 
 type callResult struct {
@@ -25,7 +26,13 @@ func (c stoppableCaller) Call(ctx context.Context, url string, data *ta.RequestD
 	select {
 	case <-c.stopped:
 		return nil, errBotStopped
+	case <-ctx.Done():
+		return nil, ctx.Err()
 	default:
+	}
+	if c.credentialAllowed != nil && !c.credentialAllowed() {
+		// The SDK treats context cancellation as a terminal polling result.
+		return nil, context.Canceled
 	}
 	done := make(chan callResult, 1)
 	go func() {
@@ -34,6 +41,9 @@ func (c stoppableCaller) Call(ctx context.Context, url string, data *ta.RequestD
 	}()
 	select {
 	case r := <-done:
+		if c.credentialAllowed != nil && !c.credentialAllowed() {
+			return nil, context.Canceled
+		}
 		return r.resp, r.err
 	case <-c.stopped:
 		return nil, errBotStopped

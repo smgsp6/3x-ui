@@ -205,8 +205,14 @@ python3 /path/to/vela-phase12/apply_to_repo.py .
 
 ### 第十五阶段 · 第二批回归
 
-- 第一批候选提交 `0794e4b57f1f6446f54c27a31ba2b6db5e46a1fb` 的证据见自动门禁。核对其最终状态和提交 SHA 后再使用。[第一批 Actions](https://github.com/smgsp6/3x-ui/actions/runs/44348648193)
+- 第一批提交 `0794e4b57f1f6446f54c27a31ba2b6db5e46a1fb` 的隐私、应用构建与测试、维护以及 Docker 四个 Job 全部通过。[第一批 Actions](https://github.com/smgsp6/3x-ui/actions/runs/44348648193)
+- 第二批提交 `438e6d94dd0c5f731ee1cebdc6f0a4635d4b2995` 通过隐私、维护及 TypeScript 检查。新增前端用例调用未注册的 `toBeVisible` 导致失败，后续 Go 和 Docker 步骤未运行。下一批将该断言改为现有 Vitest 断言，同时核验反馈的无障碍播报属性。[第二批 Actions](https://github.com/smgsp6/3x-ui/actions/runs/44352292186)
 - 新增 Telegram HMAC 兼容性回归，覆盖现代 initData 的 `signature` 字段及仍无该字段的旧格式。策略或 Secret 变更会退役旧会话登记，凭据更新通过数据库版本校验并注销当前浏览器会话。
 - Bot 更换连接前等待后台广播、媒体预览及旧接收器退出。延迟的内联能力探测无法为新 Bot 写入旧能力。移动登录请求超时时可从 Bot 重新打开。
 - TLS 状态读取和热加载使用有上限的文件读取。证书链更新后，即使叶证书未更换，也可以在新握手中使用更新的链。恢复暂存目录也会核实解析后的链接仍位于各自数据根内。
 - 证书 CA 信任、真实 ACME 申请/自动续签、真实手机和真实公网 Xray 数据通道另行验收。测试通过仍需所有者批准才能安排隔离环境验收。
+
+### 第十五阶段 · Bot Secret 轮换回归
+
+- 旧 Bot 一旦发现本地 Secret 删除、轮换或模式改变，同一连接即退役。已排队的更新会在分派前重新核验，API 调用会在发出前及回包时核验。已经发出的外部请求仍可能已在 Telegram 执行。
+- 用合成 Secret 和替身传输回归验证轮换后的旧连接不会恢复收发请求。运行中的实例需按操作流程重启 Bot，使其使用新 Secret。仓库验收仍按 `vela-dev` Push 的完整 SHA 定位 CI，真实设备和环境留待所有者批准。

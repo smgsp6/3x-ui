@@ -2,6 +2,8 @@ package tgbot
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/mymmrac/telego"
@@ -9,13 +11,28 @@ import (
 )
 
 func TestRetiredReceiverCannotDispatchStaleUpdates(t *testing.T) {
+	t.Setenv("XUI_TG_MINIAPP_ENABLED", "true")
+	file := filepath.Join(t.TempDir(), "bot-token")
+	if err := os.WriteFile(file, []byte(testBotToken), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("XUI_TG_MINIAPP_BOT_TOKEN_FILE", file)
 	previous := liveBot()
-	t.Cleanup(func() { setTestBot(previous) })
+	botMu.RLock()
+	previousCheck := botCredentialAllowed
+	botMu.RUnlock()
+	t.Cleanup(func() {
+		botMu.Lock()
+		bot, botCredentialAllowed = previous, previousCheck
+		botMu.Unlock()
+	})
 	receiver, err := telego.NewBot(testBotToken)
 	if err != nil {
 		t.Fatalf("NewBot: %v", err)
 	}
-	setTestBot(receiver)
+	botMu.Lock()
+	bot, botCredentialAllowed = receiver, botCredentialCheck(true, testBotToken)
+	botMu.Unlock()
 	h, err := th.NewBotHandler(receiver, make(chan telego.Update, 1))
 	if err != nil {
 		t.Fatalf("NewBotHandler: %v", err)
@@ -36,6 +53,15 @@ func TestRetiredReceiverCannotDispatchStaleUpdates(t *testing.T) {
 	}
 	if hits != 1 {
 		t.Fatalf("active receiver dispatched %d updates, want one", hits)
+	}
+	if err := os.Remove(file); err != nil {
+		t.Fatal(err)
+	}
+	if err := h.BaseGroup().HandleUpdate(context.Background(), receiver, update); err != nil {
+		t.Fatalf("update after Secret removal: %v", err)
+	}
+	if hits != 1 {
+		t.Fatalf("receiver without a Secret executed a command (%d hits)", hits)
 	}
 	// Simulate reload: old HTTP connection still has a queued Telegram update.
 	setTestBot(nil)

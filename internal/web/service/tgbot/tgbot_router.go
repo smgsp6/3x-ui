@@ -87,13 +87,14 @@ func finishBotReceiver(receiver *telego.Bot) {
 		botStop = nil
 	}
 	bot = nil
+	botCredentialAllowed = nil
 }
 
 // Drop all updates queued for a Bot that has since been stopped/reloaded.
 // The actual receiver remains the authorization boundary for its handlers.
 func guardReceiverUpdates(h *th.BotHandler, receiver *telego.Bot) {
 	h.Use(func(ctx *th.Context, update telego.Update) error {
-		if receiver == nil || liveBot() != receiver {
+		if !receiverIsAuthorized(receiver) {
 			return nil
 		}
 		return ctx.Next(update)
@@ -200,7 +201,7 @@ func (t *Tgbot) receive(pollBot *telego.Bot) {
 
 			// The SDK runs updates concurrently and drains handlers on stop.
 			runBotHandler(receiverCtx, pool, func() {
-				if liveBot() != pollBot {
+				if !receiverIsAuthorized(pollBot) {
 					return // queued command from an already retired receiver
 				}
 				userStateMgr.clear(messageActor(message))
@@ -219,7 +220,7 @@ func (t *Tgbot) receive(pollBot *telego.Bot) {
 		h.HandleInlineQuery(func(ctx *th.Context, query telego.InlineQuery) error {
 			defer recoverBotPanic()
 			runBotHandler(receiverCtx, pool, func() {
-				if liveBot() != pollBot {
+				if !receiverIsAuthorized(pollBot) {
 					return
 				}
 				t.handleInlineQuery(&query)
@@ -229,7 +230,7 @@ func (t *Tgbot) receive(pollBot *telego.Bot) {
 
 		h.HandleCallbackQuery(func(ctx *th.Context, query telego.CallbackQuery) error {
 			runBotHandler(receiverCtx, pool, func() {
-				if liveBot() != pollBot {
+				if !receiverIsAuthorized(pollBot) {
 					return
 				}
 				userStateMgr.clear(callbackActor(&query))
