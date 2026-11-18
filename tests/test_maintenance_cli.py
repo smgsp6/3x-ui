@@ -649,6 +649,31 @@ os.execv('/usr/bin/tar', ['/usr/bin/tar', *sys.argv[1:]])
         self.assertEqual((self.root / 'acme' / 'state').read_text(), 'acme bytes')
         self.assertFalse((self.root / '.pending-update').exists())
 
+    def test_recover_retries_after_a_failed_directory_switch(self):
+        initial = self.run_cli('backup')
+        self.assertEqual(initial.returncode, 0, initial.stderr)
+        snapshot = next((self.root / 'backups').glob('vela-*.tar.gz'))
+        journal = self.root / '.pending-update'
+        journal.write_text(OLD + '\n' + NEW + '\n' + str(snapshot) + '\n')
+        (self.root / 'cert' / 'panel.pem').write_text('candidate cert')
+        move = self.fakebin / 'mv'
+        move.write_text('#!/bin/sh\ncase "$2" in */.restore.*/cert) exit 1 ;; esac\nexec /usr/bin/mv "$@"\n')
+        move.chmod(0o755)
+
+        failed = self.run_cli('recover')
+        self.assertNotEqual(failed.returncode, 0)
+        self.assertTrue(journal.exists())
+        self.assertFalse((self.root / 'cert').exists())
+        copy = next((self.root / 'failed-updates').glob('*/cert/panel.pem'))
+        self.assertEqual(copy.read_text(), 'candidate cert')
+
+        move.unlink()
+        retried = self.run_cli('recover')
+        self.assertEqual(retried.returncode, 0, retried.stderr)
+        self.assertEqual((self.root / 'cert' / 'panel.pem').read_text(), 'cert bytes')
+        self.assertEqual(copy.read_text(), 'candidate cert')
+        self.assertFalse(journal.exists())
+
     def test_recover_rejects_archive_path_traversal(self):
         import io
         initial = self.run_cli('backup')

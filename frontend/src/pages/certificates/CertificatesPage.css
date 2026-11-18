@@ -25,3 +25,8 @@
 .tg-cert-alert {margin-bottom:18px}
 .tg-cert-notice {margin:24px 0;color:var(--ant-color-text-tertiary,#95a0ad);font-size:12px;line-height:1.8}
 @media(max-width:700px){.tg-cert-content {padding:20px 14px 92px}.tg-cert-card{padding:18px}.tg-cert-summary-item{padding:14px;gap:8px}.tg-cert-summary-item strong{font-size:23px}.tg-cert-summary-item>.anticon{font-size:18px}}
+@media(max-width:390px){
+  .tg-cert-header {flex-wrap:wrap}
+  .tg-cert-overview {grid-template-columns:minmax(0,1fr)}
+}
+.tg-cert-domain {overflow-wrap:anywhere}

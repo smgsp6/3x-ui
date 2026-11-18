@@ -86,9 +86,20 @@ func safeLoadTLSKeyPair(certPath, keyPath string) (*tls.Certificate, error) {
 		return nil, errors.New("TLS certificate material invalid")
 	}
 	leaf, err := x509.ParseCertificate(cert.Certificate[0])
-	if err != nil || time.Now().Before(leaf.NotBefore) || !time.Now().Before(leaf.NotAfter) {
+	now := time.Now()
+	if err != nil || now.Before(leaf.NotBefore) || !now.Before(leaf.NotAfter) {
 		return nil, errors.New("TLS certificate is not currently valid")
 	}
+	child := leaf
+	for _, der := range cert.Certificate[1:] {
+		issuer, err := x509.ParseCertificate(der)
+		if err != nil || now.Before(issuer.NotBefore) || !now.Before(issuer.NotAfter) ||
+			!bytes.Equal(child.RawIssuer, issuer.RawSubject) || child.CheckSignatureFrom(issuer) != nil {
+			return nil, errors.New("TLS certificate chain is invalid")
+		}
+		child = issuer
+	}
+	cert.Leaf = leaf
 	// The client will validate the issuer, SAN, and chain. This preflight
 	// deliberately checks time validity without claiming CA trust.
 	return &cert, nil
@@ -132,9 +143,11 @@ func (r *TLSCertificateReloader) currentAt(now time.Time) *tls.Certificate {
 			if !slices.EqualFunc(candidate.Certificate, r.current.Certificate, bytes.Equal) {
 				// Prevent accidental replacement with an older, shorter-lived
 				// certificate; a deliberate manual change can still restart.
-				newLeaf, _ := x509.ParseCertificate(candidate.Certificate[0])
+				newLeaf := candidate.Leaf
 				oldLeaf, oldErr := x509.ParseCertificate(r.current.Certificate[0])
-				if oldErr == nil && !newLeaf.NotAfter.Before(oldLeaf.NotAfter) && keepsCertificateIdentity(oldLeaf, newLeaf) {
+				truncated := len(candidate.Certificate) < len(r.current.Certificate) &&
+					bytes.Equal(candidate.Certificate[0], r.current.Certificate[0])
+				if oldErr == nil && !truncated && !newLeaf.NotAfter.Before(oldLeaf.NotAfter) && keepsCertificateIdentity(oldLeaf, newLeaf) {
 					r.current = candidate
 				}
 			}

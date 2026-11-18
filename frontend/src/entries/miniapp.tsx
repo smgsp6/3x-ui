@@ -25,11 +25,23 @@ declare global {
 export function MiniAppEntry() {
   const [error, setError] = useState('');
   const [state, setState] = useState('正在验证 Telegram 身份…');
+  const [attempt, setAttempt] = useState(0);
+  const [retryable, setRetryable] = useState(false);
 
   useEffect(() => {
     let canceled = false;
     const request = new AbortController();
-    const timeout = window.setTimeout(() => request.abort(), 15_000);
+    const transientFailure = () => {
+      setError('连接失败。请检查网络后重试，或请从 Telegram 机器人重新打开小程序。');
+      setRetryable(true);
+    };
+    const timeout = window.setTimeout(() => {
+      request.abort();
+      transientFailure();
+    }, 15_000);
+    setError('');
+    setRetryable(false);
+    setState('正在验证 Telegram 身份…');
     void (async () => {
       try {
         const app = window.Telegram?.WebApp;
@@ -41,7 +53,9 @@ export function MiniAppEntry() {
           return;
         }
         const base = window.X_UI_BASE_PATH || '/';
-        let csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
+        let csrf = attempt === 0
+          ? document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || ''
+          : '';
         if (!csrf) {
           const tokenResponse = await fetch(`${base}csrf-token`, { credentials: 'same-origin', cache: 'no-store', signal: request.signal });
           if (!tokenResponse.ok) throw new Error('csrf');
@@ -59,12 +73,18 @@ export function MiniAppEntry() {
           headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
           body: JSON.stringify({ initData }),
         });
+        if (response.status === 400 || response.status === 401 || response.status === 403) {
+          if (!canceled && !request.signal.aborted) {
+            setError('验证失败或授权已过期。请从 Telegram 机器人重新打开小程序。');
+          }
+          return;
+        }
         if (!response.ok) throw new Error('auth');
         const outcome = (await response.json()) as { success?: boolean };
         if (!outcome.success) throw new Error('auth');
         if (!canceled && !request.signal.aborted) window.location.replace(`${base}panel/`);
       } catch {
-        if (!canceled) setError('验证失败或授权已过期。请从 Telegram 机器人重新打开小程序。');
+        if (!canceled && !request.signal.aborted) transientFailure();
       } finally {
         window.clearTimeout(timeout);
       }
@@ -74,7 +94,7 @@ export function MiniAppEntry() {
       window.clearTimeout(timeout);
       request.abort();
     };
-  }, []);
+  }, [attempt]);
 
   return (
     <main className="tg-welcome-shell">
@@ -88,6 +108,7 @@ export function MiniAppEntry() {
           <span className="tg-welcome-icon">{error ? <SafetyCertificateOutlined /> : <LoadingOutlined spin />}</span>
           <span aria-live="polite">{error || state}</span>
         </div>
+        {retryable && <button className="tg-welcome-retry" type="button" onClick={() => setAttempt((n) => n + 1)}>重试</button>}
         <div className="tg-welcome-note">HTTPS 传输 · 服务端验证身份 · 私密数据保留在你的服务器</div>
       </div>
     </main>

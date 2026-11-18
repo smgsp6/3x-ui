@@ -93,6 +93,27 @@ func (c *blockedTelegramCaller) Call(context.Context, string, *ta.RequestData) (
 	return &ta.Response{}, nil
 }
 
+func TestBotCallDiscardsReplyWhenStopOccursDuringCredentialRecheck(t *testing.T) {
+	stopped := make(chan struct{})
+	release := make(chan struct{})
+	close(release)
+	checks := 0
+	caller := stoppableCaller{
+		inner:   &blockedTelegramCaller{started: make(chan struct{}), release: release},
+		stopped: stopped,
+		credentialAllowed: func() bool {
+			checks++
+			if checks == 2 {
+				close(stopped)
+			}
+			return true
+		},
+	}
+	if reply, err := caller.Call(context.Background(), "", nil); reply != nil || !errors.Is(err, errBotStopped) {
+		t.Fatalf("stopped caller returned a reply or unexpected error: %v", err)
+	}
+}
+
 func TestVelaSecretChangeRetiresInFlightAndFutureBotCalls(t *testing.T) {
 	t.Setenv("XUI_TG_MINIAPP_ENABLED", "true")
 	file := filepath.Join(t.TempDir(), "bot-token")

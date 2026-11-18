@@ -44,6 +44,16 @@ func (c stoppableCaller) Call(ctx context.Context, url string, data *ta.RequestD
 		if c.credentialAllowed != nil && !c.credentialAllowed() {
 			return nil, context.Canceled
 		}
+		// The transport and shutdown can both be ready. Recheck after
+		// credential validation so a retired caller cannot publish a reply.
+		select {
+		case <-c.stopped:
+			return nil, errBotStopped
+		default:
+		}
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
 		return r.resp, r.err
 	case <-c.stopped:
 		return nil, errBotStopped

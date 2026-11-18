@@ -1,9 +1,14 @@
 package tgminiapp
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
+	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/pem"
+	"math/big"
 	"net"
 	"os"
 	"path/filepath"
@@ -300,22 +305,51 @@ func TestTLSReloaderRefreshesChainWithSameLeaf(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	caKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ca := &x509.Certificate{
+		SerialNumber: big.NewInt(2), Subject: pkix.Name{CommonName: "Test issuer"},
+		NotBefore: now.Add(-time.Hour), NotAfter: now.Add(60 * 24 * time.Hour),
+		BasicConstraintsValid: true, IsCA: true, KeyUsage: x509.KeyUsageCertSign,
+	}
+	caDER, err := x509.CreateCertificate(rand.Reader, ca, ca, &caKey.PublicKey, caKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	leafDER, err := x509.CreateCertificate(rand.Reader, initial.Leaf, ca, initial.Leaf.PublicKey, caKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	leafPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: leafDER})
+	chainPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: caDER})
+	if err := os.WriteFile(path, leafPEM, 0600); err != nil {
+		t.Fatal(err)
+	}
+	initial, err = tls.LoadX509KeyPair(path, key)
+	if err != nil {
+		t.Fatal(err)
+	}
 	reloader := NewTLSCertificateReloader(path, key, initial)
-	leafPEM, err := os.ReadFile(path)
-	if err != nil {
+	if err := os.WriteFile(path, append(append([]byte{}, leafPEM...), chainPEM...), 0600); err != nil {
 		t.Fatal(err)
 	}
-	extraPath, _ := writeTestCert(t, t.TempDir(), now.Add(-time.Hour), now.Add(60*24*time.Hour))
-	chainPEM, err := os.ReadFile(extraPath)
-	if err != nil {
+	updated := reloader.currentAt(now.Add(2 * tlsRefreshInterval))
+	if len(updated.Certificate) != 2 {
+		t.Fatalf("expected updated chain with unchanged leaf, got %d certificates", len(updated.Certificate))
+	}
+	if err := os.WriteFile(path, leafPEM, 0600); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(path, append(leafPEM, chainPEM...), 0o600); err != nil {
+	if got := reloader.currentAt(now.Add(4 * tlsRefreshInterval)); got != updated {
+		t.Fatal("a partially written bundle dropped the active issuer certificate")
+	}
+	unrelated := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: leafDER})
+	if err := os.WriteFile(path, append(append([]byte{}, leafPEM...), unrelated...), 0600); err != nil {
 		t.Fatal(err)
 	}
-	// The fixture verifies hot reloading of the served chain bytes; CA trust
-	// remains a separate client and deployment concern.
-	if got := reloader.currentAt(now.Add(2 * tlsRefreshInterval)); len(got.Certificate) != 2 {
-		t.Fatalf("expected updated chain with unchanged leaf, got %d certificates", len(got.Certificate))
+	if _, err := safeLoadTLSKeyPair(path, key); err == nil {
+		t.Fatal("accepted an unrelated certificate as issuer")
 	}
 }

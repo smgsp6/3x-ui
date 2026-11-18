@@ -14,3 +14,5 @@ body {min-height:100vh;min-height:100dvh}
 .tg-welcome-icon {color:#77c9ff;font-size:18px}
 .tg-welcome-note {margin-top:24px;color:#8195ab;font-size:11px;line-height:1.8}
 @media (prefers-reduced-motion:reduce){*,*::before,*::after{animation-duration:.01ms!important;transition-duration:.01ms!important}}
+.tg-welcome-retry {min-height:44px;margin-top:16px;padding:8px 24px;border:1px solid #76c9ff;border-radius:12px;background:#11263d;color:#f4f8ff;font:inherit;cursor:pointer}
+.tg-welcome-retry:focus-visible {outline:2px solid #76c9ff;outline-offset:3px}
