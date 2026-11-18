@@ -31,7 +31,7 @@ class BuildGateContractTests(unittest.TestCase):
         self.assertIn('Reject tracked runtime secrets and private files', w)
         self.assertNotIn('docker push', w)
         self.assertNotIn('docker/login-action', w)
-        self.assertNotIn('secrets.', w)
+        self.assertNotRegex(w, r'\$\{\{[^}]*\bsecrets\b')
 
     def test_frontend_embed_is_available_before_go_compilation(self):
         w = self.workflow
