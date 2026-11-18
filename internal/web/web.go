@@ -157,7 +157,7 @@ func (s *Server) isDirectHTTPSConfigured() bool {
 	if certErr != nil || keyErr != nil || certFile == "" || keyFile == "" {
 		return false
 	}
-	_, err := tls.LoadX509KeyPair(certFile, keyFile)
+	_, err := tgminiapp.LoadServerTLSKeyPair(certFile, keyFile)
 	return err == nil
 }
 
@@ -624,7 +624,7 @@ if tgminiapp.Enabled() {
 	}
 	listener = network.NewLimitListener(listener, network.MaxPanelConns, network.MaxPanelConnsPerSource)
 	if certFile != "" || keyFile != "" {
-		cert, err := tls.LoadX509KeyPair(certFile, keyFile)
+		cert, err := tgminiapp.LoadServerTLSKeyPair(certFile, keyFile)
 		if err == nil {
 			c := &tls.Config{
 				Certificates: []tls.Certificate{cert},

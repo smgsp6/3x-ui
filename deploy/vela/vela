@@ -167,9 +167,6 @@ write_current_image() {
   chmod 600 "$tmp"
   mv -f -- "$tmp" "$CURRENT"
 }
-was_running() {
-  [[ "$(docker inspect -f '{{.State.Running}}' vela_panel 2>/dev/null || true)" == true ]]
-}
 # Never source .env as shell code. Use only the validated HTTPS URL path for
 # health checks; deployments with a custom webBasePath are not necessarily /.
 health_path() {
@@ -278,15 +275,24 @@ PYTHON
 # Backup includes databases and certificate/ACME state but intentionally not the
 # Bot token (a separate secret). Stop the process first to ensure SQLite consistency.
 backup_locked() {
-  local old=$1 keep_stopped=${2:-false} stamp archive
+  local old=$1 keep_stopped=${2:-false} stamp archive service_state
+  require python3
+  # A successful query with no result means the service has no container.
+  # A Docker error must never be confused with a stopped SQLite writer.
+  service_state=$(compose "$old" ps --all --format '{{.State}}' vela 2>/dev/null) ||
+    die '无法确认容器状态，不会备份'
+  local active=false
+  case "$service_state" in
+    running) active=true ;;
+    ''|created|exited) ;;
+    *) die '容器状态不稳定，不会备份' ;;
+  esac
   stamp=$(date -u +%Y%m%dT%H%M%SZ)-$$
   [[ ! -L "$ROOT/backups" ]] || die '拒绝将备份写入符号链接目录'
   mkdir -p "$ROOT/backups"
   [[ -d "$ROOT/backups" && ! -L "$ROOT/backups" ]] || die '备份路径不是安全目录'
   chmod 700 "$ROOT/backups"
   archive="$ROOT/backups/vela-$stamp.tar.gz"
-  local active=false
-  if was_running; then active=true; fi
   if [[ "$active" == true ]]; then compose "$old" stop -t 40 || die '停止数据库写入失败，不会备份'; fi
   # Always restart even when tar fails. Avoid preserving a stopped service.
   if ! tar -C "$ROOT" -czf "$archive" -- db cert acme; then

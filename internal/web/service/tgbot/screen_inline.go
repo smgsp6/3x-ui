@@ -43,10 +43,11 @@ func scopeQuery(kind, data string) string {
 // inlineSupport caches getMe().supports_inline_queries. A permanent cache would
 // freeze a pre-/setinline False forever, so it refreshes once stale.
 type inlineSupport struct {
-	mu  sync.Mutex
-	bot *telego.Bot
-	ok  bool
-	at  time.Time
+	mu         sync.Mutex
+	bot        *telego.Bot
+	ok         bool
+	at         time.Time
+	refreshing *telego.Bot
 }
 
 var inlineCapability = &inlineSupport{}

@@ -5,6 +5,7 @@ package sub
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"io"
 	"io/fs"
 	"net"
@@ -20,6 +21,7 @@ import (
 	"github.com/mhsanaei/3x-ui/v3/internal/web/middleware"
 	"github.com/mhsanaei/3x-ui/v3/internal/web/network"
 	"github.com/mhsanaei/3x-ui/v3/internal/web/service"
+	"github.com/mhsanaei/3x-ui/v3/internal/web/service/tgminiapp"
 
 	"github.com/gin-gonic/gin"
 )
@@ -430,15 +432,24 @@ func (s *Server) Start() (err error) {
 	}
 
 	if certFile != "" || keyFile != "" {
-		cert, err := tls.LoadX509KeyPair(certFile, keyFile)
+		cert, err := tgminiapp.LoadServerTLSKeyPair(certFile, keyFile)
 		if err == nil {
 			c := &tls.Config{
 				Certificates: []tls.Certificate{cert},
+			}
+			if tgminiapp.Enabled() {
+				reloader := tgminiapp.NewTLSCertificateReloader(certFile, keyFile, cert)
+				c.GetCertificate = reloader.GetCertificate
+				c.Certificates = nil
 			}
 			listener = network.NewAutoHttpsListener(listener)
 			listener = tls.NewListener(listener, c)
 			logger.Info("Sub server running HTTPS on", listener.Addr())
 		} else {
+			if tgminiapp.Enabled() {
+				_ = listener.Close()
+				return errors.New("Vela subscription TLS material is invalid; refusing silent HTTP downgrade")
+			}
 			logger.Error("Error loading certificates:", err)
 			logger.Info("Sub server running HTTP on", listener.Addr())
 		}

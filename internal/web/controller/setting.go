@@ -214,11 +214,7 @@ func (a *SettingController) updateUser(c *gin.Context) {
 		jsonMsg(c, I18nWeb(c, "pages.settings.toasts.modifyUserError"), errors.New(I18nWeb(c, "pages.settings.toasts.userPassMustBeNotEmpty")))
 		return
 	}
-	if err := a.settingService.VerifyTwoFactorCode(form.TwoFactorCode); err != nil {
-		jsonMsg(c, I18nWeb(c, "pages.settings.toasts.modifyUserError"), err)
-		return
-	}
-	err = a.userService.UpdateUser(user.Id, user.LoginEpoch, form.NewUsername, form.NewPassword)
+	err = a.userService.UpdateUser(user.Id, user.LoginEpoch, form.NewUsername, form.NewPassword, form.TwoFactorCode)
 	if err == nil {
 		// The change increments the epoch for all existing cookies. Explicitly
 		// retire this request's cookie and server-side Mini App session as well.

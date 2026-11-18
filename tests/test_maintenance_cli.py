@@ -70,6 +70,10 @@ if args[0] == 'exec':
     if os.environ.get('VELA_TEST_FAIL_HEALTH')=='1' and state.read_text().strip().endswith('b'*64): sys.exit(1)
     sys.exit(0)
 if args[0] == 'compose':
+    if 'ps' in args and '--format' in args:
+        if os.environ.get('VELA_TEST_FAIL_STATE') == '1': sys.exit(1)
+        print(os.environ.get('VELA_TEST_CONTAINER_STATE', 'running'))
+        sys.exit(0)
     if 'pull' in args:
         if os.environ.get('VELA_TEST_FAIL_PULL') == '1': sys.exit(1)
         sys.exit(0)
@@ -324,6 +328,30 @@ os.execv('/usr/bin/tar', ['/usr/bin/tar', *sys.argv[1:]])
         self.assertIn('start', self.log.read_text())
         self.assertEqual((self.root / 'image.ref').read_text().strip(), OLD)
         self.assertEqual((self.root / 'db' / 'x-ui.db').read_text(), 'original-db')
+
+    def test_backup_refuses_unknown_or_unstable_container_state(self):
+        for settings, error in (
+            ({'VELA_TEST_FAIL_STATE': '1'}, '无法确认容器状态'),
+            ({'VELA_TEST_CONTAINER_STATE': 'restarting'}, '容器状态不稳定'),
+        ):
+            with self.subTest(settings=settings):
+                self.log.unlink(missing_ok=True)
+                result = self.run_cli('backup', **settings)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn(error, result.stderr)
+                self.assertNotIn(' stop ', self.log.read_text())
+                self.assertFalse((self.root / 'backups').exists())
+                self.assertEqual((self.root / 'db' / 'x-ui.db').read_text(), 'original-db')
+
+    def test_backup_allows_a_confirmed_stopped_or_absent_container(self):
+        for state in ('exited', ''):
+            with self.subTest(state=state):
+                self.log.unlink(missing_ok=True)
+                result = self.run_cli('backup', VELA_TEST_CONTAINER_STATE=state)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertNotIn(' stop ', self.log.read_text())
+                self.assertNotIn(' start ', self.log.read_text())
+                self.assertTrue(list((self.root / 'backups').glob('*.tar.gz')))
 
     def test_update_does_not_restart_old_service_after_snapshot(self):
         result = self.run_cli('update', VELA_TEST_WRITES_ON_RESTART='1', VELA_TEST_FAIL_HEALTH='1')

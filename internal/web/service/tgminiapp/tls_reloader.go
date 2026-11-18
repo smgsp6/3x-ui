@@ -20,6 +20,19 @@ import (
 const maxTLSPEMBytes = 2 << 20
 const tlsRefreshInterval = 30 * time.Second
 
+// LoadServerTLSKeyPair applies Vela's bounded certificate policy at startup.
+// In original panel mode it preserves the upstream TLS loader's behavior.
+func LoadServerTLSKeyPair(certPath, keyPath string) (tls.Certificate, error) {
+	if !Enabled() {
+		return tls.LoadX509KeyPair(certPath, keyPath)
+	}
+	pair, err := safeLoadTLSKeyPair(certPath, keyPath)
+	if err != nil {
+		return tls.Certificate{}, err
+	}
+	return *pair, nil
+}
+
 // TLSCertificateReloader keeps a pointer to an immutable certificate. Returning
 // pointers to mutated tls.Certificate structs would race with TLS handshakes.
 type TLSCertificateReloader struct {

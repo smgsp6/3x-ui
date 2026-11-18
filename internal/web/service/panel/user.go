@@ -3,9 +3,12 @@ package panel
 import (
 	"errors"
 	"fmt"
+	"strconv"
+	"strings"
 	"time"
 
 	"gorm.io/gorm"
+	"gorm.io/gorm/clause"
 
 	"github.com/mhsanaei/3x-ui/v3/internal/database"
 	"github.com/mhsanaei/3x-ui/v3/internal/database/model"
@@ -128,17 +131,12 @@ func (s *UserService) BumpLoginEpoch() error {
 		Error
 }
 
-func (s *UserService) UpdateUser(id int, expectedEpoch int64, username string, password string) error {
+func (s *UserService) UpdateUser(id int, expectedEpoch int64, username string, password string, twoFactorCode string) error {
 	if len(username) > MaxUsernameLength {
 		return fmt.Errorf("username can not be longer than %d bytes", MaxUsernameLength)
 	}
 	db := database.GetDB()
 	hashedPassword, err := crypto.HashPasswordAsBcrypt(password)
-	if err != nil {
-		return err
-	}
-
-	twoFactorEnable, err := s.settingService.GetTwoFactorEnable()
 	if err != nil {
 		return err
 	}
@@ -157,8 +155,34 @@ func (s *UserService) UpdateUser(id int, expectedEpoch int64, username string, p
 		if result.RowsAffected != 1 {
 			return errors.New("panel credentials changed concurrently; sign in again")
 		}
+		// Verify two-factor against the settings this transaction would reset.
+		// The user update holds SQLite's write lock; PostgreSQL also locks these
+		// settings rows while the code is verified and the reset is committed.
+		var settings []model.Setting
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("key IN ?", []string{"twoFactorEnable", "twoFactorToken"}).
+			Order("id ASC").Find(&settings).Error; err != nil {
+			return err
+		}
+		values := make(map[string]string, len(settings))
+		for _, setting := range settings {
+			if _, exists := values[setting.Key]; !exists {
+				values[setting.Key] = setting.Value
+			}
+		}
+		enabled := values["twoFactorEnable"]
+		if enabled == "" {
+			return nil
+		}
+		twoFactorEnable, err := strconv.ParseBool(enabled)
+		if err != nil {
+			return err
+		}
 		if !twoFactorEnable {
 			return nil
+		}
+		if !totp.VerifyWithSkew(values["twoFactorToken"], strings.TrimSpace(twoFactorCode), time.Now()) {
+			return errors.New("invalid two factor code")
 		}
 		// Preserve the existing 2FA reset behavior, but commit it together
 		// with the credential change. A stale request must reset nothing.

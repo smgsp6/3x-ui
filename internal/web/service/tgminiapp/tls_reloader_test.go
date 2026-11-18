@@ -60,6 +60,19 @@ func TestTLSCertificateReloaderKeepsGoodCertDuringPartialRenewal(t *testing.T) {
 	}
 }
 
+func TestLoadServerTLSKeyPairRejectsExpiredVelaCertificate(t *testing.T) {
+	now := time.Now()
+	certPath, keyPath := writeTestCert(t, t.TempDir(), now.Add(-48*time.Hour), now.Add(-24*time.Hour))
+	t.Setenv("XUI_TG_MINIAPP_ENABLED", "false")
+	if _, err := LoadServerTLSKeyPair(certPath, keyPath); err != nil {
+		t.Fatalf("legacy loader rejected a PEM pair: %v", err)
+	}
+	t.Setenv("XUI_TG_MINIAPP_ENABLED", "true")
+	if _, err := LoadServerTLSKeyPair(certPath, keyPath); err == nil {
+		t.Fatal("Vela accepted an expired PEM pair at startup")
+	}
+}
+
 func TestTLSCertificateReloaderRejectsInvalidRenewal(t *testing.T) {
 	now := time.Now()
 	dir := t.TempDir()
