@@ -7,9 +7,11 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/mhsanaei/3x-ui/v3/internal/database/dbtest"
 	"github.com/mhsanaei/3x-ui/v3/internal/database/model"
+	"github.com/mhsanaei/3x-ui/v3/internal/web/global"
 
 	"github.com/mymmrac/telego"
 )
@@ -52,9 +54,11 @@ func swapTestBot(t *testing.T, url string) {
 	t.Helper()
 	origBot := liveBot()
 	origPool := currentBotWorkerPool()
+	origHashStorage := currentHashStorage()
 	t.Cleanup(func() {
 		setTestBot(origBot)
 		setBotWorkerPool(origPool)
+		setHashStorage(origHashStorage)
 	})
 	newBot, err := telego.NewBot(testBotToken, telego.WithAPIServer(url))
 	if err != nil {
@@ -62,6 +66,7 @@ func swapTestBot(t *testing.T, url string) {
 	}
 	setTestBot(newBot)
 	setBotWorkerPool(make(chan struct{}, 10))
+	setHashStorage(global.NewHashStorage(20 * time.Minute))
 	// The screen store is process-wide state: a screen left by an earlier test
 	// would make this one edit an unrelated message instead of sending.
 	screens.reset()
