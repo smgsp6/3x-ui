@@ -42,13 +42,23 @@ def setup(root, docker):
     token.write_text("123456:" + secrets.token_urlsafe(35))
     token.chmod(0o600)
     envfile = root / ".env"
-    envfile.write_text("XUI_TG_MINIAPP_URL=https://vela.invalid/\n"
+    # Match the HTTPS smoke fixture. Readiness rejects the .invalid suffix
+    # and the isolated containers never resolve or contact this hostname.
+    envfile.write_text("XUI_TG_MINIAPP_URL=https://ci.vela-test-domain.org/\n"
                        "XUI_TG_MINIAPP_ADMIN_IDS=1001\nXUI_PORT=2053\n")
     envfile.chmod(0o600)
     (root / "image.ref").write_text(OLD + "\n")
     (root / "release.sequence").write_text("1\n")
     (root / "cert/ci.marker").write_text("cert-before\n")
     (root / "acme/ci.marker").write_text("acme-before\n")
+    # Recovery now requires HTTPS on loopback. Keep the ephemeral key and
+    # certificate in the test data volume so backup restores the TLS settings.
+    key = root / "db/vela-ci-key.pem"
+    cert = root / "db/vela-ci-cert.pem"
+    command(["openssl", "req", "-x509", "-newkey", "rsa:2048", "-sha256",
+             "-noenc", "-keyout", key, "-out", cert, "-days", "1",
+             "-subj", "/CN=localhost", "-addext", "subjectAltName=IP:127.0.0.1"])
+    key.chmod(0o600)
     (root / "compose.yml").write_text("""services:
   vela:
     container_name: vela_panel
@@ -64,7 +74,7 @@ def setup(root, docker):
       XUI_PORT: '2053'
       XUI_TG_MINIAPP_ENABLED: 'true'
       XUI_TG_MINIAPP_ADMIN_IDS: '1001'
-      XUI_TG_MINIAPP_URL: 'https://vela.invalid/'
+      XUI_TG_MINIAPP_URL: ${XUI_TG_MINIAPP_URL:?Mini App URL required}
       XUI_TG_MINIAPP_BOT_TOKEN_FILE: /run/secrets/vela_bot_token
     volumes:
       - ${VELA_HOME:?}/db:/etc/x-ui
@@ -101,9 +111,10 @@ def await_ready(root, env):
     for _ in range(45):
         if (root / "db/x-ui.db").is_file():
             result = command(["docker", "exec", "vela_panel", "sh", "-c",
-                              "curl -sS --connect-timeout 1 --max-time 2 "
+                              "curl -sS --cacert /etc/x-ui/vela-ci-cert.pem "
+                              "--connect-timeout 1 --max-time 2 "
                               "-o /dev/null -w '%{http_code}' "
-                              "http://127.0.0.1:2053/tg-miniapp/health"],
+                              "https://127.0.0.1:2053/tg-miniapp/health"],
                              env=env, success=False, timeout=9)
             if result.returncode == 0 and result.stdout == "204":
                 return
@@ -121,6 +132,10 @@ def cli(env, operation, success=True):
 
 def test(root, env):
     print("1/5: Boot real Vela in isolated Docker Compose")
+    compose(root, env, OLD, "run", "--rm", "--no-deps", "--entrypoint",
+            "/app/x-ui", "vela", "setting", "-listenIP", "127.0.0.1",
+            "-webCert", "/etc/x-ui/vela-ci-cert.pem",
+            "-webCertKey", "/etc/x-ui/vela-ci-key.pem")
     compose(root, env, OLD, "up", "-d", "--force-recreate")
     await_ready(root, env)
     compose(root, env, OLD, "stop", "-t", "30")
