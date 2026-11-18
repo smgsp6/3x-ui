@@ -50,6 +50,12 @@ check_secret() {
   [[ $((8#$mode & 8#077)) -eq 0 ]] || die "权限过宽: $file; 需要 0600 或更严格"
 }
 
+not_writable_by_others() {
+  local mode
+  mode=$(stat -c %a -- "$1") || return 1
+  [[ $((8#$mode & 8#022)) -eq 0 ]]
+}
+
 # An interrupted upgrade is a hard stop before touching Docker. Keep the
 # identical check after acquiring flock below to close the race with an upgrade
 # that may create the journal concurrently.
@@ -142,7 +148,8 @@ write_release_sequence() {
 safe_archive_path() {
   local archive=$1 name
   name=$(basename -- "$archive")
-  [[ -d "$ROOT/backups" && ! -L "$ROOT/backups" && "$archive" == "$ROOT/backups/$name" && "$name" =~ ^vela-[0-9]{8}T[0-9]{6}Z-[0-9]+\.tar\.gz$ && -f "$archive" && ! -L "$archive" ]]
+  [[ -d "$ROOT/backups" && ! -L "$ROOT/backups" && "$archive" == "$ROOT/backups/$name" && "$name" =~ ^vela-[0-9]{8}T[0-9]{6}Z-[0-9]+\.tar\.gz$ && -f "$archive" && ! -L "$archive" ]] &&
+    not_writable_by_others "$ROOT/backups" && not_writable_by_others "$archive"
 }
 write_pending() {
   local old=$1 candidate=$2 archive=$3 previous_seq=$4 tmp
@@ -335,9 +342,8 @@ backup_locked() {
 # Restore is deliberately only used for the archive this process just created.
 # A failed candidate's data is kept for investigation rather than destroyed.
 restore_after_failed_update() (
-  local old=$1 archive=$2 stamp staging
+  local old=$1 archive=$2 staging quarantine
   safe_archive_path "$archive" && verify_backup_archive "$archive" || die '备份不可信，禁止自动恢复；请人工检查'
-  stamp=$(date -u +%Y%m%dT%H%M%SZ)-$$
   # Extract before interrupting the service or moving its state. A truncated
   # archive or extraction error leaves the live directories untouched.
   staging=$(mktemp -d -- "$ROOT/.restore.XXXXXXXX") || die '无法创建恢复暂存目录'
@@ -363,11 +369,15 @@ except (OSError, RuntimeError, ValueError):
 PYTHON
   [[ ! -L "$ROOT/failed-updates" && ( ! -e "$ROOT/failed-updates" || -d "$ROOT/failed-updates" ) ]] ||
     die '拒绝使用不安全的故障数据目录'
+  if [[ -d "$ROOT/failed-updates" ]]; then
+    not_writable_by_others "$ROOT/failed-updates" || die '拒绝使用不安全的故障数据目录'
+  fi
   compose "$old" stop -t 40 || die '无法停止容器，当前数据未变更'
-  mkdir -p "$ROOT/failed-updates/$stamp"
+  mkdir -p -- "$ROOT/failed-updates" || die '无法创建故障数据目录'
+  quarantine=$(mktemp -d -- "$ROOT/failed-updates/recover.XXXXXXXX") || die '无法创建故障数据隔离目录'
   for item in db cert acme; do
     if [[ -d "$ROOT/$item" ]]; then
-      mv -- "$ROOT/$item" "$ROOT/failed-updates/$stamp/$item" || die '隔离故障数据失败：请人工恢复'
+      mv -- "$ROOT/$item" "$quarantine/$item" || die '隔离故障数据失败：请人工恢复'
     fi
     # Missing directories are expected when a previous recovery was killed
     # after moving some paths; the trusted backup will reconstruct all three.
@@ -384,7 +394,7 @@ PYTHON
   fi
   compose "$old" up -d --force-recreate || die '恢复旧镜像失败，需人工处理'
   health || die '旧镜像启动后健康检查失败；请检查日志'
-  msg "已恢复旧镜像和更新前的数据。故障候选数据位于 $ROOT/failed-updates/$stamp"
+  msg "已恢复旧镜像和更新前的数据。故障候选数据位于 $quarantine"
 )
 
 if [[ -L "$PENDING" ]]; then die '升级记录是符号链接，拒绝操作'; fi

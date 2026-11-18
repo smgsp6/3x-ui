@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router';
 import { Alert, Button, Layout, Spin, Tag } from 'antd';
 import {
@@ -34,9 +34,13 @@ export default function CertificatesPage() {
   const [certs, setCerts] = useState<Certificate[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
-  const [alertsEnabled, setAlertsEnabled] = useState(false);
+  const [alertsEnabled, setAlertsEnabled] = useState<boolean | null>(null);
+  const pending = useRef<AbortController | null>(null);
 
   const refresh = useCallback(async () => {
+    pending.current?.abort();
+    const request = new AbortController();
+    pending.current = request;
     setLoading(true);
     setError('');
     try {
@@ -45,7 +49,8 @@ export default function CertificatesPage() {
       const response = await HttpUtil.get<{
         certificates: Certificate[];
         alertsEnabled: boolean;
-      }>('/panel/api/certificates/status', undefined, { silent: true });
+      }>('/panel/api/certificates/status', undefined, { silent: true, signal: request.signal, timeout: 15_000 });
+      if (request.signal.aborted) return;
       if (!response.success || !response.obj || !Array.isArray(response.obj.certificates)
         || typeof response.obj.alertsEnabled !== 'boolean') {
         throw new Error('invalid certificate response');
@@ -53,12 +58,18 @@ export default function CertificatesPage() {
       setCerts(response.obj.certificates);
       setAlertsEnabled(response.obj.alertsEnabled);
     } catch {
-      setError('证书信息读取失败，请检查服务器状态及管理员权限。');
+      if (!request.signal.aborted) setError('证书信息读取失败，请检查网络及管理员权限后刷新。');
     } finally {
-      setLoading(false);
+      if (pending.current === request && !request.signal.aborted) {
+        pending.current = null;
+        setLoading(false);
+      }
     }
   }, []);
-  useEffect(() => { void refresh(); }, [refresh]);
+  useEffect(() => {
+    void refresh();
+    return () => pending.current?.abort();
+  }, [refresh]);
   const expiring = certs.filter((cert) => cert.status === 'expiring' || cert.status === 'expired' || cert.status === 'invalid').length;
 
   return (
@@ -78,7 +89,7 @@ export default function CertificatesPage() {
             <div className="tg-cert-summary-item"><SafetyCertificateOutlined /><span>已接入证书</span><strong>{certs.filter(c => c.status !== 'unconfigured').length}</strong></div>
             <div className="tg-cert-summary-item"><WarningOutlined /><span>需关注</span><strong>{expiring}</strong></div>
           </section>
-          <Alert
+          {alertsEnabled !== null && <Alert
             type={alertsEnabled ? 'info' : 'warning'}
             showIcon
             className="tg-cert-alert"
@@ -86,9 +97,9 @@ export default function CertificatesPage() {
             description={alertsEnabled
               ? '每天按面板时区 09:00 检查管理面板和订阅证书，只通知授权的私人 Telegram 账号；消息不含域名、IP 或私钥路径。'
               : '为保护隐私，此功能默认关闭。管理员可在服务器本地配置 XUI_TG_CERT_ALERT_ENABLED=true 后重启 Vela。'}
-          />
+          />}
           {error && <Alert type="error" message={error} showIcon className="tg-cert-alert" />}
-          <Spin spinning={loading} tip="正在检查证书…">
+          <Spin spinning={loading} description="正在检查证书…">
             <div className="tg-cert-list">
               {certs.map((cert) => (
                 <article className="tg-cert-card" key={cert.purpose}>
@@ -113,7 +124,7 @@ export default function CertificatesPage() {
               ))}
             </div>
           </Spin>
-          <p className="tg-cert-notice">证书详情由服务器安全读取，私钥原文和服务器本地证书路径均不会发送到前端。此阶段提供只读状态和可选的每日 Telegram 到期提醒；证书申请、自动续签和编辑仍由原版设置页操作，独立续签流程尚未验收。</p>
+          <p className="tg-cert-notice">此页提供证书状态和每日 Telegram 到期提醒设置说明。证书文件在面板设置中配置，签发和续签由部署环境负责。</p>
         </div>
       </Layout.Content>
     </Layout>

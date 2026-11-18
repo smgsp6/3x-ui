@@ -90,19 +90,24 @@ func safeLoadTLSKeyPair(certPath, keyPath string) (*tls.Certificate, error) {
 	if err != nil || now.Before(leaf.NotBefore) || !now.Before(leaf.NotAfter) {
 		return nil, errors.New("TLS certificate is not currently valid")
 	}
-	child := leaf
-	for _, der := range cert.Certificate[1:] {
+	if !validSuppliedTLSChain(leaf, cert.Certificate[1:], now) {
+		return nil, errors.New("TLS certificate chain is invalid")
+	}
+	cert.Leaf = leaf
+	// The client will validate trust against its own CA roots.
+	return &cert, nil
+}
+
+func validSuppliedTLSChain(child *x509.Certificate, issuers [][]byte, now time.Time) bool {
+	for _, der := range issuers {
 		issuer, err := x509.ParseCertificate(der)
 		if err != nil || now.Before(issuer.NotBefore) || !now.Before(issuer.NotAfter) ||
 			!bytes.Equal(child.RawIssuer, issuer.RawSubject) || child.CheckSignatureFrom(issuer) != nil {
-			return nil, errors.New("TLS certificate chain is invalid")
+			return false
 		}
 		child = issuer
 	}
-	cert.Leaf = leaf
-	// The client will validate the issuer, SAN, and chain. This preflight
-	// deliberately checks time validity without claiming CA trust.
-	return &cert, nil
+	return true
 }
 
 // Keeps all previously served DNS/IP SAN identities on automatic renewal.

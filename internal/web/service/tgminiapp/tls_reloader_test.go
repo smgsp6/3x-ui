@@ -352,4 +352,7 @@ func TestTLSReloaderRefreshesChainWithSameLeaf(t *testing.T) {
 	if _, err := safeLoadTLSKeyPair(path, key); err == nil {
 		t.Fatal("accepted an unrelated certificate as issuer")
 	}
+	if status := InspectCertificate("panel", path, key, now); status.Status != "invalid" {
+		t.Fatalf("invalid issuer reported as %s on the certificate page", status.Status)
+	}
 }

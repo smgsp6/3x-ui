@@ -674,6 +674,25 @@ os.execv('/usr/bin/tar', ['/usr/bin/tar', *sys.argv[1:]])
         self.assertEqual(copy.read_text(), 'candidate cert')
         self.assertFalse(journal.exists())
 
+    def test_recover_rejects_writable_archive_and_quarantine(self):
+        initial = self.run_cli('backup')
+        self.assertEqual(initial.returncode, 0, initial.stderr)
+        snapshot = next((self.root / 'backups').glob('vela-*.tar.gz'))
+        quarantine = self.root / 'failed-updates'
+        quarantine.mkdir(mode=0o700)
+        journal = self.root / '.pending-update'
+        journal.write_text(OLD + '\n' + NEW + '\n' + str(snapshot) + '\n')
+        for entry, default in ((snapshot, 0o600), (snapshot.parent, 0o700), (quarantine, 0o700)):
+            with self.subTest(entry=entry.name):
+                self.log.unlink(missing_ok=True)
+                entry.chmod(default | 0o020)
+                result = self.run_cli('recover')
+                entry.chmod(default)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertTrue(journal.exists())
+                self.assertEqual((self.root / 'db' / 'x-ui.db').read_text(), 'original-db')
+                self.assertNotIn(' stop ', self.log.read_text())
+
     def test_recover_rejects_archive_path_traversal(self):
         import io
         initial = self.run_cli('backup')

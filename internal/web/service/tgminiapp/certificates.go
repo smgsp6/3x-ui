@@ -50,7 +50,8 @@ func InspectCertificate(purpose, certPath, keyPath string, now time.Time) Certif
 		return result
 	}
 	// Match the key to the same certificate bytes used for the status above.
-	if _, err := tls.X509KeyPair(raw, key); err != nil {
+	pair, err := tls.X509KeyPair(raw, key)
+	if err != nil || !validSuppliedTLSChain(cert, pair.Certificate[1:], now) {
 		return result
 	}
 	if now.Before(cert.NotBefore) {
