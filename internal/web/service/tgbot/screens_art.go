@@ -50,9 +50,10 @@ const (
 // resolveScreenArt caches the bot avatar's file_id for every screen kind.
 // Telegram serves one photo per bot, so all kinds share it.
 func (t *Tgbot) resolveScreenArt() {
-	// One read: the panel can swap the bot under us (login/logout), and reading
-	// the global per call is a nil-pointer crash in this background goroutine.
-	b := liveBot()
+	t.resolveScreenArtForBot(liveBot())
+}
+
+func (t *Tgbot) resolveScreenArtForBot(b *telego.Bot) {
 	if b == nil {
 		return
 	}
@@ -77,6 +78,9 @@ func (t *Tgbot) resolveScreenArt() {
 
 	screenArtMu.Lock()
 	defer screenArtMu.Unlock()
+	if liveBot() != b {
+		return
+	}
 	artProbedAt = time.Now()
 	if len(photos.Photos) == 0 || len(photos.Photos[0]) == 0 {
 		// Remember the miss so the next render does not probe again, but keep

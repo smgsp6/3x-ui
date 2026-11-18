@@ -63,3 +63,30 @@ func TestFinishBotReceiverCannotStopReplacementConnection(t *testing.T) {
 		t.Fatal("retired receiver did not disable subsequent Bot API calls")
 	}
 }
+
+// A receiver scheduled before a restart must not poll the replacement Bot.
+func TestDelayedBotReceiverDoesNotClaimReplacement(t *testing.T) {
+	oldBot, err := telego.NewBot(testBotToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	replacement, err := telego.NewBot(testBotToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	botMu.Lock()
+	previous := bot
+	bot = replacement
+	botMu.Unlock()
+	t.Cleanup(func() {
+		botMu.Lock()
+		bot = previous
+		botMu.Unlock()
+	})
+
+	(&Tgbot{}).receive(oldBot)
+	if liveBot() != replacement || (&Tgbot{}).IsRunning() {
+		t.Fatal("delayed receiver changed the replacement Bot's state")
+	}
+}

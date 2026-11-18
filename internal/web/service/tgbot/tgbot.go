@@ -53,20 +53,20 @@ var (
 	// that starts after StopBot released tgBotMutex.
 	botReceiverDone chan struct{}
 
-	botHandler  *th.BotHandler
-	adminIds    []int64
-	adminTopics map[int64]int // admin chat -> forum topic (message_thread_id)
-	isRunning   bool
-	hostname    string
-	hostnameMu sync.RWMutex
-	hashStorage *global.HashStorage
+	botHandler    *th.BotHandler
+	adminIds      []int64
+	adminTopics   map[int64]int // admin chat -> forum topic (message_thread_id)
+	isRunning     bool
+	hostname      string
+	hostnameMu    sync.RWMutex
+	hashStorage   *global.HashStorage
 	hashStorageMu sync.RWMutex // protects replacement during live Bot reload
 
 	// EventBus is set from web layer to publish login/security events.
 	EventBus *eventbus.Bus
 
 	// Performance improvements
-	messageWorkerPool chan struct{} // Semaphore for limiting concurrent message processing
+	messageWorkerPool   chan struct{} // Semaphore for limiting concurrent message processing
 	messageWorkerPoolMu sync.RWMutex
 
 	// Simple cache for frequently accessed data
@@ -422,14 +422,14 @@ func (t *Tgbot) Start(i18nFS embed.FS) error {
 
 	// Get Telegram bot token
 	tgBotToken := ""
-    if tgminiapp.Enabled() {
-        tgBotToken = tgminiapp.BotToken() // Never read the legacy DB token in Vela mode
-    } else {
-        tgBotToken, err = t.settingService.GetTgBotToken()
-    }
-    if tgBotToken == "" && err == nil {
-        err = fmt.Errorf("Vela Bot token Secret missing or invalid")
-    }
+	if tgminiapp.Enabled() {
+		tgBotToken = tgminiapp.BotToken() // Never read the legacy DB token in Vela mode
+	} else {
+		tgBotToken, err = t.settingService.GetTgBotToken()
+	}
+	if tgBotToken == "" && err == nil {
+		err = fmt.Errorf("Vela Bot token Secret missing or invalid")
+	}
 	if err != nil || tgBotToken == "" {
 		logger.Warning("Failed to get Telegram bot token:", safeTelegramLogError(err))
 		return err
@@ -437,16 +437,16 @@ func (t *Tgbot) Start(i18nFS embed.FS) error {
 
 	// Get Telegram bot chat ID(s)
 	tgBotID := ""
-    if tgminiapp.Enabled() {
-        // Fail closed before parsing Telegram chat IDs, which normally accepts
-        // negative group IDs; Vela requires positive private user IDs only.
-        if _, allowlistErr := tgminiapp.AdminUserIDs(); allowlistErr != nil {
-            return fmt.Errorf("Vela Bot admin allowlist invalid")
-        }
-        tgBotID = os.Getenv("XUI_TG_MINIAPP_ADMIN_IDS")
-    } else {
-        tgBotID, err = t.settingService.GetTgBotChatId()
-    }
+	if tgminiapp.Enabled() {
+		// Fail closed before parsing Telegram chat IDs, which normally accepts
+		// negative group IDs; Vela requires positive private user IDs only.
+		if _, allowlistErr := tgminiapp.AdminUserIDs(); allowlistErr != nil {
+			return fmt.Errorf("Vela Bot admin allowlist invalid")
+		}
+		tgBotID = os.Getenv("XUI_TG_MINIAPP_ADMIN_IDS")
+	} else {
+		tgBotID, err = t.settingService.GetTgBotChatId()
+	}
 	if err != nil {
 		logger.Warning("Failed to get Telegram bot chat ID:", safeTelegramLogError(err))
 		return err
@@ -482,8 +482,9 @@ func (t *Tgbot) Start(i18nFS embed.FS) error {
 	// error to a caller that could print it outside this logging boundary.
 	stop := make(chan struct{})
 	botMu.Lock()
-	bot, err = t.NewBot(tgBotToken, tgBotProxy, tgBotAPIServer, stop)
+	startedBot, err := t.NewBot(tgBotToken, tgBotProxy, tgBotAPIServer, stop)
 	if err == nil {
+		bot = startedBot
 		botStop = stop
 	}
 	botMu.Unlock()
@@ -499,18 +500,12 @@ func (t *Tgbot) Start(i18nFS embed.FS) error {
 	// Off the start path: with Telegram unreachable these block for a minute,
 	// holding the panel's signal loop and the sub server behind them.
 	go func(b *telego.Bot) {
-		t.resolveScreenArt()
+		t.resolveScreenArtForBot(b)
 		t.trySetBotCommands(b)
-	}(liveBot())
+	}(startedBot)
 
-	// Start receiving Telegram bot messages
-	tgBotMutex.Lock()
-	alreadyRunning := isRunning || botCancel != nil
-	tgBotMutex.Unlock()
-	if !alreadyRunning {
-		logger.Info("Telegram bot receiver started")
-		go t.OnReceive()
-	}
+	logger.Info("Telegram bot receiver started")
+	go t.receive(startedBot)
 
 	return nil
 }
@@ -752,10 +747,6 @@ func (t *Tgbot) SetHostname() {
 func (t *Tgbot) Stop() {
 	StopBot()
 	logger.Info("Stop Telegram receiver ...")
-	tgBotMutex.Lock()
-	adminIds = nil
-	adminTopics = nil
-	tgBotMutex.Unlock()
 }
 
 // StopBot safely stops the Telegram bot's Long Polling operation by cancelling its context.

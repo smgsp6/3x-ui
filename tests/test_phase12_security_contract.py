@@ -15,10 +15,11 @@ class Phase12SafetyContracts(unittest.TestCase):
         self.assertIn('os.SameFile(info, opened)', source)
         self.assertIn('opened.Mode().Perm()&0077 != 0', source)
         self.assertIn('parent.Mode().Perm()&0022 != 0', source)
-        self.assertIn('strings.ContainsAny(token,', source)
+        self.assertIn('strings.Cut(token, ":")', source)
         test_code = (ROOT / 'internal/web/service/tgminiapp/auth_test.go').read_text()
         self.assertIn('TestBotTokenRejectsLoosePermissions', test_code)
         self.assertIn('TestBotTokenRejectsWritableSecretDirectory', test_code)
+        self.assertIn('TestBotTokenRejectsMalformedBotIdentifiers', test_code)
 
     def test_tls_renewal_keeps_original_identity(self):
         source = (ROOT / 'internal/web/service/tgminiapp/tls_reloader.go').read_text()

@@ -104,6 +104,10 @@ func canContinueAdminWizard(message telego.Message) bool {
 
 // OnReceive starts the message receiving loop for the Telegram liveBot().
 func (t *Tgbot) OnReceive() {
+	t.receive(liveBot())
+}
+
+func (t *Tgbot) receive(pollBot *telego.Bot) {
 	params := telego.GetUpdatesParams{
 		Timeout: 20, // Reduced timeout to detect connection issues faster
 	}
@@ -116,11 +120,8 @@ func (t *Tgbot) OnReceive() {
 		return
 	}
 
-	// Snapshot the connection while the receiver lock is held. StopBot
-	// acquires these locks in the same order and clears the connection, so a
-	// delayed receiver cannot dereference nil or resurrect a stopped bot.
-	pollBot := liveBot()
-	if pollBot == nil {
+	// A delayed startup must only claim the connection that scheduled it.
+	if pollBot == nil || liveBot() != pollBot {
 		tgBotMutex.Unlock()
 		return
 	}
