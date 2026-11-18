@@ -25,7 +25,11 @@ def render(text: str) -> str:
     pin_anchor = 'RUN ./DockerInit.sh "$TARGETARCH" "$TARGETVARIANT"'
     if text.count(pin_anchor) != 1:
         raise ValueError("upstream DockerInit invocation changed; manual review required")
-    updated = text.replace(ORIGINAL, REPLACEMENT)
+    npm_anchor = "RUN npm ci\n"
+    if text.count(npm_anchor) != 1:
+        raise ValueError("upstream npm install step changed; manual review required")
+    updated = text.replace(npm_anchor, "RUN npm ci --ignore-scripts --no-audit --no-fund\n")
+    updated = updated.replace(ORIGINAL, REPLACEMENT)
     updated = updated.replace(
         pin_anchor,
         "RUN sh deploy/vela/ci_pin_mtg_dockerinit.sh DockerInit.sh\n" + pin_anchor)

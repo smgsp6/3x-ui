@@ -2,26 +2,10 @@ name: Vela integration and privacy gate
 
 on:
   pull_request:
-    paths:
-      - 'internal/**'
-      - 'frontend/**'
-      - 'Dockerfile'
-      - '.dockerignore'
-      - 'docker-compose.yml'
-      - 'deploy/vela/**'
-      - 'tests/**'
-      - 'brand/**'
-      - '.github/workflows/vela-pr-check.yml'
+    branches: [vela-dev]
   workflow_dispatch:
   push:
     branches: [vela-dev]
-    paths:
-      - 'internal/**'
-      - 'frontend/**'
-      - 'deploy/vela/**'
-      - 'tests/**'
-      - 'vela-development/integration/**'
-      - '.github/workflows/vela-pr-check.yml'
 
 # This CI cannot deploy, upload production configuration, or write to GitHub.
 permissions:
@@ -33,6 +17,9 @@ concurrency:
 
 jobs:
   privacy:
+    if: >-
+      github.repository == 'smgsp6/3x-ui' && github.event.repository.private == false &&
+      (github.event_name == 'pull_request' || github.ref == 'refs/heads/vela-dev')
     name: Privacy audit before executing build scripts
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -78,15 +65,13 @@ jobs:
       - uses: actions/setup-go@44694675825211faa026b3c33043df3e48a5fa00 # v6.0.0
         with:
           go-version-file: go.mod
-          cache: true
+          cache: false
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         with:
-          node-version: '26'
-          cache: npm
-          cache-dependency-path: frontend/package-lock.json
+          node-version: '26.13.1'
       - name: Install locked React dependencies
         working-directory: frontend
-        run: npm ci
+        run: npm ci --ignore-scripts --no-audit --no-fund
       - name: Full TypeScript typecheck
         working-directory: frontend
         run: npm run typecheck
@@ -101,7 +86,7 @@ jobs:
       # clean checkout even if the Go sources are otherwise valid.
       - name: Build React panel AND Telegram Mini App first
         working-directory: frontend
-        run: npm run build
+        run: npm --ignore-scripts run build
       - name: Ensure both app entry points were generated
         shell: bash
         run: |
@@ -109,13 +94,13 @@ jobs:
           test -s internal/web/dist/miniapp.html
           test -s internal/web/dist/login.html
       - name: Full Go tests (with embedded React assets present)
-        run: go test ./...
+        run: go test -mod=readonly ./...
       - name: Mini App crypto, TLS and revocable-session race tests
         run: go test -race ./internal/web/service/tgminiapp ./internal/web/session
       - name: Telegram receiver lifecycle and authorization race tests
         run: go test -race ./internal/web/service/tgbot
       - name: Build full Go panel executable
-        run: go build -trimpath -o "${RUNNER_TEMP}/vela-ci" ./main.go
+        run: go build -mod=readonly -trimpath -o "${RUNNER_TEMP}/vela-ci" .
       - name: Runtime dependency audit
         working-directory: frontend
         run: npm audit --omit=dev --audit-level=high
@@ -147,8 +132,9 @@ jobs:
   docker:
     name: Clean Docker image build (no push)
     needs: [privacy, integration, maintenance]
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
-    timeout-minutes: 80
+    timeout-minutes: 65
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
@@ -164,6 +150,9 @@ jobs:
           set -euo pipefail
           python3 -m unittest discover -s tests -p test_vela_dockerfile_isolation.py -v
           python3 -m unittest discover -s tests -p test_image_layer_audit.py -v
+          python3 -m unittest discover -s tests -p test_vela_mtg_release_pin.py -v
+          python3 -m py_compile tests/ci_miniapp_https_auth.py tests/ci_real_docker_recover.py
+          docker compose version
           python3 deploy/vela/ci_prepare_dockerfile.py Dockerfile "${RUNNER_TEMP}/VelaCiDockerfile"
           test -z "$(git status --porcelain)"
       - name: Build final Vela development image without modifying upstream Dockerfile
@@ -174,3 +163,77 @@ jobs:
           test "$(docker image inspect vela-integration-ci:local --format '{{.Architecture}}')" = amd64
       - name: Audit every final-image layer for private data (never upload tar)
         run: docker image save vela-integration-ci:local | python3 deploy/vela/image_layer_audit.py --stdin --diagnostic-counts
+      # Both integration suites reuse the audited image on this runner.
+      - name: Prepare ephemeral signed HTTPS certificate and synthetic Bot Token
+        shell: bash
+        run: |
+          set -euo pipefail
+          scratch="$(mktemp -d)"
+          sudo chown 0:0 "$scratch"
+          sudo chmod 700 "$scratch"
+          echo "$scratch" > "$RUNNER_TEMP/vela-miniapp-path"
+          sudo openssl req -x509 -newkey rsa:2048 -sha256 -noenc \
+            -keyout "$scratch/vela-ci-key.pem" -out "$scratch/vela-ci-cert.pem" \
+            -days 1 -subj '/CN=localhost' \
+            -addext 'subjectAltName=DNS:localhost,IP:127.0.0.1' >/dev/null 2>&1
+          sudo chmod 600 "$scratch/vela-ci-key.pem"
+          sudo chmod 644 "$scratch/vela-ci-cert.pem"
+          sudo python3 - "$scratch" <<'PY'
+          from pathlib import Path
+          import secrets, sys
+          p = Path(sys.argv[1]) / 'vela_bot_token'
+          p.write_text('123456:' + secrets.token_urlsafe(36))
+          p.chmod(0o600)
+          PY
+          # Use upstream's existing local setting CLI. Suppress one-time admin
+          # credentials and do not store this synthetic cert in source code.
+          docker run --rm --network none --cap-drop ALL \
+            --mount "type=bind,src=$scratch,dst=/etc/x-ui" \
+            --entrypoint /app/x-ui vela-integration-ci:local \
+            setting -webCert /etc/x-ui/vela-ci-cert.pem \
+                    -webCertKey /etc/x-ui/vela-ci-key.pem >/dev/null 2>&1
+      - name: Verify genuine HTTPS cookie, signature, CSRF and admin API
+        shell: bash
+        run: |
+          set -euo pipefail
+          scratch="$(cat "$RUNNER_TEMP/vela-miniapp-path")"
+          trap 'docker rm -f vela-miniapp-auth >/dev/null 2>&1 || true' EXIT
+          docker run --detach --name vela-miniapp-auth --network none \
+            --cap-drop ALL --security-opt no-new-privileges \
+            --mount "type=bind,src=$scratch,dst=/etc/x-ui" \
+            --mount "type=bind,src=$scratch/vela_bot_token,dst=/run/secrets/vela_bot_token,readonly" \
+            --tmpfs /tmp:rw,nosuid,size=16m \
+            --tmpfs /var/log/x-ui:rw,nosuid,size=16m \
+            -e XUI_ENABLE_FAIL2BAN=false -e XUI_DB_TYPE=sqlite \
+            -e XUI_PORT=2053 \
+            -e XUI_TG_MINIAPP_ENABLED=true \
+            -e XUI_TG_MINIAPP_URL=https://ci.vela-test-domain.org/ \
+            -e XUI_TG_MINIAPP_ADMIN_IDS=1001 \
+            -e XUI_TG_MINIAPP_BOT_TOKEN_FILE=/run/secrets/vela_bot_token \
+            vela-integration-ci:local >/dev/null
+          docker exec -i vela-miniapp-auth python3 - < tests/ci_miniapp_https_auth.py
+      - name: Delete transient local credentials and certificates
+        if: always()
+        shell: bash
+        run: |
+          if test -f "$RUNNER_TEMP/vela-miniapp-path"; then
+            scratch="$(cat "$RUNNER_TEMP/vela-miniapp-path")"
+            docker rm -f vela-miniapp-auth >/dev/null 2>&1 || true
+            sudo rm -rf -- "$scratch"
+            rm -f "$RUNNER_TEMP/vela-miniapp-path"
+          fi
+      - name: Tag the audited image for the recovery harness
+        run: docker tag vela-integration-ci:local vela-ci-recovery-old:local
+      - name: Build deliberately unhealthy synthetic candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          ctx="$(mktemp -d)"
+          trap 'rm -rf "$ctx"' EXIT
+          printf 'FROM alpine:3.22\nCMD ["sleep", "300"]\n' > "$ctx/Dockerfile"
+          docker build --pull --no-cache -t vela-ci-recovery-failed:local "$ctx"
+      - name: Run actual Vela recover and Docker Compose rollback with synthetic state
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo env "GITHUB_ACTIONS=true" "PATH=$PATH" python3 tests/ci_real_docker_recover.py

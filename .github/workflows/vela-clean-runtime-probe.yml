@@ -2,21 +2,17 @@ name: Vela Docker runtime test-fixture removal (diagnostic only)
 
 on:
   workflow_dispatch:
-  push:
-    branches: [vela-dev]
-    paths:
-      - "deploy/vela/ci_prepare_dockerfile.py"
-      - "tests/test_vela_dockerfile_isolation.py"
-      - "deploy/vela/image_layer_audit.py"
-      - "deploy/vela/ci_elf_marker_inspect.py"
-      - "tests/test_image_layer_audit.py"
-      - ".github/workflows/vela-clean-runtime-probe.yml"
 
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   verify:
+    if: github.repository == 'smgsp6/3x-ui' && github.event.repository.private == false && github.ref == 'refs/heads/vela-dev'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:

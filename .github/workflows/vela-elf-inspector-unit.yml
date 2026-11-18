@@ -1,19 +1,18 @@
 name: Vela ELF diagnostic unit tests (no secret material)
 
 on:
-  push:
-    branches: [vela-dev]
-    paths:
-      - "deploy/vela/ci_elf_marker_inspect.py"
-      - "tests/test_vela_elf_marker_inspect.py"
-      - ".github/workflows/vela-elf-inspector-unit.yml"
   workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   tests:
+    if: github.repository == 'smgsp6/3x-ui' && github.event.repository.private == false && github.ref == 'refs/heads/vela-dev'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

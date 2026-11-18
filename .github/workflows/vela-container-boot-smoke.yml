@@ -2,18 +2,17 @@ name: Vela isolated container boot and security smoke (no deploy)
 
 on:
   workflow_dispatch:
-  push:
-    branches: [vela-dev]
-    paths:
-      - "deploy/vela/ci_prepare_dockerfile.py"
-      - "tests/test_vela_dockerfile_isolation.py"
-      - ".github/workflows/vela-container-boot-smoke.yml"
 
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   boot-smoke:
+    if: github.repository == 'smgsp6/3x-ui' && github.event.repository.private == false && github.ref == 'refs/heads/vela-dev'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:

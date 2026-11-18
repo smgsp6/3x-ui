@@ -2,16 +2,6 @@ name: Vela real SQLite recovery lifecycle contract (isolated)
 
 on:
   workflow_dispatch:
-  push:
-    branches: [vela-dev]
-    paths:
-      - "deploy/vela/vela"
-      - "deploy/vela/beta_preflight.py"
-      - "deploy/vela/compose.host.yml"
-      - "tests/test_vela_compose_contract.py"
-      - "tests/test_vela_beta_preflight.py"
-      - "tests/test_maintenance_cli.py"
-      - ".github/workflows/vela-recovery-contract.yml"
 
 permissions:
   contents: read
@@ -22,6 +12,7 @@ concurrency:
 
 jobs:
   recovery:
+    if: github.repository == 'smgsp6/3x-ui' && github.event.repository.private == false && github.ref == 'refs/heads/vela-dev'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:

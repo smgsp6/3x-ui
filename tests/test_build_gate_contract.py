@@ -39,15 +39,15 @@ class BuildGateContractTests(unittest.TestCase):
             w.index('run: npm ci'),
             w.index('run: npm run typecheck'),
             w.index('run: npm test'),
-            w.index('run: npm run build'),
+            w.index('run: npm --ignore-scripts run build'),
             w.index('test -s internal/web/dist/index.html'),
             w.index('test -s internal/web/dist/miniapp.html'),
-            w.index('run: go test ./...'),
-            w.index('run: go build -trimpath'),
+            w.index('run: go test -mod=readonly ./...'),
+            w.index('run: go build -mod=readonly -trimpath'),
         ]
         self.assertEqual(positions, sorted(positions))
         self.assertIn('go-version-file: go.mod', w)
-        self.assertIn("node-version: '26'", w)
+        self.assertIn("node-version: '26.13.1'", w)
 
     def test_each_source_is_modified_once_to_prevent_lost_edits(self):
         tree = ast.parse((ROOT / 'apply_to_repo.py').read_text())
@@ -70,6 +70,17 @@ class BuildGateContractTests(unittest.TestCase):
         self.assertIn('docker image inspect vela-integration-ci:local', w)
         self.assertIn('docker image save vela-integration-ci:local | python3 deploy/vela/image_layer_audit.py --stdin', w)
         self.assertIn('name: Clean Docker image build (no push)', w)
+
+    def test_automatic_gate_reuses_one_audited_image_on_development_pushes(self):
+        w = self.workflow
+        self.assertEqual(w.count("docker build --pull --no-cache -f"), 1)
+        self.assertIn("branches: [vela-dev]", w)
+        self.assertIn("if: github.event_name != 'pull_request'", w)
+        self.assertIn("github.event.repository.private == false", w)
+        self.assertIn("npm ci --ignore-scripts", w)
+        self.assertNotIn("upload-artifact", w)
+        self.assertLess(w.index("Audit every final-image layer"), w.index("Verify genuine HTTPS"))
+        self.assertLess(w.index("Audit every final-image layer"), w.index("Run actual Vela recover"))
 
     def test_applied_patch_refuses_tls_http_downgrade_only_in_vela_mode(self):
         with tempfile.TemporaryDirectory() as tmp:

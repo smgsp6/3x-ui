@@ -2,11 +2,6 @@ name: Vela phase 13 archive integration audit
 
 on:
   workflow_dispatch:
-  push:
-    branches: [vela-dev]
-    paths:
-      - "vela-development/integration/**"
-      - ".github/workflows/vela-phase13-integration.yml"
 
 permissions:
   contents: read
@@ -17,11 +12,12 @@ concurrency:
 
 jobs:
   audit:
+    if: github.repository == 'smgsp6/3x-ui' && github.event.repository.private == false && github.ref == 'refs/heads/vela-dev'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - name: Checkout source without persisted GitHub credentials
-        uses: actions/checkout@v4
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
           fetch-depth: 0

@@ -2,17 +2,17 @@ name: Vela private-key origin verification in isolated public builds
 
 on:
   workflow_dispatch:
-  push:
-    branches: [vela-dev]
-    paths:
-      - ".github/workflows/vela-key-provenance.yml"
-      - "deploy/vela/ci_public_package_provenance.py"
 
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   alpine-public-package-origin:
+    if: github.repository == 'smgsp6/3x-ui' && github.event.repository.private == false && github.ref == 'refs/heads/vela-dev'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -37,6 +37,7 @@ jobs:
             vela-public-pem-origin:local /tmp/provenance.py
 
   go-standard-library-marker:
+    if: github.repository == 'smgsp6/3x-ui' && github.event.repository.private == false && github.ref == 'refs/heads/vela-dev'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:

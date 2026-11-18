@@ -1,19 +1,18 @@
 name: Vela Docker image privacy scanner unit tests
 
 on:
-  push:
-    branches: [vela-dev]
-    paths:
-      - "deploy/vela/image_layer_audit.py"
-      - "tests/test_image_layer_audit.py"
-      - ".github/workflows/vela-image-audit-tests.yml"
   workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   image-audit:
+    if: github.repository == 'smgsp6/3x-ui' && github.event.repository.private == false && github.ref == 'refs/heads/vela-dev'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

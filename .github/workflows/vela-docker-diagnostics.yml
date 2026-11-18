@@ -2,18 +2,17 @@ name: Vela isolated Docker image privacy diagnostic
 
 on:
   workflow_dispatch:
-  push:
-    branches: [vela-dev]
-    paths:
-      - "deploy/vela/image_layer_audit.py"
-      - "tests/test_image_layer_audit.py"
-      - ".github/workflows/vela-docker-diagnostics.yml"
 
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   image-diagnostic:
+    if: github.repository == 'smgsp6/3x-ui' && github.event.repository.private == false && github.ref == 'refs/heads/vela-dev'
     runs-on: ubuntu-latest
     timeout-minutes: 40
     steps:
