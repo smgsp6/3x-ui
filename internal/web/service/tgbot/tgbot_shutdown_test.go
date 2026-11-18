@@ -169,3 +169,38 @@ func TestAwaitBotReceiverHonorsShutdownDeadline(t *testing.T) {
 		t.Fatal("an unresponsive receiver bypassed the shutdown deadline")
 	}
 }
+
+func TestStopRetainsIncompleteReceiverAcrossTimeouts(t *testing.T) {
+	StopBot()
+	t.Cleanup(StopBot)
+	done := make(chan struct{})
+	tgBotMutex.Lock()
+	botReceiverDone = done
+	tgBotMutex.Unlock()
+
+	botLifecycleMu.Lock()
+	defer botLifecycleMu.Unlock()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	for range 2 {
+		if stopBotLocked(ctx) {
+			t.Error("reported successful shutdown before receiver drained")
+		}
+		tgBotMutex.Lock()
+		pending := botReceiverDone
+		tgBotMutex.Unlock()
+		if pending != done {
+			t.Error("forgot previous receiver after shutdown deadline")
+		}
+	}
+	close(done)
+	if !stopBotLocked(ctx) {
+		t.Fatal("completed receiver still blocks startup")
+	}
+	tgBotMutex.Lock()
+	pending := botReceiverDone
+	tgBotMutex.Unlock()
+	if pending != nil {
+		t.Fatal("completed receiver was not cleared")
+	}
+}

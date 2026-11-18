@@ -28,7 +28,6 @@ import (
 
 	"github.com/mymmrac/telego"
 	ta "github.com/mymmrac/telego/telegoapi"
-	th "github.com/mymmrac/telego/telegohandler"
 	"github.com/valyala/fasthttp"
 	"github.com/valyala/fasthttp/fasthttpproxy"
 )
@@ -53,7 +52,6 @@ var (
 	// that starts after StopBot released tgBotMutex.
 	botReceiverDone chan struct{}
 
-	botHandler    *th.BotHandler
 	adminIds      []int64
 	adminTopics   map[int64]int // admin chat -> forum topic (message_thread_id)
 	isRunning     bool
@@ -402,15 +400,17 @@ func (t *Tgbot) setCachedServerStats(stats string) {
 func (t *Tgbot) Start(i18nFS embed.FS) error {
 	botLifecycleMu.Lock()
 	defer botLifecycleMu.Unlock()
-	// Initialize localizer
+	shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), botShutdownTimeout)
+	defer cancelShutdown()
+	if !stopBotLocked(shutdownCtx) {
+		return errors.New("previous Telegram receiver is still shutting down")
+	}
+
+	// Initialize localizer only after prior handlers have finished using it.
 	err := locale.InitLocalizer(i18nFS, &t.settingService)
 	if err != nil {
 		return err
 	}
-
-	// If Start is called again (e.g. during reload), ensure any previous long-polling
-	// loop is stopped before creating a new bot / receiver.
-	stopBotLocked()
 
 	// Initialize hash storage to store callback queries
 	setHashStorage(global.NewHashStorage(20 * time.Minute))
@@ -754,21 +754,20 @@ func (t *Tgbot) Stop() {
 func StopBot() {
 	botLifecycleMu.Lock()
 	defer botLifecycleMu.Unlock()
-	stopBotLocked()
+	ctx, cancel := context.WithTimeout(context.Background(), botShutdownTimeout)
+	defer cancel()
+	stopBotLocked(ctx)
 }
 
 const botShutdownTimeout = 12 * time.Second
 
 // stopBotLocked is called with botLifecycleMu held by either Start or StopBot.
-func stopBotLocked() {
+func stopBotLocked(ctx context.Context) bool {
 	// Don't hold the receiver mutex while cancelling/waiting.
 	tgBotMutex.Lock()
 	cancel := botCancel
 	botCancel = nil
 	done := botReceiverDone
-	botReceiverDone = nil
-	handler := botHandler
-	botHandler = nil
 	isRunning = false
 	// Stop invalidates all prior Telegram administrators immediately.
 	// A subsequent failed Start must never keep an old allowlist alive.
@@ -786,21 +785,21 @@ func stopBotLocked() {
 	botMu.Unlock()
 	tgBotMutex.Unlock()
 
-	// Cancel incoming polling before draining the handler. Use a single
-	// shutdown deadline for the handler AND receiver completion: a broken
-	// Telegram network client must not hang panel shutdown indefinitely.
-	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), botShutdownTimeout)
-	defer shutdownCancel()
+	// Cancelling polling closes its update channel. The receiver owns handler
+	// cleanup and keeps done open until every dispatched update has returned.
 	if cancel != nil {
 		cancel()
 	}
-	if handler != nil {
-		_ = handler.StopWithContext(shutdownCtx)
-	}
-
-	if !awaitBotReceiver(shutdownCtx, done) {
+	if !awaitBotReceiver(ctx, done) {
 		logger.Warning("Telegram receiver did not exit before shutdown deadline")
+		// Keep the completion channel so subsequent starts also fail closed.
+		return false
 	}
+	tgBotMutex.Lock()
+	if botReceiverDone == done {
+		botReceiverDone = nil
+	}
+	tgBotMutex.Unlock()
 	userStateMgr.reset()
 	addClientDrafts.resetAll()
 	broadcastResetAll()
@@ -808,6 +807,7 @@ func stopBotLocked() {
 	if cancel != nil {
 		logger.Info("Telegram bot successfully stopped.")
 	}
+	return true
 }
 
 // awaitBotReceiver is bounded by the caller's shutdown deadline. A nil
@@ -820,7 +820,13 @@ func awaitBotReceiver(ctx context.Context, done <-chan struct{}) bool {
 	case <-done:
 		return true
 	case <-ctx.Done():
-		return false
+		// If both channels are ready, prefer a completed drain.
+		select {
+		case <-done:
+			return true
+		default:
+			return false
+		}
 	}
 }
 

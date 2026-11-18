@@ -78,7 +78,6 @@ func finishBotReceiver(receiver *telego.Bot) {
 	if receiver == nil || bot != receiver {
 		return
 	}
-	botHandler = nil
 	botCancel = nil
 	isRunning = false
 	adminIds = nil
@@ -159,26 +158,16 @@ func (t *Tgbot) receive(pollBot *telego.Bot) {
 			finishBotReceiver(pollBot)
 			cancel()
 			if h != nil {
-				shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), botShutdownTimeout)
-				defer shutdownCancel()
-				_ = h.StopWithContext(shutdownCtx)
+				// Stop can wait indefinitely here. The lifecycle caller waits on
+				// done with its own deadline and must not start a replacement
+				// while this generation still has an active handler.
+				_ = h.Stop()
 			}
 		}()
 		if err != nil || h == nil {
 			logger.Warning("Telegram handler could not start:", safeTelegramLogError(err))
 			return
 		}
-		tgBotMutex.Lock()
-		// StopBot clears the current connection before cancelling the
-		// receiver context. Checking the connection as well closes that
-		// window: a stale handler can never publish itself after shutdown.
-		if receiverCtx.Err() != nil || liveBot() != pollBot {
-			tgBotMutex.Unlock()
-			return
-		}
-		botHandler = h
-		tgBotMutex.Unlock()
-
 		// The menu marks these as returning to a root screen, so a screen that
 		// carries one already offers a way out.
 		registerTerminalCallbacks(cbHome, cbCatServer, cbCatClients, cbCatTraffic, cbCatMaintenance)

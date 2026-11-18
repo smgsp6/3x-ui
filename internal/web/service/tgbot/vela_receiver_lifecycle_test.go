@@ -21,7 +21,6 @@ func TestFinishBotReceiverCannotStopReplacementConnection(t *testing.T) {
 
 	tgBotMutex.Lock()
 	previousCancel := botCancel
-	previousHandler := botHandler
 	previousRunning := isRunning
 	previousAdmins, previousTopics := adminIds, adminTopics
 	botMu.Lock()
@@ -31,7 +30,6 @@ func TestFinishBotReceiverCannotStopReplacementConnection(t *testing.T) {
 	botStop = stop
 	botMu.Unlock()
 	botCancel = nil
-	botHandler = nil
 	isRunning = true
 	adminIds = []int64{1001}
 	adminTopics = map[int64]int{1001: 42}
@@ -39,7 +37,6 @@ func TestFinishBotReceiverCannotStopReplacementConnection(t *testing.T) {
 	t.Cleanup(func() {
 		tgBotMutex.Lock()
 		botCancel = previousCancel
-		botHandler = previousHandler
 		isRunning = previousRunning
 		adminIds, adminTopics = previousAdmins, previousTopics
 		botMu.Lock()
