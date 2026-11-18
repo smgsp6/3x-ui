@@ -5024,6 +5024,14 @@
       "description": "Two authentication modes are supported. UI sessions use a cookie set by the login endpoint. Programmatic clients (bots, scripts, remote panels) authenticate with a Bearer token taken from Settings → Security → API Token. Both work for every endpoint under /panel/api/*."
     },
     {
+      "name": "Vela Telegram Mini App",
+      "description": "Readiness information for a verified Telegram Mini App session."
+    },
+    {
+      "name": "Vela Certificate Status",
+      "description": "Vela-only, read-only certificate status. Requires the same authenticated panel API access as existing endpoints. Certificate and key paths are server-owned settings; the caller cannot provide filesystem paths."
+    },
+    {
       "name": "Inbounds",
       "description": "Manage inbound configurations and their clients. All endpoints live under /panel/api/inbounds and require a logged-in session or Bearer token. Link-generating endpoints honour forwarded headers only when the request comes from a configured trusted proxy."
     },
@@ -5315,6 +5323,109 @@
             }
           }
         }
+      }
+    },
+    "/panel/api/tg-miniapp/status": {
+      "get": {
+        "tags": [
+          "Vela Telegram Mini App"
+        ],
+        "summary": "Check whether the Bot is running and Mini App launch and login are configured.",
+        "operationId": "get_panel_api_tg_miniapp_status",
+        "description": "Requires a verified Telegram Mini App session cookie. Returns 403 for other authenticated session types.",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                },
+                "example": {
+                  "success": true,
+                  "obj": {
+                    "botRunning": true,
+                    "launchConfigured": true,
+                    "authConfigured": true
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          }
+        ]
+      }
+    },
+    "/panel/api/certificates/status": {
+      "get": {
+        "tags": [
+          "Vela Certificate Status"
+        ],
+        "summary": "Inspect the management-panel and subscription TLS certificates, including their expiry and configured Telegram alert status. Does not return private keys or host filesystem paths.",
+        "operationId": "get_panel_api_certificates_status",
+        "description": "Status is one of unconfigured, valid, expiring, expired or invalid. A configured certificate may also include issuer, validFrom and validUntil. DNS names are certificate metadata, not the configured key path. Telegram notifications remain disabled by default.",
+        "responses": {
+          "200": {
+            "description": "Successful response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "msg": {
+                      "type": "string"
+                    },
+                    "obj": {}
+                  }
+                },
+                "example": {
+                  "success": true,
+                  "obj": {
+                    "alertsEnabled": false,
+                    "certificates": [
+                      {
+                        "purpose": "panel",
+                        "dnsNames": [],
+                        "daysRemaining": 0,
+                        "status": "unconfigured"
+                      },
+                      {
+                        "purpose": "subscription",
+                        "dnsNames": [],
+                        "daysRemaining": 0,
+                        "status": "unconfigured"
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "cookieAuth": []
+          },
+          {
+            "bearerAuth": []
+          }
+        ]
       }
     },
     "/panel/api/inbounds/list": {

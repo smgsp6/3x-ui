@@ -254,6 +254,23 @@ export const sections: readonly Section[] = [
   },
 
   {
+    id: 'vela-telegram',
+    title: 'Vela Telegram Mini App',
+    description: 'Readiness information for a verified Telegram Mini App session.',
+    endpoints: [
+      {
+        method: 'GET',
+        path: '/panel/api/tg-miniapp/status',
+        summary: 'Check whether the Bot is running and Mini App launch and login are configured.',
+        description: 'Requires a verified Telegram Mini App session cookie. Returns 403 for other authenticated session types.',
+        response:
+          '{\n  "success": true,\n  "obj": { "botRunning": true, "launchConfigured": true, "authConfigured": true }\n}',
+        security: [{ cookieAuth: [] }],
+      },
+    ],
+  },
+
+  {
     id: 'vela-certificates',
     title: 'Vela Certificate Status',
     description:
