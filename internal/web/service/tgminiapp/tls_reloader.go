@@ -10,6 +10,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
+	"io"
 	"os"
 	"slices"
 	"sync"
@@ -34,19 +35,40 @@ func NewTLSCertificateReloader(certPath, keyPath string, initial tls.Certificate
 	return &TLSCertificateReloader{certPath: certPath, keyPath: keyPath, current: &initial, nextCheck: time.Now().Add(tlsRefreshInterval)}
 }
 
+// readTLSPEM allows ordinary ACME symlinks but bounds each read and checks
+// the opened file still matches the regular file inspected before opening.
+func readTLSPEM(path string) ([]byte, error) {
+	before, err := os.Stat(path)
+	if err != nil || !before.Mode().IsRegular() || before.Size() <= 0 || before.Size() > maxTLSPEMBytes {
+		return nil, errors.New("TLS certificate material unavailable")
+	}
+	file, err := os.Open(path)
+	if err != nil {
+		return nil, errors.New("TLS certificate material unavailable")
+	}
+	defer file.Close()
+	opened, err := file.Stat()
+	if err != nil || !os.SameFile(before, opened) || !opened.Mode().IsRegular() {
+		return nil, errors.New("TLS certificate material changed during read")
+	}
+	data, err := io.ReadAll(io.LimitReader(file, maxTLSPEMBytes+1))
+	if err != nil || len(data) == 0 || len(data) > maxTLSPEMBytes {
+		return nil, errors.New("TLS certificate material invalid")
+	}
+	return data, nil
+}
+
 func safeLoadTLSKeyPair(certPath, keyPath string) (*tls.Certificate, error) {
-	if certPath == "" || keyPath == "" {
-		return nil, errors.New("missing TLS certificate configuration")
+	certPEM, err := readTLSPEM(certPath)
+	if err != nil {
+		return nil, err
 	}
-	for _, path := range []string{certPath, keyPath} {
-		info, err := os.Stat(path)
-		if err != nil || !info.Mode().IsRegular() || info.Size() <= 0 || info.Size() > maxTLSPEMBytes {
-			return nil, errors.New("TLS certificate material unavailable")
-		}
+	keyPEM, err := readTLSPEM(keyPath)
+	if err != nil {
+		return nil, err
 	}
-	// Go verifies that the public certificate matches the private key.
-	// If renewal is half-written, return an error without changing current.
-	cert, err := tls.LoadX509KeyPair(certPath, keyPath)
+	// A mismatched or half-written renewal must not replace the working pair.
+	cert, err := tls.X509KeyPair(certPEM, keyPEM)
 	if err != nil || len(cert.Certificate) == 0 {
 		return nil, errors.New("TLS certificate material invalid")
 	}
@@ -94,7 +116,7 @@ func (r *TLSCertificateReloader) currentAt(now time.Time) *tls.Certificate {
 	if !now.Before(r.nextCheck) {
 		r.nextCheck = now.Add(tlsRefreshInterval)
 		if candidate, err := safeLoadTLSKeyPair(r.certPath, r.keyPath); err == nil {
-			if !bytes.Equal(candidate.Certificate[0], r.current.Certificate[0]) {
+			if !slices.EqualFunc(candidate.Certificate, r.current.Certificate, bytes.Equal) {
 				// Prevent accidental replacement with an older, shorter-lived
 				// certificate; a deliberate manual change can still restart.
 				newLeaf, _ := x509.ParseCertificate(candidate.Certificate[0])

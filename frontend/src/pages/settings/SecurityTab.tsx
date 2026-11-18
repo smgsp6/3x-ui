@@ -120,7 +120,6 @@ export default function SecurityTab({ allSetting, updateSetting, saveSetting }: 
           twoFactorCode,
         })) as ApiMsg;
         if (msg?.success) {
-          await HttpUtil.post('/logout');
           const basePath = window.X_UI_BASE_PATH || '/';
           window.location.replace(basePath);
         }

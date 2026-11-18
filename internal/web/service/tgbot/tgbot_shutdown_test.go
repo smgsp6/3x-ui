@@ -204,3 +204,33 @@ func TestStopRetainsIncompleteReceiverAcrossTimeouts(t *testing.T) {
 		t.Fatal("completed receiver was not cleared")
 	}
 }
+
+func TestRetiredBackgroundWorkBlocksBotReplacement(t *testing.T) {
+	StopBot()
+	t.Cleanup(StopBot)
+	source, err := telego.NewBot(testBotToken)
+	if err != nil {
+		t.Fatal(err)
+	}
+	setTestBot(source)
+	finish := enterBotBackground(source)
+	if finish == nil {
+		t.Fatal("could not register work for the current connection")
+	}
+
+	botLifecycleMu.Lock()
+	defer botLifecycleMu.Unlock()
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if stopBotLocked(ctx) {
+		t.Error("stopped while a retired broadcast was still running")
+	}
+	if late := enterBotBackground(source); late != nil {
+		late()
+		t.Error("retired Bot registered a delayed callback")
+	}
+	finish()
+	if !stopBotLocked(ctx) {
+		t.Error("work that drained still blocked restart")
+	}
+}

@@ -500,6 +500,31 @@ os.execv('/usr/bin/tar', ['/usr/bin/tar', *sys.argv[1:]])
         self.assertEqual((self.root / 'cert' / 'panel.pem').read_text(), 'cert bytes')
         self.assertTrue(journal.exists())
 
+    def test_recover_rejects_escape_through_chain_of_relative_links(self):
+        initial = self.run_cli('backup')
+        self.assertEqual(initial.returncode, 0, initial.stderr)
+        archive = next((self.root / 'backups').glob('vela-*.tar.gz'))
+        with tarfile.open(archive, 'w:gz') as tf:
+            for label in ('db', 'cert', 'acme'):
+                tf.add(self.root / label, arcname=label)
+            for name, target in (('cert/up', '.'), ('cert/chain', 'up/../db')):
+                link = tarfile.TarInfo(name)
+                link.type = tarfile.SYMTYPE
+                link.linkname = target
+                tf.addfile(link)
+        # The complete tree rejects paths whose intermediate link resolves
+        # differently from the lexical archive path.
+        journal = self.root / '.pending-update'
+        journal.write_text(OLD + '\n' + NEW + '\n' + str(archive) + '\n0\n')
+        journal.chmod(0o600)
+        self.log.write_text('')
+        result = self.run_cli('recover')
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn('备份链接不安全', result.stderr)
+        self.assertNotIn(' stop ', self.log.read_text())
+        self.assertEqual((self.root / 'db' / 'x-ui.db').read_text(), 'original-db')
+        self.assertTrue(journal.exists())
+
     def test_update_bad_health_restores_both_image_and_database(self):
         result = self.run_cli('update', VELA_TEST_FAIL_HEALTH='1')
         self.assertNotEqual(result.returncode, 0)

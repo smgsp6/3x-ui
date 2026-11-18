@@ -329,6 +329,7 @@ func (t *Tgbot) recallBroadcast(chatID int64, ids []int) {
 // bufferBroadcastMedia appends an album item; the debounce timer fires the
 // preview once the group stops growing.
 func (t *Tgbot) bufferBroadcastMedia(actor chatUser, groupID string, messageID int) {
+	source := liveBot()
 	broadcastMu.Lock()
 	c := broadcastComposes[actor]
 	if c == nil || c.groupID != groupID {
@@ -337,7 +338,12 @@ func (t *Tgbot) bufferBroadcastMedia(actor chatUser, groupID string, messageID i
 		}
 		c = &broadcastCompose{groupID: groupID}
 		c.timer = time.AfterFunc(broadcastAlbumDebounce, func() {
-			t.finalizeBroadcastAlbum(actor, groupID)
+			finish := enterBotBackground(source)
+			if finish == nil {
+				return
+			}
+			defer finish()
+			t.finalizeBroadcastAlbum(actor, c)
 		})
 		broadcastComposes[actor] = c
 	}
@@ -346,10 +352,10 @@ func (t *Tgbot) bufferBroadcastMedia(actor chatUser, groupID string, messageID i
 	broadcastMu.Unlock()
 }
 
-func (t *Tgbot) finalizeBroadcastAlbum(actor chatUser, groupID string) {
+func (t *Tgbot) finalizeBroadcastAlbum(actor chatUser, expected *broadcastCompose) {
 	broadcastMu.Lock()
 	c := broadcastComposes[actor]
-	if c == nil || c.groupID != groupID {
+	if c == nil || c != expected {
 		broadcastMu.Unlock()
 		return
 	}
@@ -402,7 +408,13 @@ func (t *Tgbot) confirmBroadcast(actor chatUser, token string, messageID int, qu
 	runner.messageID = messageID
 	t.sendCallbackAnswerTgBot(queryID, t.I18nBot("tgbot.answers.broadcastStarted"))
 	t.editMessageTgBot(chatId, messageID, t.broadcastProgressText(0, len(recipients), 0, 0), t.broadcastCancelKeyboard())
+	finish := enterBotBackground(liveBot())
+	if finish == nil {
+		broadcastUnregisterRunner(runner)
+		return
+	}
 	common.GoRecover("tgbot-broadcast", func() {
+		defer finish()
 		t.runBroadcast(runner, draft, recipients)
 	})
 }

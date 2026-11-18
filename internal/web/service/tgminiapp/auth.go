@@ -70,8 +70,8 @@ func Verify(rawInitData, botToken string, now time.Time) (User, error) {
 	if err != nil {
 		return denied()
 	}
-	for _, values := range params {
-		if len(values) != 1 {
+	for key, values := range params {
+		if len(values) != 1 || key == "" || strings.ContainsAny(key, "=\r\n") || strings.ContainsAny(values[0], "\r\n") {
 			return denied()
 		} // reject duplicate-key ambiguities
 	}
@@ -86,7 +86,9 @@ func Verify(rawInitData, botToken string, now time.Time) (User, error) {
 
 	keys := make([]string, 0, len(params))
 	for key := range params {
-		if key != "hash" && key != "signature" {
+		// For Bot Token HMAC, exclude only hash. Ed25519 third-party
+		// verification has a different canonical string.
+		if key != "hash" {
 			keys = append(keys, key)
 		}
 	}

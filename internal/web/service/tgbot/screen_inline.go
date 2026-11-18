@@ -43,48 +43,74 @@ func scopeQuery(kind, data string) string {
 // inlineSupport caches getMe().supports_inline_queries. A permanent cache would
 // freeze a pre-/setinline False forever, so it refreshes once stale.
 type inlineSupport struct {
-	mu    sync.Mutex
-	ok    bool
-	known bool
-	at    time.Time
+	mu  sync.Mutex
+	bot *telego.Bot
+	ok  bool
+	at  time.Time
 }
 
 var inlineCapability = &inlineSupport{}
 
 const inlineCapabilityTTL = 10 * time.Minute
 
-// recordInlineCapability stores what getMe() reported.
-func recordInlineCapability(supported bool) {
+// Publish only a result from the active connection. Keep the connection
+// stable through publication so a delayed GetMe cannot overwrite a replacement.
+func recordInlineCapability(source *telego.Bot, supported bool) {
+	botMu.RLock()
+	defer botMu.RUnlock()
+	if source == nil || source != bot {
+		return
+	}
 	inlineCapability.mu.Lock()
+	inlineCapability.bot = source
 	inlineCapability.ok = supported
-	inlineCapability.known = true
 	inlineCapability.at = time.Now()
 	inlineCapability.mu.Unlock()
 }
 
-// inlineSupported reports whether the launcher may be shown. A stale value is
-// served and refreshed off-path; an unknown empty cache must not warn (post-restart bug).
+// Unknown or replaced connections need their own probe. A stale value for
+// the same connection may be used while a background refresh runs.
 func (t *Tgbot) inlineSupported() bool {
+	b := liveBot()
+	if b == nil {
+		return false
+	}
 	inlineCapability.mu.Lock()
-	ok, known, at := inlineCapability.ok, inlineCapability.known, inlineCapability.at
+	ok, known := inlineCapability.ok, inlineCapability.bot == b
+	refresh := known && time.Since(inlineCapability.at) > inlineCapabilityTTL && inlineCapability.refreshing != b
+	if refresh {
+		inlineCapability.refreshing = b
+	}
 	inlineCapability.mu.Unlock()
 
-	if known && time.Since(at) <= inlineCapabilityTTL {
-		return ok
-	}
 	if !known {
-		t.refreshInlineCapability()
+		probeInlineCapability(b)
+		current := liveBot()
 		inlineCapability.mu.Lock()
 		defer inlineCapability.mu.Unlock()
-		return inlineCapability.ok
+		return b == current && inlineCapability.bot == b && inlineCapability.ok
 	}
-	go t.refreshInlineCapability()
+	if refresh {
+		go func() {
+			defer func() {
+				inlineCapability.mu.Lock()
+				defer inlineCapability.mu.Unlock()
+				if inlineCapability.refreshing == b {
+					inlineCapability.refreshing = nil
+				}
+			}()
+			probeInlineCapability(b)
+		}()
+	}
 	return ok
 }
 
 func (t *Tgbot) refreshInlineCapability() {
-	b := liveBot()
-	if b == nil {
+	probeInlineCapability(liveBot())
+}
+
+func probeInlineCapability(b *telego.Bot) {
+	if b == nil || liveBot() != b {
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -94,10 +120,9 @@ func (t *Tgbot) refreshInlineCapability() {
 		logger.Debug("Cannot read the bot capability for inline mode:", safeTelegramLogError(err))
 		return
 	}
-	if me == nil {
-		return
+	if me != nil {
+		recordInlineCapability(b, me.SupportsInlineQueries)
 	}
-	recordInlineCapability(me.SupportsInlineQueries)
 }
 
 // launchRow is the one way into a list: a launcher that opens inline mode in
@@ -146,7 +171,7 @@ func (t *Tgbot) Capabilities() (Capabilities, error) {
 	// can_read_all_group_messages is the inverse of BotFather's Group Privacy.
 	caps.GroupPrivacy = !me.CanReadAllGroupMessages
 	caps.Username = me.Username
-	recordInlineCapability(me.SupportsInlineQueries)
+	recordInlineCapability(b, me.SupportsInlineQueries)
 	return caps, nil
 }
 

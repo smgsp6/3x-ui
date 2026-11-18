@@ -128,7 +128,7 @@ func (s *UserService) BumpLoginEpoch() error {
 		Error
 }
 
-func (s *UserService) UpdateUser(id int, username string, password string) error {
+func (s *UserService) UpdateUser(id int, expectedEpoch int64, username string, password string) error {
 	if len(username) > MaxUsernameLength {
 		return fmt.Errorf("username can not be longer than %d bytes", MaxUsernameLength)
 	}
@@ -143,19 +143,30 @@ func (s *UserService) UpdateUser(id int, username string, password string) error
 		return err
 	}
 
-	if twoFactorEnable {
-		_ = s.settingService.SetTwoFactorEnable(false)
-		_ = s.settingService.SetTwoFactorToken("")
-	}
-
-	return db.Model(model.User{}).
-		Where("id = ?", id).
-		Updates(map[string]any{
-			"username":    username,
-			"password":    hashedPassword,
-			"login_epoch": gorm.Expr("login_epoch + 1"),
-		}).
-		Error
+	return db.Transaction(func(tx *gorm.DB) error {
+		result := tx.Model(&model.User{}).
+			Where("id = ? AND COALESCE(login_epoch, 0) = ?", id, expectedEpoch).
+			Updates(map[string]any{
+				"username":    username,
+				"password":    hashedPassword,
+				"login_epoch": gorm.Expr("COALESCE(login_epoch, 0) + 1"),
+			})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			return errors.New("panel credentials changed concurrently; sign in again")
+		}
+		if !twoFactorEnable {
+			return nil
+		}
+		// Preserve the existing 2FA reset behavior, but commit it together
+		// with the credential change. A stale request must reset nothing.
+		if err := tx.Model(&model.Setting{}).Where("key = ?", "twoFactorEnable").Update("value", "false").Error; err != nil {
+			return err
+		}
+		return tx.Model(&model.Setting{}).Where("key = ?", "twoFactorToken").Update("value", "").Error
+	})
 }
 
 func (s *UserService) UpdateFirstUser(username string, password string) error {

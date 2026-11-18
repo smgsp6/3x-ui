@@ -22,34 +22,38 @@ declare global {
   }
 }
 
-function MiniAppEntry() {
+export function MiniAppEntry() {
   const [error, setError] = useState('');
   const [state, setState] = useState('正在验证 Telegram 身份…');
 
   useEffect(() => {
     let canceled = false;
+    const request = new AbortController();
+    const timeout = window.setTimeout(() => request.abort(), 15_000);
     void (async () => {
-      const app = window.Telegram?.WebApp;
-      app?.ready?.();
-      app?.expand?.();
-      const initData = app?.initData;
-      if (!initData) {
-        if (!canceled) setError('请通过 Telegram 机器人内的「打开管理面板」按钮进入。');
-        return;
-      }
-      const base = window.X_UI_BASE_PATH || '/';
       try {
+        const app = window.Telegram?.WebApp;
+        app?.ready?.();
+        app?.expand?.();
+        const initData = app?.initData;
+        if (!initData) {
+          if (!canceled) setError('请通过 Telegram 机器人内的「打开管理面板」按钮进入。');
+          return;
+        }
+        const base = window.X_UI_BASE_PATH || '/';
         let csrf = document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || '';
         if (!csrf) {
-          const tokenResponse = await fetch(`${base}csrf-token`, { credentials: 'same-origin', cache: 'no-store' });
+          const tokenResponse = await fetch(`${base}csrf-token`, { credentials: 'same-origin', cache: 'no-store', signal: request.signal });
           if (!tokenResponse.ok) throw new Error('csrf');
           const tokenData = (await tokenResponse.json()) as { success?: boolean; obj?: string };
           if (!tokenData.success || !tokenData.obj) throw new Error('csrf');
           csrf = tokenData.obj;
         }
+        if (request.signal.aborted) return;
         if (!canceled) setState('正在建立安全会话…');
         const response = await fetch(`${base}tg-miniapp/auth`, {
           method: 'POST',
+          signal: request.signal,
           credentials: 'same-origin',
           cache: 'no-store',
           headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': csrf },
@@ -58,12 +62,18 @@ function MiniAppEntry() {
         if (!response.ok) throw new Error('auth');
         const outcome = (await response.json()) as { success?: boolean };
         if (!outcome.success) throw new Error('auth');
-        if (!canceled) window.location.replace(`${base}panel/`);
+        if (!canceled && !request.signal.aborted) window.location.replace(`${base}panel/`);
       } catch {
         if (!canceled) setError('验证失败或授权已过期。请从 Telegram 机器人重新打开小程序。');
+      } finally {
+        window.clearTimeout(timeout);
       }
     })();
-    return () => { canceled = true; };
+    return () => {
+      canceled = true;
+      window.clearTimeout(timeout);
+      request.abort();
+    };
   }, []);
 
   return (

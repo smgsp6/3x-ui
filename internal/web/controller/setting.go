@@ -202,6 +202,10 @@ func (a *SettingController) updateUser(c *gin.Context) {
 		return
 	}
 	user := session.GetLoginUser(c)
+	if user == nil {
+		c.AbortWithStatus(http.StatusUnauthorized)
+		return
+	}
 	if user.Username != form.OldUsername || !crypto.CheckPasswordHash(user.Password, form.OldPassword) {
 		jsonMsg(c, I18nWeb(c, "pages.settings.toasts.modifyUserError"), errors.New(I18nWeb(c, "pages.settings.toasts.originalUserPassIncorrect")))
 		return
@@ -214,13 +218,11 @@ func (a *SettingController) updateUser(c *gin.Context) {
 		jsonMsg(c, I18nWeb(c, "pages.settings.toasts.modifyUserError"), err)
 		return
 	}
-	err = a.userService.UpdateUser(user.Id, form.NewUsername, form.NewPassword)
+	err = a.userService.UpdateUser(user.Id, user.LoginEpoch, form.NewUsername, form.NewPassword)
 	if err == nil {
-		user.Username = form.NewUsername
-		user.Password, _ = crypto.HashPasswordAsBcrypt(form.NewPassword)
-		if saveErr := session.SetLoginUser(c, user); saveErr != nil {
-			err = saveErr
-		}
+		// The change increments the epoch for all existing cookies. Explicitly
+		// retire this request's cookie and server-side Mini App session as well.
+		err = session.ClearSession(c)
 	}
 	jsonMsg(c, I18nWeb(c, "pages.settings.toasts.modifyUser"), err)
 }

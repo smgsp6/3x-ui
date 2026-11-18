@@ -52,6 +52,7 @@ def signed_init_data(token, telegram_id, issued_at):
     fields = {
         "auth_date": str(issued_at),
         "query_id": "CI_SYNTHETIC_ONLY",
+        "signature": "synthetic-ed25519-field",
         "user": json.dumps({"id": telegram_id, "first_name": "Synthetic"},
                            separators=(",", ":")),
     }
@@ -109,7 +110,9 @@ def main():
     tampered = good.replace("Synthetic", "Impersonator", 1)
     status, _, _ = login(tampered, original_csrf)
     require(status == 401, "changed Telegram initData must fail HMAC")
-    print("04/26 altered Telegram signature rejected")
+    status, _, _ = login(good.replace("synthetic-ed25519-field", "changed-field", 1), original_csrf)
+    require(status == 401, "HMAC did not cover the signature field")
+    print("04/26 altered Telegram fields and signature rejected")
 
     other = signed_init_data(token, 1002, now)
     status, _, _ = login(other, original_csrf)

@@ -69,7 +69,7 @@ func TestUserSettersRefuseNamesTheLoginRouteRefuses(t *testing.T) {
 	if err := svc.UpdateFirstUser(long, "s3cret-Pass"); err == nil {
 		t.Fatal("UpdateFirstUser stored a name the login route refuses")
 	}
-	if err := svc.UpdateUser(user.Id, long, "s3cret-Pass"); err == nil {
+	if err := svc.UpdateUser(user.Id, user.LoginEpoch, long, "s3cret-Pass"); err == nil {
 		t.Fatal("UpdateUser stored a name the login route refuses")
 	}
 	var stored model.User
@@ -108,5 +108,34 @@ func TestCheckUserTwoFactorSecretForms(t *testing.T) {
 				t.Fatalf("CheckUser with stored secret %q: ok = %v (%v), want %v", tc.stored, got, err, tc.want)
 			}
 		})
+	}
+}
+
+func TestUpdateUserRejectsStaleCredentialsWithoutResettingTwoFactor(t *testing.T) {
+	dbtest.InitDB(t, filepath.Join(t.TempDir(), "x-ui.db"))
+	svc := &UserService{}
+	if err := svc.UpdateFirstUser("fixture-before", "synthetic-before"); err != nil {
+		t.Fatal(err)
+	}
+	before, err := svc.GetFirstUser()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.UpdateUser(before.Id, before.LoginEpoch, "fixture-after", "synthetic-after"); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.settingService.SetTwoFactorEnable(true); err != nil {
+		t.Fatal(err)
+	}
+	if err := svc.UpdateUser(before.Id, before.LoginEpoch, "fixture-stale", "synthetic-stale"); err == nil {
+		t.Fatal("stale authenticated request replaced current credentials")
+	}
+	after, err := svc.GetFirstUser()
+	if err != nil || after.Username != "fixture-after" || after.LoginEpoch != before.LoginEpoch+1 {
+		t.Fatalf("credential revision changed after stale update: %v", err)
+	}
+	enabled, err := svc.settingService.GetTwoFactorEnable()
+	if err != nil || !enabled {
+		t.Fatalf("stale update changed two-factor protection: %v", err)
 	}
 }

@@ -87,3 +87,9 @@
 - Vela 维护命令执行 `docker compose` 时显式清除调用方环境中的 `XUI_TG_MINIAPP_ADMIN_IDS`、`XUI_TG_MINIAPP_URL`、`XUI_PORT`、`XUI_TG_CERT_ALERT_ENABLED` 和 `TZ`，让经过本地预检的 `.env` 提供这些插值值。
 - `VELA_IMAGE` 和 `VELA_HOME` 仍由维护命令指定，不取决于用户终端同名变量的偶然值。
 - 同时保留 Docker 环境和其他原始维护能力，以兼容隔离 Docker 恢复测试；此防护**不等于审计了宿主机 Docker Context/Daemon 或所有运行时环境变量**。
+
+## 第十五阶段当前口径
+
+正式门禁使用 `vela-dev` 上的 **Vela integration and privacy gate**，联合检查 Go、Race、React、依赖、隐私、隔离 Docker、HTTPS/Xray 和 SQLite 维护。每次验收记录准确的提交 SHA 和 Actions Run。历史日志只证明其对应版本。
+
+个人内测的人工步骤参见[个人内测验收清单](VELA-PERSONAL-BETA-ACCEPTANCE.md)。测试工程保留真实 Xray 代码及原版语言。真实 Telegram WebView、受信任公网 HTTPS、真实 Xray TCP/UDP、独立部署安全与实机恢复仍需单独核实。证书链热加载回归可离线执行；真实 ACME 申请和续签须由操作者批准并验证。

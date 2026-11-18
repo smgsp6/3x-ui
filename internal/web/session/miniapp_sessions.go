@@ -19,10 +19,21 @@ const maxMiniAppSessions = 4096
 
 var miniAppSessions = struct {
 	sync.Mutex
+	policy string
 	active map[string]time.Time
 }{active: make(map[string]time.Time)}
 
-func issueMiniAppSession() (string, error) {
+// Called with the policy mutex held. The registry never acquires that mutex.
+func setMiniAppSessionPolicy(nonce string) {
+	miniAppSessions.Lock()
+	defer miniAppSessions.Unlock()
+	if miniAppSessions.policy != nonce {
+		miniAppSessions.policy = nonce
+		clear(miniAppSessions.active)
+	}
+}
+
+func issueMiniAppSession(nonce string) (string, error) {
 	var random [32]byte
 	if _, err := rand.Read(random[:]); err != nil {
 		return "", err
@@ -31,6 +42,9 @@ func issueMiniAppSession() (string, error) {
 	now := time.Now()
 	miniAppSessions.Lock()
 	defer miniAppSessions.Unlock()
+	if nonce == "" || nonce != miniAppSessions.policy {
+		return "", errors.New("Mini App session policy changed")
+	}
 	// Prune on issue, rather than scheduling a goroutine or putting any
 	// Telegram identifiers in the registry. An overloaded registry fails
 	// closed instead of growing without bound.

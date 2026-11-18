@@ -279,3 +279,30 @@ func TestTLSRenewalIdentityRequiresAllPreviousSANs(t *testing.T) {
 		t.Fatal("legacy CN identity replacement accepted")
 	}
 }
+
+func TestTLSReloaderRefreshesChainWithSameLeaf(t *testing.T) {
+	now := time.Now()
+	path, key := writeTestCert(t, t.TempDir(), now.Add(-time.Hour), now.Add(30*24*time.Hour))
+	initial, err := tls.LoadX509KeyPair(path, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	reloader := NewTLSCertificateReloader(path, key, initial)
+	leafPEM, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	extraPath, _ := writeTestCert(t, t.TempDir(), now.Add(-time.Hour), now.Add(60*24*time.Hour))
+	chainPEM, err := os.ReadFile(extraPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, append(leafPEM, chainPEM...), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	// The fixture verifies hot reloading of the served chain bytes; CA trust
+	// remains a separate client and deployment concern.
+	if got := reloader.currentAt(now.Add(2 * tlsRefreshInterval)); len(got.Certificate) != 2 {
+		t.Fatalf("expected updated chain with unchanged leaf, got %d certificates", len(got.Certificate))
+	}
+}

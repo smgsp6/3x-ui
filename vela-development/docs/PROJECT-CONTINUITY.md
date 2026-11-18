@@ -202,3 +202,11 @@ python3 /path/to/vela-phase12/apply_to_repo.py .
 - 本轮把 Telegram 登录会话绑定到验证签名时所用的 Secret。恢复工具现在先完整检查和解包快照，再停止容器并切换目录；解包失败、目录缺失或容器未能停止时保留现有数据和恢复记录。
 - 正式自动化使用 vela-dev 推送触发的 **Vela integration and privacy gate**。HTTPS/Xray 与 Docker 回滚合并在该门禁的 Docker Job 中。每次核对提交和运行须匹配精确 SHA。
 - 第十五阶段仍需独立审核、真实 Telegram 手机与经所有者批准的隔离部署环境。VPS、生产部署与发布不在本阶段自动流程内。使用[个人内测验收清单](../../docs/VELA-PERSONAL-BETA-ACCEPTANCE.md)。
+
+### 第十五阶段 · 第二批回归
+
+- 第一批候选提交 `0794e4b57f1f6446f54c27a31ba2b6db5e46a1fb` 的证据见自动门禁。核对其最终状态和提交 SHA 后再使用。[第一批 Actions](https://github.com/smgsp6/3x-ui/actions/runs/44348648193)
+- 新增 Telegram HMAC 兼容性回归，覆盖现代 initData 的 `signature` 字段及仍无该字段的旧格式。策略或 Secret 变更会退役旧会话登记，凭据更新通过数据库版本校验并注销当前浏览器会话。
+- Bot 更换连接前等待后台广播、媒体预览及旧接收器退出。延迟的内联能力探测无法为新 Bot 写入旧能力。移动登录请求超时时可从 Bot 重新打开。
+- TLS 状态读取和热加载使用有上限的文件读取。证书链更新后，即使叶证书未更换，也可以在新握手中使用更新的链。恢复暂存目录也会核实解析后的链接仍位于各自数据根内。
+- 证书 CA 信任、真实 ACME 申请/自动续签、真实手机和真实公网 Xray 数据通道另行验收。测试通过仍需所有者批准才能安排隔离环境验收。

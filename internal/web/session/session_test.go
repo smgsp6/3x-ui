@@ -442,7 +442,8 @@ func TestDisablingMiniAppRevokesTelegramCookieWithoutLegacyFallback(t *testing.T
 }
 
 func TestLogoutRevokesMiniAppSessionEvenWhenFeatureWasDisabled(t *testing.T) {
-	id, err := issueMiniAppSession()
+	configureMiniAppTestBotToken(t)
+	id, err := issueMiniAppSession(miniAppPolicyNonce())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -512,4 +513,27 @@ func TestMiniAppIssuanceRejectsTokenRotatedAfterVerification(t *testing.T) {
 	if len(response.Result().Cookies()) != 0 {
 		t.Fatal("rejected Mini App login issued a browser cookie")
 	}
+}
+
+func TestMiniAppPolicyChangeRetiresRegistryBeforeIssuance(t *testing.T) {
+	configureMiniAppTestBotToken(t)
+	t.Setenv("XUI_TG_MINIAPP_ADMIN_IDS", "1001")
+	previous := miniAppPolicyNonce()
+	id, err := issueMiniAppSession(previous)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("XUI_TG_MINIAPP_ADMIN_IDS", "1001,1002")
+	current := miniAppPolicyNonce()
+	if current == "" || current == previous || miniAppSessionActive(id) {
+		t.Fatal("policy change did not retire the former registry")
+	}
+	if _, err := issueMiniAppSession(previous); err == nil {
+		t.Fatal("in-flight request minted a session under the retired policy")
+	}
+	id, err = issueMiniAppSession(current)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { revokeMiniAppSession(id) })
 }

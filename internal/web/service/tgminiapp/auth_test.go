@@ -16,7 +16,7 @@ import (
 func signedData(values url.Values, token string) string {
 	keys := make([]string, 0, len(values))
 	for k := range values {
-		if k != "hash" && k != "signature" {
+		if k != "hash" {
 			keys = append(keys, k)
 		}
 	}
@@ -46,11 +46,23 @@ func TestVerify(t *testing.T) {
 	if err != nil || user.ID != 1234567 {
 		t.Fatalf("valid: %+v, %v", user, err)
 	}
+	modern := mk("1234567", "1794672000")
+	modern.Set("signature", "synthetic-ed25519-field")
+	signedModern := signedData(modern, "12345:secret")
+	if _, err := Verify(signedModern, "12345:secret", now); err != nil {
+		t.Fatal("valid HMAC containing Telegram's signature field was rejected")
+	}
 	tests := []struct {
 		name, raw, token string
 		at               time.Time
 	}{
 		{"wrong token", valid, "bad:token", now},
+		{"changed signature", strings.Replace(signedModern, "synthetic-ed25519-field", "changed-field", 1), "12345:secret", now},
+		{"ambiguous canonical field", signedData(func() url.Values {
+			v := mk("1234567", "1794672000")
+			v.Set("query_id", "one\ntwo=three")
+			return v
+		}(), "12345:secret"), "12345:secret", now},
 		{"changed user", strings.Replace(valid, "1234567", "7654321", 1), "12345:secret", now},
 		{"expired", valid, "12345:secret", now.Add(6 * time.Minute)},
 		{"future", valid, "12345:secret", now.Add(-2 * time.Minute)},

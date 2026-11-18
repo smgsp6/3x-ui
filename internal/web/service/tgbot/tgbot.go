@@ -51,6 +51,9 @@ var (
 	// a global WaitGroup could accidentally wait for a replacement receiver
 	// that starts after StopBot released tgBotMutex.
 	botReceiverDone chan struct{}
+	// Deferred broadcast work shares the receiver's retirement barrier.
+	botBackgroundCount int
+	botBackgroundDone  chan struct{}
 
 	adminIds      []int64
 	adminTopics   map[int64]int // admin chat -> forum topic (message_thread_id)
@@ -403,7 +406,7 @@ func (t *Tgbot) Start(i18nFS embed.FS) error {
 	shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), botShutdownTimeout)
 	defer cancelShutdown()
 	if !stopBotLocked(shutdownCtx) {
-		return errors.New("previous Telegram receiver is still shutting down")
+		return errors.New("previous Telegram work is still shutting down")
 	}
 
 	// Initialize localizer only after prior handlers have finished using it.
@@ -761,6 +764,28 @@ func StopBot() {
 
 const botShutdownTimeout = 12 * time.Second
 
+// enterBotBackground registers side effects started outside the SDK handler.
+func enterBotBackground(source *telego.Bot) func() {
+	tgBotMutex.Lock()
+	defer tgBotMutex.Unlock()
+	if source == nil || liveBot() != source {
+		return nil
+	}
+	if botBackgroundCount == 0 {
+		botBackgroundDone = make(chan struct{})
+	}
+	botBackgroundCount++
+	return func() {
+		tgBotMutex.Lock()
+		defer tgBotMutex.Unlock()
+		botBackgroundCount--
+		if botBackgroundCount == 0 {
+			close(botBackgroundDone)
+			botBackgroundDone = nil
+		}
+	}
+}
+
 // stopBotLocked is called with botLifecycleMu held by either Start or StopBot.
 func stopBotLocked(ctx context.Context) bool {
 	// Don't hold the receiver mutex while cancelling/waiting.
@@ -768,6 +793,7 @@ func stopBotLocked(ctx context.Context) bool {
 	cancel := botCancel
 	botCancel = nil
 	done := botReceiverDone
+	background := botBackgroundDone
 	isRunning = false
 	// Stop invalidates all prior Telegram administrators immediately.
 	// A subsequent failed Start must never keep an old allowlist alive.
@@ -790,8 +816,11 @@ func stopBotLocked(ctx context.Context) bool {
 	if cancel != nil {
 		cancel()
 	}
-	if !awaitBotReceiver(ctx, done) {
-		logger.Warning("Telegram receiver did not exit before shutdown deadline")
+	if runner := broadcastCurrentRunner(); runner != nil {
+		runner.cancel.Store(true)
+	}
+	if !awaitBotReceiver(ctx, done) || !awaitBotReceiver(ctx, background) {
+		logger.Warning("Telegram work did not exit before shutdown deadline")
 		// Keep the completion channel so subsequent starts also fail closed.
 		return false
 	}

@@ -299,14 +299,17 @@ func TestInlineSupportProbesWhenUnknown(t *testing.T) {
 
 	// Fresh process: nothing was recorded yet.
 	inlineCapability.mu.Lock()
-	inlineCapability.ok, inlineCapability.known = false, false
+	inlineCapability.ok, inlineCapability.bot = false, nil
 	inlineCapability.mu.Unlock()
 
 	tb := &Tgbot{}
 	if !tb.inlineSupported() {
 		t.Error("an unknown cache answered inline-off; the probe must run first")
 	}
-	if !inlineCapability.known {
+	inlineCapability.mu.Lock()
+	probed := inlineCapability.bot
+	inlineCapability.mu.Unlock()
+	if probed != liveBot() {
 		t.Error("the probe did not record the capability")
 	}
 }
@@ -501,11 +504,7 @@ func setTestAdmins(t *testing.T, ids ...int64) {
 
 // recordForTest pins the capability cache without a round trip.
 func (s *inlineSupport) recordForTest(supported bool) {
-	s.mu.Lock()
-	s.ok = supported
-	s.known = true
-	s.at = time.Now()
-	s.mu.Unlock()
+	recordInlineCapability(liveBot(), supported)
 }
 
 func TestListMarkerParsesAndRejectsForeignPrefixes(t *testing.T) {
@@ -616,5 +615,24 @@ func TestLongMarkerStaysInsideTheResultIDLimit(t *testing.T) {
 	}
 	if got := markerResultID("cl:user@x"); got != "cl:user@x" {
 		t.Fatalf("short marker = %q, want it unchanged", got)
+	}
+}
+
+func TestInlineCapabilityDoesNotCarryAcrossConnections(t *testing.T) {
+	oldServer, _ := inlineCapturingServer(t, true)
+	defer oldServer.Close()
+	swapTestBot(t, oldServer.URL)
+	old := liveBot()
+	recordInlineCapability(old, true)
+
+	newServer, _ := inlineCapturingServer(t, false)
+	defer newServer.Close()
+	swapTestBot(t, newServer.URL)
+	if (&Tgbot{}).inlineSupported() {
+		t.Fatal("replacement reused the retired connection's inline support")
+	}
+	recordInlineCapability(old, true)
+	if (&Tgbot{}).inlineSupported() {
+		t.Fatal("late probe from retired connection overwrote current capability")
 	}
 }

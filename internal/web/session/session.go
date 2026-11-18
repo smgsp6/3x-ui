@@ -59,6 +59,7 @@ func miniAppPolicyNonceForToken(verifiedToken string) string {
 		// the identical Secret is later restored.
 		miniAppPolicy.nonce = ""
 		miniAppPolicy.tokenHash = [sha256.Size]byte{}
+		setMiniAppSessionPolicy("")
 		return ""
 	}
 	fingerprint := sha256.Sum256([]byte(token))
@@ -68,11 +69,13 @@ func miniAppPolicyNonceForToken(verifiedToken string) string {
 		var random [32]byte
 		if _, err := rand.Read(random[:]); err != nil {
 			miniAppPolicy.nonce = ""
+			setMiniAppSessionPolicy("")
 			return "" // fail closed if secure randomness is unavailable
 		}
 		miniAppPolicy.allowlist = allowlist
 		miniAppPolicy.tokenHash = fingerprint
 		miniAppPolicy.nonce = base64.RawURLEncoding.EncodeToString(random[:])
+		setMiniAppSessionPolicy(miniAppPolicy.nonce)
 	}
 	if verifiedToken != "" && subtle.ConstantTimeCompare([]byte(verifiedToken), []byte(token)) != 1 {
 		return ""
@@ -106,7 +109,7 @@ func SetLoginUser(c *gin.Context, user *model.User) error {
 		}
 		tgID = id
 		var err error
-		newSessionID, err = issueMiniAppSession()
+		newSessionID, err = issueMiniAppSession(policyNonce)
 		if err != nil {
 			return err
 		}
@@ -139,7 +142,7 @@ func SetTelegramMiniAppLoginUser(c *gin.Context, user *model.User, telegramID in
 	if policyNonce == "" {
 		return http.ErrNoCookie
 	}
-	sessionID, err := issueMiniAppSession()
+	sessionID, err := issueMiniAppSession(policyNonce)
 	if err != nil {
 		return err
 	}

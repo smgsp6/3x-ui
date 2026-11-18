@@ -323,8 +323,27 @@ restore_after_failed_update() (
   staging=$(mktemp -d -- "$ROOT/.restore.XXXXXXXX") || die '无法创建恢复暂存目录'
   trap 'rm -rf -- "$staging"' EXIT
   tar -C "$staging" -xzf "$archive" || die '备份解包失败，当前数据未变更'
+  # Resolve links against the complete extracted tree to detect escapes
+  # introduced by intermediate links, including paths containing '..'.
+  python3 - "$staging" <<'PYTHON' || die '备份链接不安全，当前数据未变更'
+import os, sys
+from pathlib import Path
+
+try:
+    base = Path(sys.argv[1]).resolve()
+    for label in ("db", "cert", "acme"):
+        root = base / label
+        for parent, directories, files in os.walk(root, followlinks=False):
+            for name in directories + files:
+                path = Path(parent) / name
+                if path.is_symlink() and not path.resolve().is_relative_to(root):
+                    raise ValueError("link leaves its data directory")
+except (OSError, RuntimeError, ValueError):
+    sys.exit(1)
+PYTHON
+  [[ ! -L "$ROOT/failed-updates" && ( ! -e "$ROOT/failed-updates" || -d "$ROOT/failed-updates" ) ]] ||
+    die '拒绝使用不安全的故障数据目录'
   compose "$old" stop -t 40 || die '无法停止容器，当前数据未变更'
-  [[ ! -L "$ROOT/failed-updates" ]] || die '拒绝使用符号链接故障数据目录'
   mkdir -p "$ROOT/failed-updates/$stamp"
   for item in db cert acme; do
     if [[ -d "$ROOT/$item" ]]; then

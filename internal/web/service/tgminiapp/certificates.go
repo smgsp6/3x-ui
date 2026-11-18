@@ -4,7 +4,6 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/pem"
-	"os"
 	"time"
 )
 
@@ -31,16 +30,7 @@ func InspectCertificate(purpose, certPath, keyPath string, now time.Time) Certif
 	}
 	// Only read paths already saved in panel settings. This function accepts
 	// NO HTTP path input; the API handler never lets a client pick filenames.
-	// Reject unexpectedly large files (e.g. a wrong path pointing at a log)
-	// rather than loading them into memory via os.ReadFile/LoadX509KeyPair.
-	const maxPEMSize = 2 << 20
-	for _, path := range []string{certPath, keyPath} {
-		info, err := os.Stat(path)
-		if err != nil || !info.Mode().IsRegular() || info.Size() > maxPEMSize {
-			return result
-		}
-	}
-	raw, err := os.ReadFile(certPath)
+	raw, err := readTLSPEM(certPath)
 	if err != nil {
 		return result
 	}
@@ -55,9 +45,12 @@ func InspectCertificate(purpose, certPath, keyPath string, now time.Time) Certif
 	result.DNSNames = cert.DNSNames
 	result.Issuer = cert.Issuer.CommonName
 	result.ValidFrom, result.ValidUntil = &cert.NotBefore, &cert.NotAfter
-	// Confirm the configured private key corresponds to this public certificate.
-	// tls.LoadX509KeyPair reads the key but never returns/serializes its contents.
-	if _, err := tls.LoadX509KeyPair(certPath, keyPath); err != nil {
+	key, err := readTLSPEM(keyPath)
+	if err != nil {
+		return result
+	}
+	// Match the key to the same certificate bytes used for the status above.
+	if _, err := tls.X509KeyPair(raw, key); err != nil {
 		return result
 	}
 	if now.Before(cert.NotBefore) {

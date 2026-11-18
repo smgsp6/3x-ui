@@ -5,11 +5,14 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 	"testing"
 
+	"github.com/gin-contrib/sessions"
+	"github.com/gin-contrib/sessions/cookie"
 	"github.com/gin-gonic/gin"
 
 	"github.com/mhsanaei/3x-ui/v3/internal/database"
@@ -19,6 +22,9 @@ import (
 	"github.com/mhsanaei/3x-ui/v3/internal/web/locale"
 	"github.com/mhsanaei/3x-ui/v3/internal/web/service"
 	"github.com/mhsanaei/3x-ui/v3/internal/web/service/discord"
+	"github.com/mhsanaei/3x-ui/v3/internal/web/service/panel"
+	"github.com/mhsanaei/3x-ui/v3/internal/web/service/tgminiapp"
+	"github.com/mhsanaei/3x-ui/v3/internal/web/session"
 )
 
 func TestValidateRegex(t *testing.T) {
@@ -242,10 +248,10 @@ func TestTestDiscordEndpoint(t *testing.T) {
 func TestVelaBotDiagnosticsIgnoreLegacyNotificationSwitch(t *testing.T) {
 	offline := errors.New("synthetic legacy settings unavailable")
 	for _, tt := range []struct {
-		name string
+		name          string
 		vela, enabled bool
-		err error
-		want bool
+		err           error
+		want          bool
 	}{
 		{"miniapp bypasses disabled legacy switch", true, false, nil, true},
 		{"miniapp bypasses legacy settings read errors", true, false, offline, true},
@@ -258,5 +264,68 @@ func TestVelaBotDiagnosticsIgnoreLegacyNotificationSwitch(t *testing.T) {
 				t.Fatalf("Bot configured = %t, want %t", got, tt.want)
 			}
 		})
+	}
+}
+
+func TestVelaCredentialChangeEndsBrowserSession(t *testing.T) {
+	t.Setenv("XUI_TG_MINIAPP_ENABLED", "true")
+	t.Setenv("XUI_TG_MINIAPP_ADMIN_IDS", "1001")
+	tokenFile := filepath.Join(t.TempDir(), "bot-token")
+	if err := os.WriteFile(tokenFile, []byte("12345:local_fixture"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("XUI_TG_MINIAPP_BOT_TOKEN_FILE", tokenFile)
+	dbtest.InitDB(t, filepath.Join(t.TempDir(), "x-ui.db"))
+	service := &panel.UserService{}
+	if err := service.UpdateFirstUser("fixture-before", "synthetic-before"); err != nil {
+		t.Fatal(err)
+	}
+	user, err := service.GetFirstUser()
+	if err != nil {
+		t.Fatal(err)
+	}
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(sessions.Sessions("3x-ui", cookie.NewStore([]byte("01234567890123456789012345678901"))))
+	router.POST("/login", func(c *gin.Context) {
+		if err := session.SetTelegramMiniAppLoginUser(c, user, 1001, tgminiapp.BotToken()); err != nil {
+			t.Fatal(err)
+		}
+		c.Status(http.StatusNoContent)
+	})
+	router.POST("/credentials", (&SettingController{}).updateUser)
+	router.GET("/protected", func(c *gin.Context) {
+		if !session.IsTelegramMiniAppLogin(c) {
+			c.AbortWithStatus(http.StatusUnauthorized)
+			return
+		}
+		c.Status(http.StatusNoContent)
+	})
+
+	login := httptest.NewRecorder()
+	router.ServeHTTP(login, httptest.NewRequest(http.MethodPost, "/login", nil))
+	cookies := login.Result().Cookies()
+	if len(cookies) != 1 {
+		t.Fatal("expected one signed login cookie")
+	}
+	update := httptest.NewRequest(http.MethodPost, "/credentials", strings.NewReader(
+		`{"oldUsername":"fixture-before","oldPassword":"synthetic-before","newUsername":"fixture-after","newPassword":"synthetic-after"}`))
+	update.Header.Set("Content-Type", "application/json")
+	update.AddCookie(cookies[0])
+	result := httptest.NewRecorder()
+	router.ServeHTTP(result, update)
+	if result.Code != http.StatusOK || !strings.Contains(result.Body.String(), `"success":true`) {
+		t.Fatalf("credential change failed: %d", result.Code)
+	}
+	deletion := result.Result().Cookies()
+	if len(deletion) != 1 || deletion[0].MaxAge >= 0 || !deletion[0].Secure {
+		t.Fatal("credential change did not expire the secure session cookie")
+	}
+	replay := httptest.NewRequest(http.MethodGet, "/protected", nil)
+	replay.AddCookie(cookies[0])
+	replayed := httptest.NewRecorder()
+	router.ServeHTTP(replayed, replay)
+	if replayed.Code != http.StatusUnauthorized {
+		t.Fatal("the original Telegram cookie survived credential change")
 	}
 }
