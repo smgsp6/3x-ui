@@ -457,11 +457,6 @@ func (t *Tgbot) Start(i18nFS embed.FS) error {
 		logger.Warning("Failed to parse admin ID from Telegram bot chat ID:", safeTelegramLogError(err))
 		return err
 	}
-	tgBotMutex.Lock()
-	adminIds = parsedAdminIds
-	adminTopics = parsedAdminTopics
-	tgBotMutex.Unlock()
-
 	// On a fresh Vela installation the upstream Telegram notification
 	// preferences might not exist yet. Do not read their proxy/API endpoint
 	// settings when the Bot Token comes from a private Docker Secret.
@@ -481,13 +476,7 @@ func (t *Tgbot) Start(i18nFS embed.FS) error {
 	// Create new Telegram bot instance. Do not expose a client-construction
 	// error to a caller that could print it outside this logging boundary.
 	stop := make(chan struct{})
-	botMu.Lock()
 	startedBot, err := t.NewBot(tgBotToken, tgBotProxy, tgBotAPIServer, stop)
-	if err == nil {
-		bot = startedBot
-		botStop = stop
-	}
-	botMu.Unlock()
 	if err != nil {
 		if tgminiapp.Enabled() {
 			logger.Warning("Vela Telegram bot initialization failed")
@@ -496,6 +485,17 @@ func (t *Tgbot) Start(i18nFS embed.FS) error {
 		logger.Error("Failed to initialize Telegram bot API:", safeTelegramLogError(err))
 		return err
 	}
+
+	// Publish the allowlist together with a usable connection. A failed
+	// construction must leave the authorization cleared by stopBotLocked.
+	tgBotMutex.Lock()
+	botMu.Lock()
+	adminIds = parsedAdminIds
+	adminTopics = parsedAdminTopics
+	bot = startedBot
+	botStop = stop
+	botMu.Unlock()
+	tgBotMutex.Unlock()
 
 	// Off the start path: with Telegram unreachable these block for a minute,
 	// holding the panel's signal loop and the sub server behind them.
@@ -757,6 +757,8 @@ func StopBot() {
 	stopBotLocked()
 }
 
+const botShutdownTimeout = 12 * time.Second
+
 // stopBotLocked is called with botLifecycleMu held by either Start or StopBot.
 func stopBotLocked() {
 	// Don't hold the receiver mutex while cancelling/waiting.
@@ -784,14 +786,10 @@ func stopBotLocked() {
 	botMu.Unlock()
 	tgBotMutex.Unlock()
 
-	userStateMgr.reset()
-	addClientDrafts.resetAll()
-	broadcastResetAll()
-
 	// Cancel incoming polling before draining the handler. Use a single
 	// shutdown deadline for the handler AND receiver completion: a broken
 	// Telegram network client must not hang panel shutdown indefinitely.
-	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 12*time.Second)
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), botShutdownTimeout)
 	defer shutdownCancel()
 	if cancel != nil {
 		cancel()
@@ -803,6 +801,10 @@ func stopBotLocked() {
 	if !awaitBotReceiver(shutdownCtx, done) {
 		logger.Warning("Telegram receiver did not exit before shutdown deadline")
 	}
+	userStateMgr.reset()
+	addClientDrafts.resetAll()
+	broadcastResetAll()
+
 	if cancel != nil {
 		logger.Info("Telegram bot successfully stopped.")
 	}

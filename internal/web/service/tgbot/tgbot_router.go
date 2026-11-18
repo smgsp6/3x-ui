@@ -24,14 +24,20 @@ func recoverBotPanic() {
 
 // runBotHandler runs a bot handler on a worker slot and recovers panics: a bad
 // callback must not take down the whole panel, the way a cron panic would not.
-func runBotHandler(fn func()) {
-	pool := currentBotWorkerPool()
+func runBotHandler(ctx context.Context, pool chan struct{}, fn func()) {
 	if pool == nil {
 		// An update cannot be processed without a receiver's worker pool.
 		return
 	}
-	pool <- struct{}{}
+	select {
+	case pool <- struct{}{}:
+	case <-ctx.Done():
+		return
+	}
 	defer func() { <-pool }()
+	if ctx.Err() != nil {
+		return
+	}
 	defer recoverBotPanic()
 	fn()
 }
@@ -75,6 +81,8 @@ func finishBotReceiver(receiver *telego.Bot) {
 	botHandler = nil
 	botCancel = nil
 	isRunning = false
+	adminIds = nil
+	adminTopics = nil
 	if botStop != nil {
 		close(botStop)
 		botStop = nil
@@ -125,17 +133,18 @@ func (t *Tgbot) receive(pollBot *telego.Bot) {
 		tgBotMutex.Unlock()
 		return
 	}
-	ctx, cancel := context.WithCancel(context.Background())
+	receiverCtx, cancel := context.WithCancel(context.Background())
 	botCancel = cancel
 	isRunning = true
 	// Capture a generation-specific completion channel before StopBot may
 	// snapshot the receiver, preventing waits on a later replacement bot.
 	done := make(chan struct{})
 	botReceiverDone = done
+	pool := currentBotWorkerPool()
 	tgBotMutex.Unlock()
 
 	// Failed initial polling must not leave the receiver marked as running.
-	updates, err := pollBot.UpdatesViaLongPolling(ctx, &params)
+	updates, err := pollBot.UpdatesViaLongPolling(receiverCtx, &params)
 	if err != nil || updates == nil {
 		cancel()
 		finishBotReceiver(pollBot)
@@ -145,9 +154,16 @@ func (t *Tgbot) receive(pollBot *telego.Bot) {
 	}
 	go func() {
 		defer close(done)
-		defer cancel()
-		defer finishBotReceiver(pollBot)
 		h, err := th.NewBotHandler(pollBot, updates)
+		defer func() {
+			finishBotReceiver(pollBot)
+			cancel()
+			if h != nil {
+				shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), botShutdownTimeout)
+				defer shutdownCancel()
+				_ = h.StopWithContext(shutdownCtx)
+			}
+		}()
 		if err != nil || h == nil {
 			logger.Warning("Telegram handler could not start:", safeTelegramLogError(err))
 			return
@@ -156,7 +172,7 @@ func (t *Tgbot) receive(pollBot *telego.Bot) {
 		// StopBot clears the current connection before cancelling the
 		// receiver context. Checking the connection as well closes that
 		// window: a stale handler can never publish itself after shutdown.
-		if ctx.Err() != nil || liveBot() != pollBot {
+		if receiverCtx.Err() != nil || liveBot() != pollBot {
 			tgBotMutex.Unlock()
 			return
 		}
@@ -193,8 +209,8 @@ func (t *Tgbot) receive(pollBot *telego.Bot) {
 				return nil
 			}
 
-			// Use goroutine with worker pool for concurrent command processing
-			go runBotHandler(func() {
+			// The SDK runs updates concurrently and drains handlers on stop.
+			runBotHandler(receiverCtx, pool, func() {
 				if liveBot() != pollBot {
 					return // queued command from an already retired receiver
 				}
@@ -213,7 +229,7 @@ func (t *Tgbot) receive(pollBot *telego.Bot) {
 		// since a query fires on every keystroke and would be swallowed.
 		h.HandleInlineQuery(func(ctx *th.Context, query telego.InlineQuery) error {
 			defer recoverBotPanic()
-			go runBotHandler(func() {
+			runBotHandler(receiverCtx, pool, func() {
 				if liveBot() != pollBot {
 					return
 				}
@@ -223,8 +239,7 @@ func (t *Tgbot) receive(pollBot *telego.Bot) {
 		})
 
 		h.HandleCallbackQuery(func(ctx *th.Context, query telego.CallbackQuery) error {
-			// Use goroutine with worker pool for concurrent callback processing
-			go runBotHandler(func() {
+			runBotHandler(receiverCtx, pool, func() {
 				if liveBot() != pollBot {
 					return
 				}
@@ -332,10 +347,10 @@ func (t *Tgbot) receive(pollBot *telego.Bot) {
 
 		// StopBot can run while registration is in progress. Never start
 		// processing a queued update after that Bot has been retired.
-		if ctx.Err() != nil || liveBot() != pollBot {
+		if receiverCtx.Err() != nil || liveBot() != pollBot {
 			return
 		}
-		if err := h.Start(); err != nil && ctx.Err() == nil {
+		if err := h.Start(); err != nil && receiverCtx.Err() == nil {
 			logger.Warning("Telegram receiver exited unexpectedly:", safeTelegramLogError(err))
 		}
 	}()

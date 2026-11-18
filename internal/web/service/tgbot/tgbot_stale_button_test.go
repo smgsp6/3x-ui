@@ -1,6 +1,7 @@
 package tgbot
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -139,7 +140,7 @@ func TestRunBotHandlerRecoversPanic(t *testing.T) {
 				t.Fatalf("panic escaped runBotHandler: %v", r)
 			}
 		}()
-		runBotHandler(func() {
+		runBotHandler(context.Background(), currentBotWorkerPool(), func() {
 			ran = true
 			panic("boom")
 		})
