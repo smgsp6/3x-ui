@@ -19,7 +19,7 @@ func TestCheckValidVelaTLSDoesNotDisclosePaths(t *testing.T) {
 	for _, tc := range cases {
 		settings := tc.cert
 		settings.WebPort, settings.SubPort = 2053, 2096
-		if err := settings.CheckValid(); err == nil || err.Error() != tc.wantReason {
+		if err := settings.CheckValid(); err == nil || strings.TrimSpace(err.Error()) != tc.wantReason {
 			t.Fatalf("unexpected TLS configuration error: %v", err)
 		}
 	}
