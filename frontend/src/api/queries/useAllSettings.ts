@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useRef, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { HttpUtil, Msg } from '@/utils';
@@ -27,6 +27,7 @@ async function fetchAllSetting(): Promise<AllSettingInput | null> {
 
 export function useAllSettings() {
   const queryClient = useQueryClient();
+  const saveInFlight = useRef(false);
   const [extraSpinning, setExtraSpinning] = useState(false);
 
   const query = useQuery({
@@ -81,17 +82,28 @@ export function useAllSettings() {
     },
   });
 
+  const { mutateAsync } = saveMut;
+  const save = useCallback(async (payload: SettingSavePayload, saved: AllSetting) => {
+    if (saveInFlight.current) return new Msg(false);
+    saveInFlight.current = true;
+    try {
+      return (await mutateAsync({ payload, saved })).msg;
+    } finally {
+      saveInFlight.current = false;
+    }
+  }, [mutateAsync]);
+
   const saveAll = useCallback(async () => {
     const saved = new AllSetting(allSetting);
-    return (await saveMut.mutateAsync({ payload: { ...saved }, saved })).msg;
-  }, [allSetting, saveMut]);
+    return save({ ...saved }, saved);
+  }, [allSetting, save]);
   const savePayload = useCallback(
     async (payload: SettingSavePayload) => {
       const saved = new AllSetting(allSetting);
       Object.assign(saved, payload);
-      return (await saveMut.mutateAsync({ payload, saved })).msg;
+      return save(payload, saved);
     },
-    [allSetting, saveMut],
+    [allSetting, save],
   );
   const saveDisabled = !isDirty;
 

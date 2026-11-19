@@ -37,6 +37,41 @@ describe('useAllSettings', () => {
     await waitFor(() => expect(second.result.current.fetched).toBe(true));
     expect(second.result.current.allSetting.subHostSortMode).toBe('hosts-first');
   });
+  it('serializes submit attempts and preserves edits made while saving', async () => {
+    let savedPort = 2053;
+    let finish!: () => void;
+    const post = vi.spyOn(HttpUtil, 'post').mockImplementation(async (url, body) => {
+      if (url === '/panel/api/setting/all') return new Msg(true, '', { webPort: savedPort });
+      return new Promise((resolve) => {
+        finish = () => {
+          savedPort = (body as { webPort: number }).webPort;
+          resolve(new Msg(true));
+        };
+      });
+    });
+    const client = makeTestQueryClient();
+    const wrapper = ({ children }: { children: ReactNode }) => (
+      <QueryClientProvider client={client}>{children}</QueryClientProvider>
+    );
+    const { result } = renderHook(() => useAllSettings(), { wrapper });
+    await waitFor(() => expect(result.current.fetched).toBe(true));
+    act(() => result.current.updateSetting({ webPort: 3053 }));
+    let pending!: Promise<Msg>;
+    act(() => { pending = result.current.saveAll(); });
+    await waitFor(() => expect(finish).toBeTypeOf('function'));
+    act(() => result.current.updateSetting({ webPort: 4053 }));
+
+    await expect(result.current.savePayload({ webPort: 4053 })).resolves.toMatchObject({ success: false });
+    expect(post.mock.calls.filter(([url]) => url === '/panel/api/setting/update')).toHaveLength(1);
+    await act(async () => {
+      finish();
+      await pending;
+    });
+    await waitFor(() => expect(client.getQueryData(keys.settings.all())).toMatchObject({ webPort: 3053 }));
+    expect(result.current.allSetting.webPort).toBe(4053);
+    expect(result.current.saveDisabled).toBe(false);
+  });
+
   it('refreshes cached default settings after a successful save', async () => {
     vi.spyOn(HttpUtil, 'post').mockResolvedValue(new Msg(true, '', {}));
     const queryClient = makeTestQueryClient();
