@@ -252,6 +252,19 @@ os.execv('/usr/bin/tar', ['/usr/bin/tar', *sys.argv[1:]])
         self.assertNotEqual(result.returncode, 0)
         self.assertFalse(self.log.exists())
 
+    def test_reject_symlinked_or_writable_secret_directory_before_docker(self):
+        secrets = self.root / 'secrets'
+        secrets.chmod(0o770)
+        self.assertNotEqual(self.run_cli('backup').returncode, 0)
+        self.assertFalse(self.log.exists())
+
+        secrets.chmod(0o700)
+        alternate = Path(self.temp.name) / 'alternate'
+        secrets.rename(alternate)
+        secrets.symlink_to(alternate, target_is_directory=True)
+        self.assertNotEqual(self.run_cli('backup').returncode, 0)
+        self.assertFalse(self.log.exists())
+
     def test_backup_preserves_database_and_certificates(self):
         run = self.run_cli('backup')
         self.assertEqual(run.returncode, 0, run.stderr)

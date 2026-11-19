@@ -4,7 +4,8 @@
   .tg-bottom-item {flex:1;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:5px;border:0;background:transparent;color:var(--ant-color-text-secondary,#8b97a8);font:inherit;font-size:11px;min-width:0;cursor:pointer}
   .tg-bottom-item>.anticon {font-size:21px}
   .tg-bottom-item.active {color:var(--ant-color-primary,#368fff);font-weight:700}
-  body:has(.tg-app-bottom-nav) #content-layout {padding-bottom:calc(80px + env(safe-area-inset-bottom,0px))!important}
+  .tg-app-bottom-nav[data-keyboard-open="true"] {display:none}
+  body:has(.tg-app-bottom-nav:not([data-keyboard-open])) #content-layout {padding-bottom:calc(80px + env(safe-area-inset-bottom,0px))!important}
 }
 @media(max-width:760px){
   /* Keep the full upstream navigation accessible from "更多", but don't show

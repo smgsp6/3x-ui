@@ -35,6 +35,27 @@ test('original panel hides the Telegram-only bottom navigation', () => {
   expect(screen.queryByRole('navigation', { name: 'Vela 小程序主导航' })).toBeNull();
 });
 
+test('Mini App navigation yields to a reduced editing viewport and returns after blur', async () => {
+  window.X_UI_TG_MINIAPP_MODE = true;
+  const viewport = Object.assign(new EventTarget(), { height: window.innerHeight, scale: 1 });
+  vi.stubGlobal('visualViewport', viewport);
+  try {
+    const view = renderNav();
+    const nav = screen.getByRole('navigation', { name: 'Vela 小程序主导航' });
+    const input = document.createElement('input');
+    view.container.append(input);
+    input.focus();
+    viewport.height = window.innerHeight - 300;
+    viewport.dispatchEvent(new Event('resize'));
+    await waitFor(() => expect(nav.getAttribute('data-keyboard-open')).toBe('true'));
+    input.blur();
+    await waitFor(() => expect(nav.hasAttribute('data-keyboard-open')).toBe(false));
+    view.unmount();
+  } finally {
+    vi.unstubAllGlobals();
+  }
+});
+
 test('Telegram navigation uses actual panel routes', () => {
   window.X_UI_TG_MINIAPP_MODE = true;
   renderNav();

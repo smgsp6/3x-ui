@@ -18,3 +18,7 @@
   opacity: 0.75;
   margin-bottom: 4px;
 }
+
+.node-history-status {
+  grid-column: 1 / -1;
+}

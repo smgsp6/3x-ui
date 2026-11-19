@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { HttpUtil } from '@/utils';
 import { Sparkline } from '@/components/viz';
@@ -29,19 +29,19 @@ const formatKbps = (v: number) => v.toLocaleString(undefined, { maximumFractionD
 
 export default function NodeHistoryPanel({ node, bucket = 30 }: NodeHistoryPanelProps) {
   const { t } = useTranslation();
-  const [cpuPoints, setCpuPoints] = useState<number[]>([]);
-  const [cpuLabels, setCpuLabels] = useState<string[]>([]);
-  const [memPoints, setMemPoints] = useState<number[]>([]);
-  const [memLabels, setMemLabels] = useState<string[]>([]);
-  const [netUpPoints, setNetUpPoints] = useState<number[]>([]);
-  const [netUpLabels, setNetUpLabels] = useState<string[]>([]);
-  const [netDownPoints, setNetDownPoints] = useState<number[]>([]);
-  const [netDownLabels, setNetDownLabels] = useState<string[]>([]);
-
-  const lastNodeId = useRef<number>(node.id);
+  const key = `${node.id}/${bucket}`;
+  const [history, setHistory] = useState<{
+    key: string;
+    series: { vals: number[]; labs: string[] }[];
+    failed: boolean;
+  } | null>(null);
+  const current = history?.key === key ? history : null;
+  const empty = { vals: [], labs: [] };
+  const [cpu = empty, mem = empty, netUp = empty, netDown = empty] = current?.series ?? [];
 
   useEffect(() => {
-    let cancelled = false;
+    const request = new AbortController();
+    let timer: number | undefined;
 
     const bucketLabel = (unixSec: number) => {
       const d = new Date(unixSec * 1000);
@@ -57,7 +57,9 @@ export default function NodeHistoryPanel({ node, bucket = 30 }: NodeHistoryPanel
     const fetchSeries = async (metric: string, kind: 'pct' | 'rate') => {
       try {
         const url = `/panel/api/nodes/history/${node.id}/${metric}/${bucket}`;
-        const msg = (await HttpUtil.get(url)) as ApiMsg<SeriesPoint[]>;
+        const msg = (await HttpUtil.get(url, undefined, {
+          silent: true, signal: request.signal, timeout: REFRESH_MS,
+        })) as ApiMsg<SeriesPoint[]>;
         if (msg?.success && Array.isArray(msg.obj)) {
           const vals: number[] = [];
           const labs: string[] = [];
@@ -68,53 +70,52 @@ export default function NodeHistoryPanel({ node, bucket = 30 }: NodeHistoryPanel
           }
           return { vals, labs };
         }
-      } catch (e) {
-        console.error('node history fetch failed', metric, e);
+      } catch {
+        // Leave the last complete snapshot visible while the connection recovers.
       }
-      return { vals: [] as number[], labs: [] as string[] };
+      return null;
     };
 
     const refresh = async () => {
-      const [cpu, mem, netUp, netDown] = await Promise.all([
+      const series = await Promise.all([
         fetchSeries('cpu', 'pct'),
         fetchSeries('mem', 'pct'),
         fetchSeries('netUp', 'rate'),
         fetchSeries('netDown', 'rate'),
       ]);
-      if (cancelled) return;
-      setCpuPoints(cpu.vals);
-      setCpuLabels(cpu.labs);
-      setMemPoints(mem.vals);
-      setMemLabels(mem.labs);
-      setNetUpPoints(netUp.vals);
-      setNetUpLabels(netUp.labs);
-      setNetDownPoints(netDown.vals);
-      setNetDownLabels(netDown.labs);
+      if (request.signal.aborted) return;
+      if (series.every((points) => points !== null)) {
+        setHistory({ key, series, failed: false });
+      } else {
+        setHistory((previous) => ({
+          key, series: previous?.key === key ? previous.series : [], failed: true,
+        }));
+      }
+      // Schedule from completion so an earlier response cannot overwrite a later refresh.
+      timer = window.setTimeout(refresh, REFRESH_MS);
     };
 
-    refresh();
-    const timer = window.setInterval(refresh, REFRESH_MS);
-    lastNodeId.current = node.id;
-
+    void refresh();
     return () => {
-      cancelled = true;
-      window.clearInterval(timer);
+      request.abort();
+      window.clearTimeout(timer);
     };
-  }, [node.id, bucket]);
+  }, [node.id, bucket, key]);
 
   return (
     <div className="node-history-panel">
+      {current?.failed && <div className="node-history-status" role="status">{t('somethingWentWrong')}</div>}
       <div className="series">
         <div className="series-title">{t('pages.nodes.cpu')}</div>
         <Sparkline
-          data={cpuPoints}
-          labels={cpuLabels}
+          data={cpu.vals}
+          labels={cpu.labs}
           height={120}
           stroke="#008771"
           showGrid
           showAxes
           tickCountX={4}
-          maxPoints={cpuPoints.length || 1}
+          maxPoints={cpu.vals.length || 1}
           fillOpacity={0.18}
           markerRadius={2.6}
           showTooltip
@@ -123,14 +124,14 @@ export default function NodeHistoryPanel({ node, bucket = 30 }: NodeHistoryPanel
       <div className="series">
         <div className="series-title">{t('pages.nodes.mem')}</div>
         <Sparkline
-          data={memPoints}
-          labels={memLabels}
+          data={mem.vals}
+          labels={mem.labs}
           height={120}
           stroke="#7c4dff"
           showGrid
           showAxes
           tickCountX={4}
-          maxPoints={memPoints.length || 1}
+          maxPoints={mem.vals.length || 1}
           fillOpacity={0.18}
           markerRadius={2.6}
           showTooltip
@@ -139,14 +140,14 @@ export default function NodeHistoryPanel({ node, bucket = 30 }: NodeHistoryPanel
       <div className="series">
         <div className="series-title">{t('pages.nodes.netUp')}</div>
         <Sparkline
-          data={netUpPoints}
-          labels={netUpLabels}
+          data={netUp.vals}
+          labels={netUp.labs}
           height={120}
           stroke="#1677ff"
           showGrid
           showAxes
           tickCountX={4}
-          maxPoints={netUpPoints.length || 1}
+          maxPoints={netUp.vals.length || 1}
           fillOpacity={0.18}
           markerRadius={2.6}
           showTooltip
@@ -157,14 +158,14 @@ export default function NodeHistoryPanel({ node, bucket = 30 }: NodeHistoryPanel
       <div className="series">
         <div className="series-title">{t('pages.nodes.netDown')}</div>
         <Sparkline
-          data={netDownPoints}
-          labels={netDownLabels}
+          data={netDown.vals}
+          labels={netDown.labs}
           height={120}
           stroke="#fa8c16"
           showGrid
           showAxes
           tickCountX={4}
-          maxPoints={netDownPoints.length || 1}
+          maxPoints={netDown.vals.length || 1}
           fillOpacity={0.18}
           markerRadius={2.6}
           showTooltip

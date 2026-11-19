@@ -28,6 +28,8 @@ const primary = [
   { path: '/certificates', name: '证书', Icon: SafetyCertificateOutlined },
 ];
 
+const editableSelector = 'textarea:not([readonly]):not([disabled]), input:not([readonly]):not([disabled]):is([type="text"], [type="search"], [type="email"], [type="password"], [type="tel"], [type="url"], [type="number"], :not([type])), [contenteditable]:not([contenteditable="false"])';
+
 /** All advanced Xray settings remain reachable; do not hide features on mobile. */
 export default function MiniAppBottomNav() {
   const { t } = useTranslation();
@@ -35,11 +37,37 @@ export default function MiniAppBottomNav() {
   const { pathname } = useLocation();
   const [moreOpen, setMoreOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
+  const [keyboardOpen, setKeyboardOpen] = useState(false);
   const moreSelected = !primary.some((item) => item.path === pathname);
   const allRoutes = useMemo(
     () => PANEL_ROUTES.filter((route) => !primary.some((p) => p.path === route.path)),
     [],
   );
+
+  useEffect(() => {
+    const viewport = window.visualViewport;
+    if (!window.X_UI_TG_MINIAPP_MODE || !viewport) return;
+    const update = () => {
+      const editable = document.activeElement?.closest(editableSelector);
+      setKeyboardOpen(Boolean(editable && viewport.scale === 1 && window.innerHeight - viewport.height > 120));
+    };
+    // focusout can run before activeElement is updated.
+    let frame = 0;
+    const schedule = () => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(update);
+    };
+    viewport.addEventListener('resize', schedule);
+    document.addEventListener('focusin', schedule);
+    document.addEventListener('focusout', schedule);
+    schedule();
+    return () => {
+      cancelAnimationFrame(frame);
+      viewport.removeEventListener('resize', schedule);
+      document.removeEventListener('focusin', schedule);
+      document.removeEventListener('focusout', schedule);
+    };
+  }, []);
 
   // The official Telegram WebApp BackButton is a separate control from
   // browser history. Never navigate(-1): a Mini App may open as a deep link
@@ -78,7 +106,7 @@ export default function MiniAppBottomNav() {
   };
   return (
     <>
-      <nav className="tg-app-bottom-nav" aria-label="Vela 小程序主导航">
+      <nav className="tg-app-bottom-nav" aria-label="Vela 小程序主导航" data-keyboard-open={keyboardOpen || undefined}>
         {primary.map(({ path, name, Icon }) => (
           <button
             key={path}

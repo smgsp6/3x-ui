@@ -37,6 +37,9 @@ for item in db cert acme; do
     echo "Vela 数据目录不存在: $item" >&2; exit 2
   fi
 done
+[[ -d "$ROOT/secrets" && ! -L "$ROOT/secrets" ]] || { echo 'Secret 目录缺失或为符号链接' >&2; exit 2; }
+secret_mode=$(stat -c %a -- "$ROOT/secrets")
+[[ $((8#$secret_mode & 8#022)) -eq 0 ]] || { echo 'Secret 目录不能允许组或其他用户写入' >&2; exit 2; }
 [[ -f "$ROOT/secrets/vela_bot_token" && ! -L "$ROOT/secrets/vela_bot_token" ]] || { echo '缺少本地 Bot Token Secret 文件' >&2; exit 2; }
 
 msg() { printf '[Vela] %s\n' "$*"; }

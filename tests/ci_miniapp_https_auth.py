@@ -430,25 +430,26 @@ def main():
         packet = (f"GET http://127.0.0.1:{dst_port}/ci-xray-probe HTTP/1.1\r\n"
                   f"Host: 127.0.0.1:{dst_port}\r\n"
                   "Connection: close\r\n\r\n").encode("ascii")
-        passed = False
-        for _ in range(50):
-            try:
-                with socket.create_connection(("127.0.0.1", port), timeout=2) as conn:
-                    conn.settimeout(2)
-                    conn.sendall(packet)
-                    reply = bytearray()
-                    while len(reply) < 8192:
-                        part = conn.recv(8192 - len(reply))
-                        if not part:
-                            break
-                        reply.extend(part)
-                if b" 200 " in reply[:64] and b"vela-loopback-xray-tcp-ok" in reply:
-                    passed = True
-                    break
-            except OSError:
-                pass
-            time.sleep(1)
-        require(passed, "genuine Xray TCP proxy did not reach synthetic origin")
+        def tcp_roundtrip():
+            for _ in range(50):
+                try:
+                    with socket.create_connection(("127.0.0.1", port), timeout=2) as conn:
+                        conn.settimeout(2)
+                        conn.sendall(packet)
+                        reply = bytearray()
+                        while len(reply) < 8192:
+                            part = conn.recv(8192 - len(reply))
+                            if not part:
+                                break
+                            reply.extend(part)
+                    if b" 200 " in reply[:64] and b"vela-loopback-xray-tcp-ok" in reply:
+                        return True
+                except OSError:
+                    pass
+                time.sleep(1)
+            return False
+
+        require(tcp_roundtrip(), "genuine Xray TCP proxy did not reach synthetic origin")
         print("TCP-CI stage: real proxy roundtrip succeeded", flush=True)
         addresses = []
         for line in Path("/proc/net/tcp").read_text(encoding="ascii").splitlines()[1:]:
@@ -457,6 +458,30 @@ def main():
                 addresses.append(cols[1].split(":")[0])
         require(addresses and set(addresses) == {"0100007F"},
                 "live TCP proxy listener was not restricted to 127.0.0.1")
+
+        toggle = f"/panel/api/inbounds/setEnable/{live_id}"
+        rejected, _, _ = http(toggle, "POST", {"enable": False})
+        require(rejected == 403 and api_obj(f"/panel/api/inbounds/get/{live_id}").get("enable") is True,
+                "toggle without CSRF changed the inbound or was not rejected")
+        api_obj(toggle, "POST", {"enable": False}, crud_csrf)
+        require(api_obj(f"/panel/api/inbounds/get/{live_id}").get("enable") is False,
+                "disable state was not persisted")
+        api_obj("/panel/api/server/restartXrayService", "POST", {}, crud_csrf)
+        for _ in range(15):
+            try:
+                with socket.create_connection(("127.0.0.1", port), timeout=1):
+                    pass
+            except OSError:
+                break
+            time.sleep(1)
+        else:
+            raise AssertionError("disabled TCP inbound retained its listener")
+
+        api_obj(toggle, "POST", {"enable": True}, crud_csrf)
+        require(api_obj(f"/panel/api/inbounds/get/{live_id}").get("enable") is True,
+                "re-enable state was not persisted")
+        api_obj("/panel/api/server/restartXrayService", "POST", {}, crud_csrf)
+        require(tcp_roundtrip(), "re-enabled TCP inbound did not resume proxying")
     finally:
         if live_id is not None:
             api_obj(f"/panel/api/inbounds/del/{live_id}", "POST", {}, crud_csrf)
@@ -476,7 +501,7 @@ def main():
         time.sleep(1)
     else:
         raise AssertionError("deleted Xray TCP inbound retained a listener")
-    print("21/26 real Xray TCP dataplane, kernel loopback binding and teardown verified")
+    print("21/26 real Xray TCP dataplane, kernel loopback binding, disable/re-enable and teardown verified")
 
     # SOCKS5 UDP ASSOCIATE reaches a real UDP echo service through Xray.
     # All sockets stay inside the --network none Docker namespace. Unlike
