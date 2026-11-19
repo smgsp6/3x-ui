@@ -93,7 +93,7 @@ def prepare(lock, approved_hash, inputs, context):
     ):
         continuation = " \\" if stage == "runtime" else ""
         text = replace_once(text, pattern,
-                            f"RUN --mount=type=bind,source=vela-reviewed-inputs/{stage},target=/reviewed "
+                            f"RUN --network=none --mount=type=bind,source=vela-reviewed-inputs/{stage},target=/reviewed "
                             f"apk add --no-network --no-cache /reviewed/*.apk{continuation}")
     text = text.replace("RUN npm ci --ignore-scripts --no-audit --no-fund",
                         "RUN npm ci --ignore-scripts --no-audit --no-fund --registry=https://registry.npmjs.org")

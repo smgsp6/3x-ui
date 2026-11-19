@@ -107,7 +107,8 @@ case "${1:-}" in
         evidence="$XDG_RUNTIME_DIR/vela-beta-evidence"
         [[ "$VELA_BUILD_EVIDENCE" == "$evidence" ]] || fail 'Use the dedicated evidence file in XDG_RUNTIME_DIR.'
         rm -f -- "$evidence"
-        [[ -z "$(docker ps -aq)" ]] || fail 'Use a disposable Docker daemon with no existing containers.'
+        existing_containers=$(docker ps -aq)
+        [[ -z "$existing_containers" ]] || fail 'Use a disposable Docker daemon with no existing containers.'
         for test_tag in vela-ci-recovery-old:local vela-ci-recovery-failed:local; do
             if docker image inspect "$test_tag" >/dev/null 2>&1; then fail 'Recovery test tag already exists.'; fi
         done
@@ -166,7 +167,12 @@ case "${1:-}" in
         registry_login
         check_private_package
         check_unused_tag
-        docker push "$candidate"
+        test "$(docker image inspect --format '{{.Id}}' "$candidate")" = "$config_id"
+        push_result=$(docker push "$candidate")
+        pushed_digest=$(sed -nE 's/^vela-beta-'"$source_sha"': digest: (sha256:[0-9a-f]{64}) size: [0-9]+[[:space:]]*$/\1/p' <<<"$push_result")
+        [[ "$pushed_digest" =~ ^sha256:[0-9a-f]{64}$ ]] ||
+            fail 'Push digest unavailable. Do not deploy or blindly retry.'
+        printf 'Published manifest digest (pending independent verification): %s\n' "$pushed_digest"
         if [[ -n "${GITHUB_OUTPUT:-}" ]]; then
             printf 'config_id=%s\n' "$config_id" >> "$GITHUB_OUTPUT"
         else
@@ -176,6 +182,7 @@ case "${1:-}" in
         ;;
     verify)
         [[ "${EXPECTED_CONFIG_ID:-}" =~ ^sha256:[a-f0-9]{64}$ ]] || fail 'Expected audited config ID is required.'
+        [[ "${EXPECTED_PUSH_DIGEST:-}" =~ ^sha256:[a-f0-9]{64}$ ]] || fail 'Recorded push manifest digest is required.'
         check_delivery
         lock_docker
         : "${PUBLISH_DOCKER_ID:?Supply the recorded publisher Docker daemon ID}"
@@ -187,6 +194,7 @@ case "${1:-}" in
         registry_login
         digest=$(docker buildx imagetools inspect "$candidate" --format '{{json .Manifest}}' | jq -er '.digest // .Digest')
         [[ "$digest" =~ ^sha256:[a-f0-9]{64}$ ]] || fail 'GHCR did not return a manifest digest.'
+        [[ "$digest" == "$EXPECTED_PUSH_DIGEST" ]] || fail 'Remote manifest differs from the recorded push digest.'
         docker pull --platform linux/amd64 "$image@$digest"
         check_image "$image@$digest"
         test "$(docker image inspect --format '{{.Id}}' "$image@$digest")" = "$EXPECTED_CONFIG_ID"
