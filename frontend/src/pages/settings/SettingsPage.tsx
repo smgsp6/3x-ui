@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { useLocation } from 'react-router';
+import { useBlocker, useLocation } from 'react-router';
 import {
   Alert,
   Button,
@@ -96,6 +96,10 @@ export default function SettingsPage() {
 
   const [alertVisible, setAlertVisible] = useState(true);
   const location = useLocation();
+  const draftNavigation = useBlocker(({ currentLocation, nextLocation }) =>
+    window.X_UI_TG_MINIAPP_MODE === true && !saveDisabled &&
+    currentLocation.pathname !== nextLocation.pathname,
+  );
   const slug = location.hash.replace(/^#/, '');
   const activeSlug = tabSlugs.includes(slug) ? slug : 'general';
 
@@ -105,6 +109,13 @@ export default function SettingsPage() {
 
     let base = webBasePath ? webBasePath.replace(/^\//, '') : '';
     if (base && !base.endsWith('/')) base += '/';
+
+    // Telegram connects to the HTTPS edge, which may terminate TLS itself.
+    if (window.X_UI_TG_MINIAPP_MODE) {
+      const url = new URL(window.location.href);
+      url.pathname = `/${base}panel/settings`;
+      return url.toString();
+    }
 
     if (!entryIsIP) {
       const url = new URL(window.location.href);
@@ -236,6 +247,17 @@ export default function SettingsPage() {
     <ConfigProvider theme={antdThemeConfig}>
       {messageContextHolder}
       {modalContextHolder}
+      <Modal
+        open={draftNavigation.state === 'blocked'}
+        title="设置尚未保存"
+        okText="放弃并离开"
+        okButtonProps={{ danger: true }}
+        cancelText={t('cancel')}
+        onOk={() => draftNavigation.proceed?.()}
+        onCancel={() => draftNavigation.reset?.()}
+      >
+        返回设置可以保留当前草稿。
+      </Modal>
       <Layout className={pageClass}>
         <AppSidebar />
 
