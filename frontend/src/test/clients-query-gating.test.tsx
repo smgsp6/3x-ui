@@ -1,11 +1,15 @@
 import type { ReactNode } from 'react';
-import { renderHook, waitFor, act } from '@testing-library/react';
+import { renderHook, waitFor, act, fireEvent, screen } from '@testing-library/react';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { useClients } from '@/hooks/useClients';
-import { makeTestQueryClient } from '@/test/test-utils';
+import { makeTestQueryClient, renderWithProviders } from '@/test/test-utils';
+import { MemoryRouter } from 'react-router';
+import ClientsPage from '@/pages/clients/ClientsPage';
 import { HttpUtil, Msg } from '@/utils';
+
+vi.mock('@/layouts/AppSidebar', () => ({ default: () => null }));
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -56,6 +60,34 @@ function wrapperFor() {
     <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
   );
 }
+
+describe('client filter persistence in a WebView', () => {
+  afterEach(() => localStorage.removeItem('clientsFilterState'));
+
+  it('restores search after reopening the client page', async () => {
+    mockPanel({ pageSize: 25 });
+    const page = <MemoryRouter><ClientsPage /></MemoryRouter>;
+    const first = renderWithProviders(page);
+    const search = await screen.findByRole('textbox', { name: 'Search' });
+    fireEvent.change(search, { target: { value: 'synthetic-filter' } });
+    first.unmount();
+    renderWithProviders(page);
+    expect(await screen.findByDisplayValue('synthetic-filter')).toBeTruthy();
+  });
+
+  it('can still search when browser storage cannot save preferences', async () => {
+    const original = Storage.prototype.setItem;
+    vi.spyOn(Storage.prototype, 'setItem').mockImplementation(function (this: Storage, key, value) {
+      if (key === 'clientsFilterState') throw new DOMException('Synthetic storage policy', 'SecurityError');
+      original.call(this, key, value);
+    });
+    const urls = mockPanel({ pageSize: 25 });
+    renderWithProviders(<MemoryRouter><ClientsPage /></MemoryRouter>);
+    const search = await screen.findByRole('textbox', { name: 'Search' });
+    fireEvent.change(search, { target: { value: 'synthetic-filter' } });
+    await waitFor(() => expect(urls.some((url) => url.includes('synthetic-filter'))).toBe(true));
+  });
+});
 
 describe('useClients query gating', () => {
   it.each([

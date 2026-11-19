@@ -469,16 +469,20 @@ export default function ClientsPage() {
   }
 
   useEffect(() => {
-    localStorage.setItem(
-      FILTER_STATE_KEY,
-      JSON.stringify({
-        searchKey,
-        filters,
-        sort: sortValueFor(sortColumn, sortOrder),
-        // Only ever persist a size we actually resolved, never the render fallback.
-        pageSize: resolvedPageSize,
-      }),
-    );
+    try {
+      localStorage.setItem(
+        FILTER_STATE_KEY,
+        JSON.stringify({
+          searchKey,
+          filters,
+          sort: sortValueFor(sortColumn, sortOrder),
+          // Only persist a resolved size, never the render fallback.
+          pageSize: resolvedPageSize,
+        }),
+      );
+    } catch {
+      // Some WebViews deny storage or hit quota. Keep the current filters usable.
+    }
   }, [searchKey, filters, sortColumn, sortOrder, resolvedPageSize]);
 
   useEffect(() => {

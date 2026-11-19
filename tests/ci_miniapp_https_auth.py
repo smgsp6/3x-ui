@@ -286,7 +286,21 @@ def main():
     require(client_detail.get("client", {}).get("comment") == "updated synthetic fixture"
             and client_detail.get("client", {}).get("uuid") == client_uuid,
             "partial client update failed or rotated credentials unexpectedly")
-    print("16/26 partial VLESS client update preserved its generated identifier")
+    client_route = "/panel/api/clients/update/" + encoded_email
+    expiry = (int(time.time()) + 3600) * 1000
+    api_obj(client_route, "POST", {"enable": True, "expiryTime": expiry}, crud_csrf)
+    enabled_client = api_obj("/panel/api/clients/get?email=" + encoded_email)["client"]
+    require(enabled_client.get("enable") is True and enabled_client.get("expiryTime") == expiry
+            and enabled_client.get("uuid") == client_uuid,
+            "client enable or expiry update did not preserve the expected fields")
+    require(api_obj(f"/panel/api/inbounds/get/{vless_id}").get("enable") is False,
+            "enabling a client also enabled its disabled inbound")
+    api_obj(client_route, "POST", {"enable": False}, crud_csrf)
+    disabled_client = api_obj("/panel/api/clients/get?email=" + encoded_email)["client"]
+    require(disabled_client.get("enable") is False and disabled_client.get("expiryTime") == expiry
+            and disabled_client.get("uuid") == client_uuid,
+            "disabling the client discarded its expiry or identifier")
+    print("16/26 VLESS client enable, expiry and disable persisted without enabling its inbound")
 
     # Exercise the original traffic API with a disabled synthetic VLESS client.
     # No Xray network traffic is generated: these are isolated SQLite counters.
