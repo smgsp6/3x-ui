@@ -43,6 +43,7 @@ describe('http-init fetch wrapper', () => {
   });
 
   afterEach(() => {
+    delete window.X_UI_TG_MINIAPP_MODE;
     vi.unstubAllGlobals();
   });
 
@@ -170,6 +171,33 @@ describe('http-init fetch wrapper', () => {
     ]);
     expect(second).toBe(pending);
     expect(replaceMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('never replays a Mini App write after a 403', async () => {
+    window.X_UI_TG_MINIAPP_MODE = true;
+    document.head.innerHTML = '<meta name="csrf-token" content="synthetic">';
+    http.setupHttp();
+    fetchMock.mockResolvedValueOnce(new Response('', { status: 403 }));
+    await expect(http.httpRequest('POST', '/panel/api/x', { a: 1 })).rejects.toMatchObject({ status: 403 });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('ignores late success and stops sending new requests after Mini App expiry', async () => {
+    window.X_UI_TG_MINIAPP_MODE = true;
+    http.setupHttp();
+    let finish!: (response: Response) => void;
+    fetchMock.mockImplementationOnce(() => new Promise<Response>((resolve) => { finish = resolve; }));
+    fetchMock.mockResolvedValueOnce(new Response('', { status: 401 }));
+    const old = http.httpRequest('GET', '/panel/api/old');
+    void http.httpRequest('GET', '/panel/api/expiry');
+    await vi.waitFor(() => expect(replaceMock).toHaveBeenCalledTimes(1));
+    expect(replaceMock).toHaveBeenCalledWith('/?signedOut=1');
+    finish(okEnvelope());
+    const pending = Symbol();
+    await expect(Promise.race([old, new Promise((resolve) => setTimeout(() => resolve(pending), 20))]))
+      .resolves.toBe(pending);
+    void http.httpRequest('POST', '/panel/api/new', { a: 1 });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it('parses empty, 204, non-JSON, and malformed bodies tolerantly', async () => {

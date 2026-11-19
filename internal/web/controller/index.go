@@ -182,7 +182,11 @@ func loginFailureReason(err error) string {
 func (a *IndexController) logout(c *gin.Context) {
 	user := session.GetLoginUser(c)
 	if user != nil {
-		logger.Infof("logged out successfully: username=%q", user.Username)
+		if tgminiapp.Enabled() {
+			logger.Info("Telegram Mini App session ended")
+		} else {
+			logger.Infof("logged out successfully: username=%q", user.Username)
+		}
 	}
 	if err := session.ClearSession(c); err != nil {
 		logger.Warning("Unable to clear session on logout:", err)

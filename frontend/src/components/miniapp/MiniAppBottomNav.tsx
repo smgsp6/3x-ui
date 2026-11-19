@@ -6,10 +6,13 @@ import {
   AppstoreOutlined,
   CloudServerOutlined,
   HomeOutlined,
+  LogoutOutlined,
   SafetyCertificateOutlined,
   TeamOutlined,
 } from '@ant-design/icons';
 import { PANEL_ROUTES } from '@/routes/panelRoutes';
+import { leaveMiniAppSession } from '@/api/http-init';
+import { HttpUtil } from '@/utils';
 import './MiniAppBottomNav.css';
 
 declare global {
@@ -31,6 +34,7 @@ export default function MiniAppBottomNav() {
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const [moreOpen, setMoreOpen] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
   const moreSelected = !primary.some((item) => item.path === pathname);
   const allRoutes = useMemo(
     () => PANEL_ROUTES.filter((route) => !primary.some((p) => p.path === route.path)),
@@ -63,6 +67,15 @@ export default function MiniAppBottomNav() {
   }, [moreOpen, navigate, pathname]);
 
   if (!window.X_UI_TG_MINIAPP_MODE) return null;
+  const logout = async () => {
+    setSigningOut(true);
+    try {
+      const result = await HttpUtil.post('/logout', undefined, { timeout: 15_000 });
+      if (result.success) leaveMiniAppSession();
+    } finally {
+      setSigningOut(false);
+    }
+  };
   return (
     <>
       <nav className="tg-app-bottom-nav" aria-label="Vela 小程序主导航">
@@ -113,6 +126,10 @@ export default function MiniAppBottomNav() {
               </button>
             );
           })}
+          <button type="button" className="vela-more-entry" disabled={signingOut} onClick={() => void logout()}>
+            <span className="vela-more-entry-icon"><LogoutOutlined aria-hidden /></span>
+            <span>{t('logout')}</span>
+          </button>
         </div>
       </Drawer>
     </>

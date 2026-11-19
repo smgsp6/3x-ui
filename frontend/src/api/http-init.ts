@@ -6,6 +6,13 @@ let csrfFetchPromise: Promise<string | null> | null = null;
 let sessionExpired = false;
 let basePathPrefix = '';
 
+export function leaveMiniAppSession(): void {
+  if (sessionExpired) return;
+  sessionExpired = true;
+  const base = window.X_UI_BASE_PATH || basePathPrefix || '/';
+  window.location.replace(base + '?signedOut=1');
+}
+
 export interface HttpResponse {
   ok: boolean;
   status: number;
@@ -141,6 +148,7 @@ async function performFetch(
 
   if (!SAFE_METHODS.has(upper)) {
     const token = csrfOverride ?? (await ensureCsrfToken());
+    if (sessionExpired && window.X_UI_TG_MINIAPP_MODE) return new Promise<Response>(() => {});
     if (token) headers.set('X-CSRF-Token', token);
   }
 
@@ -172,9 +180,14 @@ export async function httpRequest(
   data?: unknown,
   options: HttpRequestOptions = {},
 ): Promise<HttpResponse> {
+  if (sessionExpired && window.X_UI_TG_MINIAPP_MODE) return new Promise<HttpResponse>(() => {});
+  if (options.signal?.aborted) throw new DOMException('Request aborted', 'AbortError');
   let res = await performFetch(method, url, data, options);
+  if (options.signal?.aborted) throw new DOMException('Request aborted', 'AbortError');
 
-  if (res.status === 403 && !SAFE_METHODS.has(method.toUpperCase())) {
+  // A fresh CSRF token can belong to a different Telegram session. Require
+  // a deliberate action from a newly opened panel instead of replaying writes.
+  if (res.status === 403 && !window.X_UI_TG_MINIAPP_MODE && !SAFE_METHODS.has(method.toUpperCase())) {
     csrfToken = null;
     const fresh = await fetchCsrfToken();
     if (fresh) {
@@ -184,7 +197,9 @@ export async function httpRequest(
   }
 
   if (res.status === 401) {
-    if (!sessionExpired) {
+    if (window.X_UI_TG_MINIAPP_MODE) {
+      leaveMiniAppSession();
+    } else if (!sessionExpired) {
       sessionExpired = true;
       window.location.replace(window.X_UI_BASE_PATH || basePathPrefix || '/');
     }
@@ -192,6 +207,8 @@ export async function httpRequest(
   }
 
   const parsed = await parseBody(res);
+  if (sessionExpired && window.X_UI_TG_MINIAPP_MODE) return new Promise<HttpResponse>(() => {});
+  if (options.signal?.aborted) throw new DOMException('Request aborted', 'AbortError');
   if (!res.ok) throw new HttpError(res.status, res.statusText, parsed);
   return { ok: true, status: res.status, statusText: res.statusText, data: parsed };
 }

@@ -4,7 +4,11 @@ import { afterEach, expect, test, vi } from 'vitest';
 
 import MiniAppBottomNav from '@/components/miniapp/MiniAppBottomNav';
 import { PANEL_ROUTES } from '@/routes/panelRoutes';
+import { HttpUtil, Msg } from '@/utils';
+import { leaveMiniAppSession } from '@/api/http-init';
 import { renderWithProviders } from './test-utils';
+
+vi.mock('@/api/http-init', { spy: true });
 
 function CurrentPath() {
   const location = useLocation();
@@ -49,7 +53,7 @@ test('advanced Xray functions remain in the More drawer', async () => {
   fireEvent.click(within(nav).getByRole('button', { name: '更多' }));
   const advanced = PANEL_ROUTES.filter((r) => !['/', '/nodes', '/clients', '/certificates'].includes(r.path));
   await waitFor(() => {
-    expect(document.querySelectorAll('.vela-more-entry')).toHaveLength(advanced.length);
+    expect(document.querySelectorAll('.vela-more-entry')).toHaveLength(advanced.length + 1);
   });
   const entries = document.querySelectorAll<HTMLButtonElement>('.vela-more-entry');
   const inboundIndex = advanced.findIndex((r) => r.path === '/inbounds');
@@ -58,6 +62,23 @@ test('advanced Xray functions remain in the More drawer', async () => {
   expect(advanced.some((r) => r.path === '/xray')).toBe(true);
   fireEvent.click(entries[inboundIndex]!);
   expect(screen.getByTestId('current-route').textContent).toBe('/inbounds');
+});
+
+test('mobile logout waits for server success before leaving the session', async () => {
+  window.X_UI_TG_MINIAPP_MODE = true;
+  vi.mocked(leaveMiniAppSession).mockImplementation(() => {});
+  const post = vi.mocked(HttpUtil.post);
+  post.mockResolvedValueOnce(new Msg(false)).mockResolvedValueOnce(new Msg(true));
+  renderNav();
+  fireEvent.click(screen.getByRole('button', { name: '更多' }));
+  const entries = document.querySelectorAll<HTMLButtonElement>('.vela-more-entry');
+  const logout = entries[entries.length - 1]!;
+  fireEvent.click(logout);
+  await waitFor(() => expect(logout.disabled).toBe(false));
+  expect(leaveMiniAppSession).not.toHaveBeenCalled();
+  fireEvent.click(logout);
+  await waitFor(() => expect(leaveMiniAppSession).toHaveBeenCalledTimes(1));
+  expect(post).toHaveBeenLastCalledWith('/logout', undefined, { timeout: 15_000 });
 });
 
 test('Telegram native BackButton closes More first then returns safely to dashboard', async () => {

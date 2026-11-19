@@ -3,9 +3,20 @@ import { afterEach, expect, test, vi } from 'vitest';
 import { MiniAppEntry } from '@/entries/miniapp';
 
 afterEach(() => {
+  window.history.replaceState(null, '', '/');
   delete window.Telegram;
   vi.unstubAllGlobals();
   vi.useRealTimers();
+});
+
+test('signed-out landing does not submit initData from the same WebView', async () => {
+  window.history.replaceState(null, '', '/?signedOut=1');
+  window.Telegram = { WebApp: { initData: 'synthetic-fixture' } };
+  const fetchMock = vi.fn();
+  vi.stubGlobal('fetch', fetchMock);
+  render(<MiniAppEntry />);
+  expect(await screen.findByText(/会话已结束/)).toBeTruthy();
+  expect(fetchMock).not.toHaveBeenCalled();
 });
 
 test('retry refreshes CSRF and ignores a late response from the timed-out attempt', async () => {

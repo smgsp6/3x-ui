@@ -355,4 +355,25 @@ func TestTLSReloaderRefreshesChainWithSameLeaf(t *testing.T) {
 	if status := InspectCertificate("panel", path, key, now); status.Status != "invalid" {
 		t.Fatalf("invalid issuer reported as %s on the certificate page", status.Status)
 	}
+
+	renewedLeaf := *initial.Leaf
+	renewedLeaf.SerialNumber = big.NewInt(3)
+	renewedLeaf.NotAfter = now.Add(45 * 24 * time.Hour)
+	renewedDER, err := x509.CreateCertificate(rand.Reader, &renewedLeaf, ca, renewedLeaf.PublicKey, caKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	renewedPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: renewedDER})
+	if err := os.WriteFile(path, renewedPEM, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if got := reloader.currentAt(now.Add(6 * tlsRefreshInterval)); got != updated {
+		t.Fatal("a new leaf from the same issuer replaced the full chain before its issuer arrived")
+	}
+	if err := os.WriteFile(path, append(renewedPEM, chainPEM...), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if got := reloader.currentAt(now.Add(8 * tlsRefreshInterval)); got == updated || len(got.Certificate) != 2 {
+		t.Fatal("complete renewed chain did not replace the previous chain")
+	}
 }

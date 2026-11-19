@@ -137,6 +137,21 @@ func keepsCertificateIdentity(oldLeaf, candidate *x509.Certificate) bool {
 	return true
 }
 
+func losesKnownIssuers(current, candidate *tls.Certificate) bool {
+	if len(candidate.Certificate) >= len(current.Certificate) {
+		return false
+	}
+	if bytes.Equal(candidate.Certificate[0], current.Certificate[0]) {
+		return true
+	}
+	if len(candidate.Certificate) != 1 {
+		return false
+	}
+	issuer, err := x509.ParseCertificate(current.Certificate[1])
+	return err == nil && bytes.Equal(candidate.Leaf.RawIssuer, issuer.RawSubject) &&
+		candidate.Leaf.CheckSignatureFrom(issuer) == nil
+}
+
 // currentAt is separated from TLS to permit deterministic offline rotation
 // tests. It polls at most once per interval, not once per network request.
 func (r *TLSCertificateReloader) currentAt(now time.Time) *tls.Certificate {
@@ -150,9 +165,8 @@ func (r *TLSCertificateReloader) currentAt(now time.Time) *tls.Certificate {
 				// certificate; a deliberate manual change can still restart.
 				newLeaf := candidate.Leaf
 				oldLeaf, oldErr := x509.ParseCertificate(r.current.Certificate[0])
-				truncated := len(candidate.Certificate) < len(r.current.Certificate) &&
-					bytes.Equal(candidate.Certificate[0], r.current.Certificate[0])
-				if oldErr == nil && !truncated && !newLeaf.NotAfter.Before(oldLeaf.NotAfter) && keepsCertificateIdentity(oldLeaf, newLeaf) {
+				if oldErr == nil && !losesKnownIssuers(r.current, candidate) &&
+					!newLeaf.NotAfter.Before(oldLeaf.NotAfter) && keepsCertificateIdentity(oldLeaf, newLeaf) {
 					r.current = candidate
 				}
 			}

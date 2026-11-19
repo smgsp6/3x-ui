@@ -29,6 +29,10 @@ export function MiniAppEntry() {
   const [retryable, setRetryable] = useState(false);
 
   useEffect(() => {
+    if (new URLSearchParams(window.location.search).get('signedOut') === '1') {
+      setError('会话已结束。请从 Telegram 机器人重新打开小程序。');
+      return;
+    }
     let canceled = false;
     const request = new AbortController();
     const transientFailure = () => {
