@@ -898,7 +898,7 @@ export default function ClientFormModal({
         open={open}
         title={isEdit ? t('pages.clients.editClient') : t('pages.clients.addClient')}
         destroyOnHidden
-        className="client-form-modal"
+        className="client-form-modal vela-confirm-editor-close"
         width={720}
         zIndex={CLIENT_FORM_MODAL_Z_INDEX}
         style={{ top: 20 }}

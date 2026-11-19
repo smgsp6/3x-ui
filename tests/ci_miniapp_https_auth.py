@@ -152,6 +152,8 @@ def main():
             b"window.X_UI_TG_MINIAPP_MODE=true" in panel_html and
             panel_html.count(b'src="https://telegram.org/js/telegram-web-app.js"') == 1,
             "signed Telegram panel missing the official SDK or Mini App mode")
+    require(b'viewport-fit=cover' in panel_html,
+            "signed Telegram panel does not enable mobile safe areas")
     # Relax script-src for the official bridge ONLY. Never permit Telegram
     # in connect-src, default-src, framing, or as a broad arbitrary origin.
     policies = {}

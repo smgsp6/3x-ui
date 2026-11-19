@@ -1218,6 +1218,7 @@ export default function InboundFormModal({
       {modalContextHolder}
       <Modal
         open={open}
+        className="vela-confirm-editor-close"
         title={title}
         okText={okText}
         cancelText={t('close')}

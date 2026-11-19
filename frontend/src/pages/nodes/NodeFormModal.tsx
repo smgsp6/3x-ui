@@ -263,6 +263,7 @@ export default function NodeFormModal({
       {messageContextHolder}
       <Modal
         open={open}
+        className="vela-confirm-editor-close"
         title={title}
         confirmLoading={submitting}
         okText={t('save')}

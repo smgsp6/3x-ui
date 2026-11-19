@@ -145,6 +145,8 @@ func serveDistPage(c *gin.Context, name string) {
 	// validated Telegram login session; ordinary browser panels stay intact.
 	telegramPanel := name == "index.html" && session.IsTelegramMiniAppLogin(c)
 	if telegramPanel {
+		body = bytes.Replace(body, []byte(`content="width=device-width, initial-scale=1.0"`),
+			[]byte(`content="width=device-width, initial-scale=1.0, viewport-fit=cover"`), 1)
 		script += `;window.X_UI_TG_MINIAPP_MODE=true`
 		middleware.AllowTelegramMiniAppSDK(c)
 	}

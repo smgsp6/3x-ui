@@ -132,13 +132,13 @@ test('Telegram native BackButton closes More first then returns safely to dashbo
   fireEvent.click(screen.getByRole('button', { name: '更多' }));
   await waitFor(() => { expect(callbacks.size).toBe(1); });
   const backWhileDrawer = [...callbacks][0]!;
-  backWhileDrawer();
+  act(backWhileDrawer);
   await waitFor(() => {
     expect(screen.getByRole('button', { name: '更多' }).getAttribute('aria-expanded')).toBe('false');
     expect(screen.getByTestId('current-route').textContent).toBe('/clients');
     expect(callbacks.size).toBe(1);
   });
-  [...callbacks][0]!();
+  act([...callbacks][0]!);
   await waitFor(() => {
     expect(screen.getByTestId('current-route').textContent).toBe('/');
     expect(callbacks.size).toBe(0);
@@ -185,4 +185,54 @@ test('missing Telegram WebApp bridge does not block regular Mini App navigation'
   renderNav('/clients');
   fireEvent.click(screen.getByRole('button', { name: '证书' }));
   expect(screen.getByTestId('current-route').textContent).toBe('/certificates');
+});
+
+test('native Back dismisses the keyboard, respects the highest locked dialog, and protects editor changes', async () => {
+  let clickBack: (() => void) | undefined;
+  window.Telegram = { WebApp: { initData: '', BackButton: {
+    show: vi.fn(), hide: vi.fn(),
+    onClick: (callback) => { clickBack = callback; },
+    offClick: () => { clickBack = undefined; },
+  } } };
+  window.X_UI_TG_MINIAPP_MODE = true;
+  const viewport = Object.assign(new EventTarget(), { height: window.innerHeight, scale: 1 });
+  vi.stubGlobal('visualViewport', viewport);
+  const close = vi.fn();
+  try {
+    const renderDialogs = (locked: boolean) => (
+      <MemoryRouter initialEntries={['/clients']}>
+        <MiniAppBottomNav />
+        <CurrentPath />
+        {locked && <Modal open zIndex={1300} closable={false} title="Locked operation" />}
+        <Modal open zIndex={1100} className="vela-confirm-editor-close" title="Editor" onCancel={close}>
+          <input defaultValue="Unsaved synthetic draft" aria-label="Draft" />
+        </Modal>
+      </MemoryRouter>
+    );
+    const view = renderWithProviders(renderDialogs(true));
+    act(() => clickBack?.());
+    expect(close).not.toHaveBeenCalled();
+    expect(screen.queryByText('关闭编辑？')).toBeNull();
+    expect(screen.getByTestId('current-route').textContent).toBe('/clients');
+    view.rerender(renderDialogs(false));
+
+    const input = screen.getByRole('textbox', { name: 'Draft' });
+    act(() => input.focus());
+    viewport.height = window.innerHeight - 270;
+    act(() => clickBack?.());
+    expect(document.activeElement).not.toBe(input);
+    expect(screen.queryByText('关闭编辑？')).toBeNull();
+
+    act(() => clickBack?.());
+    expect(await screen.findByText('关闭编辑？')).toBeTruthy();
+    act(() => clickBack?.());
+    expect(close).not.toHaveBeenCalled();
+    expect((input as HTMLInputElement).value).toBe('Unsaved synthetic draft');
+
+    act(() => clickBack?.());
+    fireEvent.click(await screen.findByRole('button', { name: '关闭并放弃修改' }));
+    expect(close).toHaveBeenCalledOnce();
+  } finally {
+    vi.unstubAllGlobals();
+  }
 });

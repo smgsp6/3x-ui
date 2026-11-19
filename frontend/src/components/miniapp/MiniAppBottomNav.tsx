@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router';
 import { useTranslation } from 'react-i18next';
-import { Drawer } from 'antd';
+import { Drawer, Modal } from 'antd';
 import {
   AppstoreOutlined,
   CloudServerOutlined,
@@ -30,17 +30,26 @@ const primary = [
 
 const editableSelector = 'textarea:not([readonly]):not([disabled]), input:not([readonly]):not([disabled]):is([type="text"], [type="search"], [type="email"], [type="password"], [type="tel"], [type="url"], [type="number"], :not([type])), [contenteditable]:not([contenteditable="false"])';
 
-function dismissPageDialog(): boolean {
+function activeKeyboardField(): HTMLElement | null {
+  const field = document.activeElement?.closest<HTMLElement>(editableSelector);
+  const viewport = window.visualViewport;
+  return field && viewport?.scale === 1 && window.innerHeight - viewport.height > 120 ? field : null;
+}
+
+function topPageDialog(moreOpen: boolean) {
+  let top: { dialog: HTMLElement; layer: number } | undefined;
   const dialogs = document.querySelectorAll<HTMLElement>('[role="dialog"][aria-modal="true"]');
-  for (const dialog of Array.from(dialogs).reverse()) {
-    if (dialog.closest('.vela-more-drawer, [hidden], [aria-hidden="true"], .ant-drawer-content-wrapper-hidden')) continue;
-    const wrapper = dialog.closest<HTMLElement>('.ant-modal-wrap') ?? dialog;
-    if (window.getComputedStyle(wrapper).display === 'none') continue;
-    // Use the dialog's own close action so its cancel and draft logic still run.
-    dialog.querySelector<HTMLButtonElement>('.ant-modal-close:not(:disabled), .ant-drawer-close:not(:disabled)')?.click();
-    return true;
+  for (const dialog of dialogs) {
+    if (dialog.classList.contains('vela-editor-discard') ||
+      (!moreOpen && dialog.closest('.vela-more-drawer'))) continue;
+    if (dialog.closest('[hidden], [aria-hidden="true"], .ant-drawer-content-wrapper-hidden')) continue;
+    const wrapper = dialog.closest<HTMLElement>('.ant-modal-wrap, .ant-drawer') ?? dialog;
+    const style = window.getComputedStyle(wrapper);
+    if (style.display === 'none' || style.visibility === 'hidden') continue;
+    const layer = Number.parseInt(style.zIndex, 10) || 1000;
+    if (!top || layer >= top.layer) top = { dialog, layer };
   }
-  return false;
+  return top;
 }
 
 /** All advanced Xray settings remain reachable; do not hide features on mobile. */
@@ -51,6 +60,7 @@ export default function MiniAppBottomNav() {
   const [moreOpen, setMoreOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
   const [keyboardOpen, setKeyboardOpen] = useState(false);
+  const [discard, setDiscard] = useState<{ close: HTMLButtonElement; layer: number } | null>(null);
   const moreSelected = !primary.some((item) => item.path === pathname);
   const allRoutes = useMemo(
     () => PANEL_ROUTES.filter((route) => !primary.some((p) => p.path === route.path)),
@@ -61,8 +71,7 @@ export default function MiniAppBottomNav() {
     const viewport = window.visualViewport;
     if (!window.X_UI_TG_MINIAPP_MODE || !viewport) return;
     const update = () => {
-      const editable = document.activeElement?.closest(editableSelector);
-      setKeyboardOpen(Boolean(editable && viewport.scale === 1 && window.innerHeight - viewport.height > 120));
+      setKeyboardOpen(Boolean(activeKeyboardField()));
     };
     // focusout can run before activeElement is updated.
     let frame = 0;
@@ -82,30 +91,67 @@ export default function MiniAppBottomNav() {
     };
   }, []);
 
-  // The official Telegram WebApp BackButton is a separate control from
-  // browser history. Never navigate(-1): a Mini App may open as a deep link
-  // with no same-origin previous entry. Close the app drawer first, then
-  // dismiss a page dialog, or return to the safe dashboard root.
   useEffect(() => {
     if (!window.X_UI_TG_MINIAPP_MODE) return;
     const backButton = window.Telegram?.WebApp?.BackButton;
     if (!backButton?.onClick || !backButton.offClick) return;
-    const shouldShow = moreOpen || pathname !== '/';
-    if (!shouldShow) {
-      backButton.hide();
-      return;
-    }
+
     const handleBack = () => {
+      const field = activeKeyboardField();
+      if (field) {
+        field.blur();
+        return;
+      }
+      if (discard) {
+        setDiscard(null);
+        return;
+      }
+      const top = topPageDialog(moreOpen);
+      if (top) {
+        const close = top.dialog.querySelector<HTMLButtonElement>('.ant-modal-close:not(:disabled), .ant-drawer-close:not(:disabled)');
+        if (close && close.closest('[role="dialog"]') === top.dialog) {
+          if (top.dialog.classList.contains('vela-confirm-editor-close')) {
+            setDiscard({ close, layer: top.layer + 1 });
+          } else {
+            close.click();
+          }
+        }
+        return;
+      }
       if (moreOpen) setMoreOpen(false);
-      else if (!dismissPageDialog()) navigate('/');
+      else if (pathname !== '/') navigate('/');
     };
-    backButton.onClick(handleBack);
-    backButton.show();
+
+    let registered: boolean | undefined;
+    const update = () => {
+      const visible = pathname !== '/' || moreOpen || keyboardOpen || Boolean(discard || topPageDialog(moreOpen));
+      if (visible === registered) return;
+      if (visible) {
+        backButton.onClick(handleBack);
+        backButton.show();
+      } else {
+        if (registered) backButton.offClick(handleBack);
+        backButton.hide();
+      }
+      registered = visible;
+    };
+    let frame = 0;
+    const observer = pathname === '/' && new MutationObserver(() => {
+      cancelAnimationFrame(frame);
+      frame = requestAnimationFrame(update);
+    });
+    if (observer) observer.observe(document.body, {
+      subtree: true, childList: true, attributes: true,
+      attributeFilter: ['class', 'style', 'hidden', 'aria-hidden'],
+    });
+    update();
     return () => {
-      backButton.offClick(handleBack);
+      if (observer) observer.disconnect();
+      cancelAnimationFrame(frame);
+      if (registered) backButton.offClick(handleBack);
       backButton.hide();
     };
-  }, [moreOpen, navigate, pathname]);
+  }, [discard, keyboardOpen, moreOpen, navigate, pathname]);
 
   if (!window.X_UI_TG_MINIAPP_MODE) return null;
   const logout = async () => {
@@ -143,6 +189,22 @@ export default function MiniAppBottomNav() {
           <span>更多</span>
         </button>
       </nav>
+      <Modal
+        open={Boolean(discard)}
+        title="关闭编辑？"
+        className="vela-editor-discard"
+        zIndex={discard?.layer}
+        okText="关闭并放弃修改"
+        okButtonProps={{ danger: true }}
+        cancelText="继续编辑"
+        onCancel={() => setDiscard(null)}
+        onOk={() => {
+          if (discard?.close.isConnected) discard.close.click();
+          setDiscard(null);
+        }}
+      >
+        未保存的修改可能丢失。
+      </Modal>
       <Drawer
         placement="bottom"
         size="min(75dvh, 620px)"
@@ -150,7 +212,7 @@ export default function MiniAppBottomNav() {
         onClose={() => setMoreOpen(false)}
         title="Vela · 全部功能"
         rootClassName="vela-more-drawer"
-        styles={{ body: { padding: 18 } }}
+        styles={{ body: { paddingTop: 18 } }}
       >
         <div className="vela-more-grid" id="vela-more-drawer">
           {allRoutes.map((route) => {
