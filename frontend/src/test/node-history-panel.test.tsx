@@ -23,6 +23,36 @@ vi.mock('uplot', () => ({
 // The net series fell through to Sparkline's percentage defaults: a 0-100 scale
 // and a "%" label, so 512 KB/s rendered as "512%" far above the chart.
 describe('NodeHistoryPanel', () => {
+  it('keeps the last snapshot during an outage and refreshes it after recovery', async () => {
+    let value = 40;
+    let offline = false;
+    const get = vi.spyOn(HttpUtil, 'get').mockImplementation(async () =>
+      offline ? new Msg(false) : new Msg(true, '', [{ t: 1_700_000_000, v: value }]),
+    );
+    vi.useFakeTimers();
+    try {
+      const view = render(<NodeHistoryPanel node={{ id: 7 }} />);
+      await act(async () => {});
+      expect(screen.getAllByRole('img')[0]?.getAttribute('aria-label')).toBe('40%');
+
+      offline = true;
+      await act(async () => { await vi.advanceTimersByTimeAsync(15_000); });
+      expect(screen.getByRole('status').textContent).toBeTruthy();
+      expect(screen.getAllByRole('img')[0]?.getAttribute('aria-label')).toBe('40%');
+
+      offline = false;
+      value = 65;
+      await act(async () => { await vi.advanceTimersByTimeAsync(15_000); });
+      expect(screen.queryByRole('status')).toBeNull();
+      expect(screen.getAllByRole('img')[0]?.getAttribute('aria-label')).toBe('65%');
+      view.unmount();
+    } finally {
+      vi.useRealTimers();
+      get.mockRestore();
+      plots.length = 0;
+    }
+  });
+
   it('does not overlap polls and ignores old responses after changing nodes', async () => {
     const finish: ((value: Msg) => void)[] = [];
     const get = vi.spyOn(HttpUtil, 'get').mockImplementation((url) =>

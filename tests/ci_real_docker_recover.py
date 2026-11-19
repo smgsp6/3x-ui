@@ -174,14 +174,26 @@ def test(root, env):
     pending.write_text(OLD + "\n" + BAD + "\n" + str(archive) + "\n1\n")
     pending.chmod(0o600)
 
-    print("4/5: Actual vela recover restores Docker image and SQLite snapshot")
+    print("4/5: Interrupted recovery retains journal and resumes with real Docker")
+    move = root.parent / "bin/mv"
+    move.write_text(
+        '#!/bin/sh\ncase "$2" in */.restore.*/cert) exit 1 ;; esac\nexec /usr/bin/mv "$@"\n'
+    )
+    move.chmod(0o700)
+    check(cli(env, "recover", success=False).returncode != 0,
+          "interrupted recovery unexpectedly completed")
+    check(pending.exists() and not (root / "cert").exists(),
+          "interrupted recovery did not leave a resumable journal")
+    result = command(["docker", "inspect", "-f", "{{.State.Running}}", "vela_panel"], env=env)
+    check(result.stdout.strip() == "false", "interrupted recovery left a container running")
+    move.unlink()
     cli(env, "recover")
     check(not pending.exists(), "completed recovery journal retained")
     check((root / "image.ref").read_text().strip() == OLD, "image digest not restored")
     check((root / "release.sequence").read_text().strip() == "1", "sequence not restored")
     check(rows(db) == [(1, "snapshot")], "candidate DB mutation survived rollback")
     failed = list((root / "failed-updates").glob("*/db/x-ui.db"))
-    check(len(failed) == 1 and rows(failed[0]) == [(1, "candidate-write")],
+    check(any(rows(copy) == [(1, "candidate-write")] for copy in failed),
           "failed candidate SQLite not quarantined")
     check((root / "cert/ci.marker").read_text() == "cert-before\n",
           "synthetic cert state not restored")

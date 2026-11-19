@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"math/big"
+	"net"
 	"os"
 	"path/filepath"
 	"strings"
@@ -33,6 +34,10 @@ func writeTestCertWithName(t *testing.T, dir string, start, end time.Time, hostn
 		NotBefore:    start, NotAfter: end,
 		KeyUsage:    x509.KeyUsageDigitalSignature,
 		ExtKeyUsage: []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
+	}
+	if ip := net.ParseIP(hostname); ip != nil {
+		template.DNSNames = nil
+		template.IPAddresses = []net.IP{ip}
 	}
 	der, err := x509.CreateCertificate(rand.Reader, template, template, &privateKey.PublicKey, privateKey)
 	if err != nil {

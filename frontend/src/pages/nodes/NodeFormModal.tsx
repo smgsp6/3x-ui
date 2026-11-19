@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   Alert,
@@ -77,6 +77,10 @@ export default function NodeFormModal({
   const [fetchingInbounds, setFetchingInbounds] = useState(false);
   const [inboundOptions, setInboundOptions] = useState<RemoteInboundOption[]>([]);
   const [testResult, setTestResult] = useState<ProbeResult | null>(null);
+  const formGeneration = useRef(0);
+  useLayoutEffect(() => {
+    return () => { formGeneration.current++; };
+  }, [open, mode, node]);
   const scheme = useWatch({ control: methods.control, name: 'scheme' }) ?? 'https';
   const tlsVerifyMode = useWatch({ control: methods.control, name: 'tlsVerifyMode' }) ?? 'verify';
   const inboundSyncMode = useWatch({ control: methods.control, name: 'inboundSyncMode' }) ?? 'all';
@@ -152,20 +156,27 @@ export default function NodeFormModal({
       tlsVerifyMode: values.tlsVerifyMode,
       pinnedCertSha256: values.tlsVerifyMode === 'pin' ? values.pinnedCertSha256.trim() : '',
       inboundSyncMode: values.inboundSyncMode,
-      inboundTags: values.inboundSyncMode === 'selected' ? values.inboundTags : [],
+      inboundTags: values.inboundSyncMode === 'selected' ? [...values.inboundTags] : [],
       outboundTag: values.outboundTag || '',
     };
     if (token) payload.apiToken = token;
     return payload;
   }
 
+  function stillEditing(generation: number, payload: Partial<NodeRecord>): boolean {
+    return generation === formGeneration.current &&
+      JSON.stringify(payload) === JSON.stringify(buildPayload(methods.getValues()));
+  }
+
   async function onTest() {
-    if (!(await methods.trigger(['name', 'address', 'port']))) return;
+    const generation = formGeneration.current;
+    if (!(await methods.trigger(['name', 'address', 'port'])) || generation !== formGeneration.current) return;
     setTesting(true);
     setTestResult(null);
     try {
       const payload = buildPayload(methods.getValues());
       const msg = await testConnection(payload);
+      if (!stillEditing(generation, payload)) return;
       if (msg?.success && msg.obj) {
         setTestResult(msg.obj);
       } else {
@@ -177,11 +188,13 @@ export default function NodeFormModal({
   }
 
   async function onFetchPin() {
-    if (!(await methods.trigger(['name', 'address', 'port']))) return;
+    const generation = formGeneration.current;
+    if (!(await methods.trigger(['name', 'address', 'port'])) || generation !== formGeneration.current) return;
     setFetchingPin(true);
     try {
       const payload = buildPayload(methods.getValues());
       const msg = await fetchFingerprint(payload);
+      if (!stillEditing(generation, payload)) return;
       if (msg?.success && msg.obj) {
         methods.setValue('pinnedCertSha256', msg.obj);
         messageApi.success(t('pages.nodes.pinFetched'));
@@ -194,10 +207,13 @@ export default function NodeFormModal({
   }
 
   async function onFetchInbounds() {
-    if (!(await methods.trigger(['name', 'address', 'port', 'apiToken']))) return;
+    const generation = formGeneration.current;
+    if (!(await methods.trigger(['name', 'address', 'port', 'apiToken'])) || generation !== formGeneration.current) return;
     setFetchingInbounds(true);
     try {
-      const msg = await fetchInbounds(buildPayload(methods.getValues()));
+      const payload = buildPayload(methods.getValues());
+      const msg = await fetchInbounds(payload);
+      if (!stillEditing(generation, payload)) return;
       if (msg?.success && Array.isArray(msg.obj)) {
         setInboundOptions(msg.obj);
         messageApi.success(t('pages.nodes.inboundsLoaded', { count: msg.obj.length }));
@@ -216,9 +232,11 @@ export default function NodeFormModal({
       return;
     }
     setSubmitting(true);
+    const generation = formGeneration.current;
     try {
       const payload = buildPayload(result.data);
       const test = await testConnection(payload);
+      if (!stillEditing(generation, payload)) return;
       const probe = test?.success ? test.obj : null;
       if (!probe || probe.status !== 'online') {
         setTestResult(
@@ -228,7 +246,7 @@ export default function NodeFormModal({
       }
       setTestResult(probe);
       const msg = await save(payload);
-      if (msg?.success) {
+      if (msg?.success && generation === formGeneration.current) {
         onOpenChange(false);
       }
     } finally {

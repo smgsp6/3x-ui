@@ -8,6 +8,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
+	"errors"
 	"math/big"
 	"net"
 	"os"
@@ -130,15 +131,28 @@ func TestTLSCertificateReloaderConcurrentHandshakes(t *testing.T) {
 func TestTLSReloadWithoutClientSNI(t *testing.T) {
 	now := time.Now()
 	dir := t.TempDir()
-	certPath, keyPath := writeTestCert(t, dir, now.Add(-time.Hour), now.Add(40*24*time.Hour))
+	certPath, keyPath := writeTestCertWithName(t, dir, now.Add(-time.Hour), now.Add(40*24*time.Hour), "127.0.0.1")
+	updatedCert, updatedKey := writeTestCertWithName(t, t.TempDir(), now.Add(-time.Hour), now.Add(90*24*time.Hour), "127.0.0.1")
+	roots := x509.NewCertPool()
+	for _, path := range []string{certPath, updatedCert} {
+		certPEM, err := os.ReadFile(path)
+		if err != nil || !roots.AppendCertsFromPEM(certPEM) {
+			t.Fatalf("unable to trust synthetic certificate: %v", err)
+		}
+	}
 	initial, err := tls.LoadX509KeyPair(certPath, keyPath)
 	if err != nil {
 		t.Fatal(err)
 	}
 	r := NewTLSCertificateReloader(certPath, keyPath, initial)
 	listener, err := tls.Listen("tcp", "127.0.0.1:0", &tls.Config{
-		GetCertificate: r.GetCertificate,
-		MinVersion:     tls.VersionTLS12,
+		GetCertificate: func(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
+			if hello.ServerName != "" {
+				return nil, errors.New("fixture must connect without SNI")
+			}
+			return r.GetCertificate(hello)
+		},
+		MinVersion: tls.VersionTLS12,
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -158,8 +172,9 @@ func TestTLSReloadWithoutClientSNI(t *testing.T) {
 			result <- conn.(*tls.Conn).Handshake()
 		}()
 		client, err := tls.DialWithDialer(&net.Dialer{Timeout: 3 * time.Second}, "tcp", listener.Addr().String(), &tls.Config{
-			InsecureSkipVerify: true, // local self-signed test-only certificate
-			MinVersion:         tls.VersionTLS12,
+			ServerName: "127.0.0.1",
+			RootCAs:    roots,
+			MinVersion: tls.VersionTLS12,
 		})
 		if err != nil {
 			t.Fatal(err)
@@ -172,7 +187,6 @@ func TestTLSReloadWithoutClientSNI(t *testing.T) {
 		return leaf
 	}
 	old := connect()
-	updatedCert, updatedKey := writeTestCert(t, t.TempDir(), now.Add(-time.Hour), now.Add(90*24*time.Hour))
 	pemCert, err := os.ReadFile(updatedCert)
 	if err != nil {
 		t.Fatal(err)
@@ -184,12 +198,16 @@ func TestTLSReloadWithoutClientSNI(t *testing.T) {
 	if err := os.WriteFile(certPath, pemCert, 0600); err != nil {
 		t.Fatal(err)
 	}
+	r.currentAt(now.Add(time.Minute))
+	if leaf := connect(); !old.Equal(leaf) {
+		t.Fatal("partial renewal replaced the trusted certificate")
+	}
 	if err := os.WriteFile(keyPath, pemKey, 0600); err != nil {
 		t.Fatal(err)
 	}
 	// Test-only forced clock advance through an internal method; production
 	// rechecks automatically when at least 30 seconds have elapsed.
-	newPair := r.currentAt(now.Add(time.Minute))
+	newPair := r.currentAt(now.Add(2 * time.Minute))
 	if len(newPair.Certificate) == 0 {
 		t.Fatal("invalid rotated certificate")
 	}
