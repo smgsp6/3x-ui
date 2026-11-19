@@ -1,0 +1,98 @@
+name: Vela beta APK evidence
+on:
+  push:
+    branches: [vela-dev]
+    paths: [.github/workflows/vela-beta-apk-evidence.yml]
+permissions:
+  contents: read
+concurrency:
+  group: vela-beta-apk-evidence
+  cancel-in-progress: false
+jobs:
+  evidence:
+    if: github.repository == 'smgsp6/3x-ui' && github.ref == 'refs/heads/vela-dev' && github.event.repository.private == false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - name: Resolve and verify public APKs against the reviewed base images
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = x86_64
+          test "$(docker context show)" = default
+          test "$(docker context inspect default --format '{{.Endpoints.docker.Host}}')" = unix:///var/run/docker.sock
+          containers=$(docker ps -aq)
+          test -z "$containers"
+          root=$(mktemp -d "$RUNNER_TEMP/vela-apk.XXXXXXXX")
+          trap 'rm -rf -- "$root"' EXIT
+          resolve() {
+            local stage=$1 base=$2
+            shift 2
+            local evidence="$root/$stage"
+            mkdir "$evidence"
+            docker pull --platform linux/amd64 "$base"
+            docker run --rm --platform linux/amd64 --cap-drop ALL \
+              --security-opt no-new-privileges --entrypoint /bin/sh \
+              -v "$evidence:/evidence" "$base" -eu -c '
+                test "$(apk --print-arch)" = x86_64
+                branch=$(cut -d. -f1,2 /etc/alpine-release)
+                for section in main community; do
+                  printf "https://dl-cdn.alpinelinux.org/alpine/v%s/%s\n" "$branch" "$section"
+                done >/tmp/vela-repositories
+                apk --repositories-file /tmp/vela-repositories update
+                apk --repositories-file /tmp/vela-repositories fetch --recursive --url "$@" > /evidence/urls
+                apk --repositories-file /tmp/vela-repositories fetch --recursive --output /evidence "$@"
+                cd /evidence
+                for package in ./*.apk; do apk verify "$package"; done
+                sha256sum ./*.apk > SHA256SUMS
+                sha256sum /etc/apk/keys/* > key-SHA256SUMS
+              ' sh "$@"
+
+            docker run --rm --platform linux/amd64 --network none \
+              --security-opt no-new-privileges --entrypoint /bin/sh \
+              -v "$evidence:/evidence:ro" "$base" -eu -c '
+                cd /evidence
+                sha256sum -c SHA256SUMS
+                apk --repositories-file /dev/null add --no-network --no-cache ./*.apk
+                for package; do grep -Fx "P:$package" /lib/apk/db/installed >/dev/null; done
+                awk "/^[PVALD]:/ || /^$/" /lib/apk/db/installed
+              ' sh "$@" > "$evidence/installed"
+            python3 - "$stage" "$evidence" <<'PY'
+          import re
+          import sys
+          from pathlib import Path
+          from urllib.parse import urlsplit
+
+          stage, directory = sys.argv[1:]
+          root = Path(directory)
+          urls = {}
+          for url in root.joinpath("urls").read_text().splitlines():
+              assert re.fullmatch(
+                  r"https://dl-cdn\.alpinelinux\.org/alpine/v\d+\.\d+/"
+                  r"(main|community)/x86_64/[A-Za-z0-9_.+-]+\.apk", url
+              ), "unexpected APK origin"
+              name = Path(urlsplit(url).path).name
+              assert name not in urls, "ambiguous package origin"
+              urls[name] = url
+
+          packages = {}
+          for line in root.joinpath("SHA256SUMS").read_text().splitlines():
+              digest, file = line.split()
+              name = Path(file).name
+              assert re.fullmatch(r"[a-f0-9]{64}", digest) and name not in packages
+              packages[name] = digest
+          assert packages and packages.keys() == urls.keys(), "URL/download inventory mismatch"
+
+          print(f"{stage} approved base key fingerprints")
+          print(root.joinpath("key-SHA256SUMS").read_text(), end="")
+          print(f"{stage} APK SHA-256 and upstream URLs")
+          for name, digest in sorted(packages.items()):
+              print(digest, urls[name])
+          print(f"{stage} offline installation output and installed package metadata")
+          print(root.joinpath("installed").read_text(), end="")
+          PY
+          }
+          resolve builder docker.io/library/golang@sha256:ea30e25680a5470bac02b08bb0e0a735fb75bd0ab7d431b9b95ee0abef362586 \
+            build-base gcc curl unzip
+          resolve runtime docker.io/library/alpine@sha256:2039be0c5ec6ce8566809626a252c930216a92109c043f282504accb5ee3c0c6 \
+            ca-certificates tzdata fail2ban bash curl openssl
