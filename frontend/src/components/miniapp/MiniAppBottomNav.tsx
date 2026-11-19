@@ -11,8 +11,7 @@ import {
   TeamOutlined,
 } from '@ant-design/icons';
 import { PANEL_ROUTES } from '@/routes/panelRoutes';
-import { leaveMiniAppSession } from '@/api/http-init';
-import { HttpUtil } from '@/utils';
+import { logoutMiniApp } from '@/api/miniapp-logout';
 import './MiniAppBottomNav.css';
 
 declare global {
@@ -71,7 +70,10 @@ export default function MiniAppBottomNav() {
     const viewport = window.visualViewport;
     if (!window.X_UI_TG_MINIAPP_MODE || !viewport) return;
     const update = () => {
-      setKeyboardOpen(Boolean(activeKeyboardField()));
+      const field = activeKeyboardField();
+      setKeyboardOpen(Boolean(field));
+      const inset = field ? Math.max(0, window.innerHeight - viewport.height - (viewport.offsetTop || 0)) : 0;
+      document.documentElement.style.setProperty('--vela-keyboard-inset', `${inset}px`);
     };
     // focusout can run before activeElement is updated.
     let frame = 0;
@@ -80,12 +82,15 @@ export default function MiniAppBottomNav() {
       frame = requestAnimationFrame(update);
     };
     viewport.addEventListener('resize', schedule);
+    viewport.addEventListener('scroll', schedule);
     document.addEventListener('focusin', schedule);
     document.addEventListener('focusout', schedule);
     schedule();
     return () => {
       cancelAnimationFrame(frame);
       viewport.removeEventListener('resize', schedule);
+      viewport.removeEventListener('scroll', schedule);
+      document.documentElement.style.removeProperty('--vela-keyboard-inset');
       document.removeEventListener('focusin', schedule);
       document.removeEventListener('focusout', schedule);
     };
@@ -157,8 +162,7 @@ export default function MiniAppBottomNav() {
   const logout = async () => {
     setSigningOut(true);
     try {
-      const result = await HttpUtil.post('/logout', undefined, { timeout: 15_000 });
-      if (result.success) leaveMiniAppSession();
+      await logoutMiniApp();
     } finally {
       setSigningOut(false);
     }
@@ -199,7 +203,9 @@ export default function MiniAppBottomNav() {
         cancelText="继续编辑"
         onCancel={() => setDiscard(null)}
         onOk={() => {
-          if (discard?.close.isConnected) discard.close.click();
+          const dialog = topPageDialog(moreOpen)?.dialog;
+          if (discard?.close.closest('[role="dialog"]') === dialog &&
+            discard?.close.isConnected && !discard.close.disabled) discard.close.click();
           setDiscard(null);
         }}
       >

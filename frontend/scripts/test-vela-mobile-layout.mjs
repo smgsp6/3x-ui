@@ -41,7 +41,7 @@ async function configurePage(page) {
     } };
     window.velaTestBack = () => back?.();
   });
-  const state = { failProbe: true, probes: 0, saves: 0, failAuth: true, auth: 0, failLogout: true, logout: 0 };
+  const state = { failProbe: true, probes: 0, saves: 0, failAuth: true, auth: 0, failLogout: true, logout: 0, sessionRevoked: false, statusChecks: 0 };
   await page.routeWebSocket('**/*', (socket) => socket.close());
   await page.route('**/*', async (route) => {
     const url = new URL(route.request().url());
@@ -61,6 +61,11 @@ async function configurePage(page) {
       state.logout++;
       if (state.failLogout) return route.abort('internetdisconnected');
       return success(null);
+    }
+    if (path === '/panel/api/tg-miniapp/status') {
+      state.statusChecks++;
+      if (state.sessionRevoked) return route.fulfill({ status: 401 });
+      return success({ botRunning: true, launchConfigured: true, authConfigured: true });
     }
     if (path === '/tg-miniapp/auth') {
       state.auth++;
@@ -116,7 +121,7 @@ try {
         await checkVisibleTarget(name, page);
         await name.fill('Synthetic review node');
         const label = `${device.replaceAll(' ', '-')}-${landscape ? 'landscape' : 'portrait'}`;
-        if (screenshots) await page.screenshot({ path: join(screenshots, `${label}-editor-top.png`) });
+        if (screenshots) await page.screenshot({ animations: 'disabled', path: join(screenshots, `${label}-editor-top.png`) });
 
         if (device === 'iPhone 15' && landscape) {
           // Preserve the real DOM and emulate the smaller viewport reported by a soft keyboard.
@@ -127,6 +132,13 @@ try {
             viewport.dispatchEvent(new Event('resize'));
           });
           await nav.waitFor({ state: 'hidden' });
+          assert.ok(await editor.evaluate((dialog) =>
+            Number.parseFloat(getComputedStyle(dialog.closest('.ant-modal-wrap')).bottom) > 0,
+          ), 'keyboard must constrain the editor scroll area');
+          if (screenshots) await page.screenshot({
+            animations: 'disabled',
+            path: join(screenshots, `${label}-keyboard-viewport.png`),
+          });
           await page.evaluate(() => window.velaTestBack());
           await nav.waitFor();
           assert.equal(await name.evaluate((input) => input === document.activeElement), false);
@@ -136,7 +148,7 @@ try {
 
         const save = editor.getByRole('button', { name: /Save/i });
         await checkVisibleTarget(save, page);
-        if (screenshots) await page.screenshot({ path: join(screenshots, `${label}-editor-actions.png`) });
+        if (screenshots) await page.screenshot({ animations: 'disabled', path: join(screenshots, `${label}-editor-actions.png`) });
         await page.evaluate(() => window.velaTestBack());
         const confirmation = page.getByRole('dialog', { name: '关闭编辑？' });
         await confirmation.waitFor();
@@ -158,8 +170,11 @@ try {
           assert.equal(state.saves, 1);
           await nav.getByRole('button', { name: '更多' }).click();
           const logout = page.getByRole('button', { name: /Log out|Logout/i });
+          const stillAuthorized = page.waitForResponse((response) =>
+            response.url().endsWith('/panel/api/tg-miniapp/status') && response.status() === 200,
+          );
           await logout.click();
-          await page.getByText('Failed to fetch', { exact: true }).waitFor();
+          await stillAuthorized;
           assert.equal(state.logout, 1);
           assert.ok(page.url().endsWith('/panel/nodes'));
           state.failLogout = false;
@@ -173,6 +188,15 @@ try {
           state.failAuth = false;
           await retry.click();
           await page.waitForURL('**/panel/');
+          assert.equal(state.auth, 2);
+
+          state.failLogout = true;
+          state.sessionRevoked = true;
+          await nav.getByRole('button', { name: '更多' }).click();
+          await logout.click();
+          await page.getByText(/会话已结束/).waitFor();
+          assert.equal(state.logout, 3);
+          assert.equal(state.statusChecks, 2);
           assert.equal(state.auth, 2);
         }
         console.info(`${device} ${landscape ? 'landscape' : 'portrait'} passed`);

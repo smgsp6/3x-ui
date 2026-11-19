@@ -321,6 +321,37 @@ describe('InboundFormModal', () => {
     });
   });
 
+  it('keeps an inbound open and sends one mutation while save is pending', async () => {
+    const post = vi.mocked(HttpUtil.post);
+    const onClose = vi.fn();
+    const inbound = cloneLikeVlessInbound('example.com:443');
+    renderWithProviders(
+      <InboundFormModal open mode="edit" dbInbound={inbound} dbInbounds={[inbound]}
+        availableNodes={[]} onClose={onClose} onSaved={vi.fn()} />,
+    );
+    await act(async () => {});
+    post.mockClear();
+    let complete!: () => void;
+    post.mockImplementationOnce(() => new Promise((resolve) => {
+      complete = () => resolve({ success: false, msg: '', obj: null });
+    }));
+    const save = primaryButton();
+    await act(async () => {
+      fireEvent.click(save);
+      fireEvent.click(save);
+    });
+    expect(post.mock.calls.filter(([url]) => url === '/panel/api/inbounds/update/42')).toHaveLength(1);
+    const dialog = screen.getByRole('dialog');
+    for (const close of within(dialog).getAllByRole('button', { name: 'Close' })) {
+      expect(close).toHaveProperty('disabled', true);
+      fireEvent.click(close);
+    }
+    fireEvent.keyDown(dialog, { key: 'Escape', code: 'Escape' });
+    expect(onClose).not.toHaveBeenCalled();
+    await act(async () => complete());
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
   // The core reads an XDRIVE inbound's TLS/REALITY as the storage API's client TLS, so
   // switching a REALITY inbound to XDRIVE must store security none with its secrets.
   it('switches a REALITY inbound to an XDRIVE stream with security none', async () => {

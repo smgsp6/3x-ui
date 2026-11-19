@@ -8,6 +8,7 @@ import MiniAppBottomNav from '@/components/miniapp/MiniAppBottomNav';
 import { PANEL_ROUTES } from '@/routes/panelRoutes';
 import { HttpUtil, Msg } from '@/utils';
 import { leaveMiniAppSession } from '@/api/http-init';
+import { logoutMiniApp } from '@/api/miniapp-logout';
 import { renderWithProviders } from './test-utils';
 
 vi.mock('@/api/http-init', { spy: true });
@@ -91,6 +92,8 @@ test('mobile logout waits for server success before leaving the session', async 
   window.X_UI_TG_MINIAPP_MODE = true;
   vi.mocked(leaveMiniAppSession).mockImplementation(() => {});
   const post = vi.mocked(HttpUtil.post);
+  const get = vi.mocked(HttpUtil.get);
+  get.mockResolvedValueOnce(new Msg(true));
   let failLogout!: (result: Msg) => void;
   post
     .mockImplementationOnce(() => new Promise((resolve) => { failLogout = resolve; }))
@@ -102,10 +105,13 @@ test('mobile logout waits for server success before leaving the session', async 
   fireEvent.click(logout);
   expect(logout.disabled).toBe(true);
   fireEvent.click(logout);
+  const concurrentLogout = logoutMiniApp();
   expect(post).toHaveBeenCalledTimes(1);
   failLogout(new Msg(false));
+  await act(async () => concurrentLogout);
   await waitFor(() => expect(logout.disabled).toBe(false));
   expect(leaveMiniAppSession).not.toHaveBeenCalled();
+  expect(get).toHaveBeenCalledWith('/panel/api/tg-miniapp/status', undefined, { silent: true, timeout: 5_000 });
   fireEvent.click(logout);
   await waitFor(() => expect(leaveMiniAppSession).toHaveBeenCalledTimes(1));
   expect(post).toHaveBeenLastCalledWith('/logout', undefined, { timeout: 15_000 });

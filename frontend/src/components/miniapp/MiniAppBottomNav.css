@@ -38,6 +38,7 @@
   body:has(.tg-app-bottom-nav) .ant-modal-wrap {
     padding-inline: env(safe-area-inset-left, 0px) env(safe-area-inset-right, 0px);
     padding-block: env(safe-area-inset-top, 0px) env(safe-area-inset-bottom, 0px);
+    bottom: var(--vela-keyboard-inset, 0px);
   }
   body:has(.tg-app-bottom-nav) .vela-confirm-editor-close,
   body:has(.tg-app-bottom-nav) .vela-editor-discard {

@@ -30,7 +30,7 @@ import {
 } from '@ant-design/icons';
 
 import { HttpUtil } from '@/utils';
-import { leaveMiniAppSession } from '@/api/http-init';
+import { logoutMiniApp } from '@/api/miniapp-logout';
 import { formatPanelVersion } from '@/lib/panel-version';
 import { pauseAnimationsUntilLeave, useTheme } from '@/hooks/useTheme';
 import { useAllSettings } from '@/api/queries/useAllSettings';
@@ -321,11 +321,11 @@ export default function AppSidebar() {
   const openLink = useCallback(
     async (key: string) => {
       if (key === LOGOUT_KEY) {
-        const result = await HttpUtil.post('/logout');
         if (window.X_UI_TG_MINIAPP_MODE) {
-          if (result.success) leaveMiniAppSession();
+          await logoutMiniApp();
           return;
         }
+        await HttpUtil.post('/logout');
         window.location.href = window.X_UI_BASE_PATH || '/';
         return;
       }

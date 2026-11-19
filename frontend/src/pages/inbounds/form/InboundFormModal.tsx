@@ -262,6 +262,7 @@ export default function InboundFormModal({
   const getV = methods.getValues as unknown as (name?: string) => unknown;
   const control = methods.control;
   const [saving, setSaving] = useState(false);
+  const savingInbound = useRef(false);
   const savedInboundId = useRef<number | null>(null);
   const [scanning, setScanning] = useState(false);
   const [scanResult, setScanResult] = useState<RealityScanResult | null>(null);
@@ -603,6 +604,7 @@ export default function InboundFormModal({
   }, [mode, methods]);
 
   const saveValues = async () => {
+    if (savingInbound.current || saving) return;
     // settings.fallbacks has no bound field; shouldUnregister=false keeps it from
     // the reset object. An edit sends no clients: the server keeps the stored ones.
     const values = methods.getValues() as InboundFormValues;
@@ -617,7 +619,6 @@ export default function InboundFormModal({
       );
       return;
     }
-    if (saving) return;
     if (!fallbacksLoaded) {
       messageApi.error(t('pages.inbounds.fallbacks.saveFailed'));
       return;
@@ -633,6 +634,7 @@ export default function InboundFormModal({
       );
       return;
     }
+    savingInbound.current = true;
     setSaving(true);
     try {
       // Persist an explicit removal before the backend checks the new decryption setting.
@@ -662,6 +664,7 @@ export default function InboundFormModal({
         onClose();
       }
     } finally {
+      savingInbound.current = false;
       setSaving(false);
     }
   };
@@ -1222,11 +1225,16 @@ export default function InboundFormModal({
         title={title}
         okText={okText}
         cancelText={t('close')}
+        cancelButtonProps={{ disabled: saving }}
         confirmLoading={saving}
         mask={{ closable: false }}
         width={780}
         onOk={submit}
-        onCancel={onClose}
+        closable={{ disabled: saving }}
+        keyboard={!saving}
+        onCancel={() => {
+          if (!savingInbound.current && !saving) onClose();
+        }}
         destroyOnHidden
         modalRender={(content) => (
           <div role="presentation" onKeyDown={loopInboundFocus}>
