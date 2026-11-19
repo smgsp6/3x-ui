@@ -74,11 +74,10 @@ class ComposeContractTests(unittest.TestCase):
             self.assertFalse(vela.get("ports"))
             self.assertFalse(vela.get("devices"))
             self.assertIn("no-new-privileges:true", vela.get("security_opt", []))
-            # Preserve original Fail2ban features while forbidding all other
-            # optional host-level capabilities. This is not a safety approval
-            # for running NET_ADMIN on a shared or production host.
-            self.assertEqual(set(vela.get("cap_add", [])), {"NET_ADMIN", "NET_RAW"})
+            self.assertFalse(vela.get("cap_add"))
+            self.assertEqual(set(vela.get("cap_drop", [])), {"NET_ADMIN", "NET_RAW"})
             variables = vela["environment"]
+            self.assertEqual(variables["XUI_ENABLE_FAIL2BAN"], "false")
             self.assertEqual(variables["XUI_TG_MINIAPP_ENABLED"], "true")
             self.assertEqual(variables["XUI_TG_MINIAPP_ADMIN_IDS"], "1001")
             self.assertEqual(variables["XUI_TG_MINIAPP_BOT_TOKEN_FILE"],

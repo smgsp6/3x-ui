@@ -62,10 +62,13 @@ class BuildGateContractTests(unittest.TestCase):
     def test_docker_build_has_no_push_and_runs_after_go(self):
         w = self.workflow
         generated = 'python3 deploy/vela/ci_prepare_dockerfile.py Dockerfile "${RUNNER_TEMP}/VelaCiDockerfile"'
-        build = 'docker build --pull --no-cache -f "${RUNNER_TEMP}/VelaCiDockerfile" --tag vela-integration-ci:local .'
+        build = "docker build --pull --no-cache\n"
         self.assertIn(generated, w)
         self.assertIn(build, w)
         self.assertLess(w.index(generated), w.index(build))
+        self.assertIn('-f "${RUNNER_TEMP}/VelaCiDockerfile" --tag vela-integration-ci:local .', w)
+        self.assertIn('--label "org.opencontainers.image.revision=${GITHUB_SHA}"', w)
+        self.assertIn('index .Config.Labels "org.opencontainers.image.revision"', w)
         self.assertNotIn('docker build --pull --no-cache --tag vela-integration-ci:local .', w)
         self.assertIn('docker image inspect vela-integration-ci:local', w)
         self.assertIn('docker image save vela-integration-ci:local | python3 deploy/vela/image_layer_audit.py --stdin', w)
@@ -73,7 +76,7 @@ class BuildGateContractTests(unittest.TestCase):
 
     def test_automatic_gate_reuses_one_audited_image_on_development_pushes(self):
         w = self.workflow
-        self.assertEqual(w.count("docker build --pull --no-cache -f"), 1)
+        self.assertEqual(w.count('--tag vela-integration-ci:local .'), 1)
         self.assertIn("branches: [vela-dev]", w)
         self.assertIn("if: github.event_name != 'pull_request'", w)
         self.assertIn("github.event.repository.private == false", w)

@@ -187,6 +187,7 @@ os.execv('/usr/bin/tar', ['/usr/bin/tar', *sys.argv[1:]])
     def test_doctor_and_reject_unpinned_image(self):
         self.prepare_reviewed_doctor_fixture()
         okay = self.run_cli('doctor')
+        self.assertFalse((self.root / '.vela.lock').exists())
         self.assertEqual(okay.returncode, 0, okay.stderr)
         self.assertIn('个人内测文件安全', okay.stdout)
         (self.root / 'image.ref').write_text('ghcr.io/smgsp6/3x-ui:latest')

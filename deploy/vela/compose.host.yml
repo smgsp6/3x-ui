@@ -1,7 +1,7 @@
 # Vela candidate runtime. Requires a reviewed, pinned image digest.
 # Host networking keeps arbitrary Xray TCP/UDP inbounds reachable without
 # enumerating all user-defined ports. The Go panel is loopback-bound in Vela mode.
-# IMPORTANT: the Fail2ban capabilities have host-level firewall implications.
+# The isolated host owns firewall policy; the panel cannot alter it.
 services:
   vela:
     image: ${VELA_IMAGE:?Set a reviewed image pinned with sha256}
@@ -12,9 +12,8 @@ services:
     stop_grace_period: 40s
     security_opt:
       - no-new-privileges:true
-    cap_add:
-      # Original 3x-ui's Fail2ban integration requires access to firewall rules.
-      # Do not enable Docker privileged mode or mount /var/run/docker.sock.
+    cap_drop:
+      # NET_RAW is otherwise present in the default Docker capability set.
       - NET_ADMIN
       - NET_RAW
     environment:
@@ -23,7 +22,7 @@ services:
       XUI_DB_TYPE: sqlite
       # Match the health checker; no accidental dependence on upstream DB port.
       XUI_PORT: ${XUI_PORT:-2053}
-      XUI_ENABLE_FAIL2BAN: 'true'
+      XUI_ENABLE_FAIL2BAN: 'false'
       XUI_TG_MINIAPP_ENABLED: 'true'
       XUI_TG_MINIAPP_ADMIN_IDS: ${XUI_TG_MINIAPP_ADMIN_IDS:?Admin Telegram numeric IDs required}
       XUI_TG_MINIAPP_URL: ${XUI_TG_MINIAPP_URL:?HTTPS Mini App URL required}

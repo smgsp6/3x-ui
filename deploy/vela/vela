@@ -91,9 +91,11 @@ check_secret "$ROOT/secrets/vela_bot_token"
 docker compose version >/dev/null || die '没有安装 Docker Compose V2'
 
 # Exclusive maintenance lock: no concurrent update / backup / rollback.
-[[ ! -L "$LOCK" && ( ! -e "$LOCK" || -f "$LOCK" ) ]] || die '维护锁文件类型不安全'
-exec 9>"$LOCK"
-flock -n 9 || die '另一个 Vela 维护操作正在运行'
+if [[ "$cmd" != doctor ]]; then
+  [[ ! -L "$LOCK" && ( ! -e "$LOCK" || -f "$LOCK" ) ]] || die '维护锁文件类型不安全'
+  exec 9>"$LOCK"
+  flock -n 9 || die '另一个 Vela 维护操作正在运行'
+fi
 
 compose() {
   local image=$1
