@@ -72,6 +72,7 @@ export default function NodeFormModal({
   const [messageApi, messageContextHolder] = message.useMessage();
 
   const [submitting, setSubmitting] = useState(false);
+  const submitInFlight = useRef(false);
   const [testing, setTesting] = useState(false);
   const [fetchingPin, setFetchingPin] = useState(false);
   const [fetchingInbounds, setFetchingInbounds] = useState(false);
@@ -226,11 +227,13 @@ export default function NodeFormModal({
   }
 
   async function onFinish(values: NodeFormValues) {
+    if (submitInFlight.current) return;
     const result = NodeFormSchema.safeParse(values);
     if (!result.success) {
       messageApi.error(t(result.error.issues[0]?.message ?? 'pages.nodes.toasts.fillRequired'));
       return;
     }
+    submitInFlight.current = true;
     setSubmitting(true);
     const generation = formGeneration.current;
     try {
@@ -250,12 +253,13 @@ export default function NodeFormModal({
         onOpenChange(false);
       }
     } finally {
+      submitInFlight.current = false;
       setSubmitting(false);
     }
   }
 
   function close() {
-    if (!submitting) onOpenChange(false);
+    if (!submitInFlight.current) onOpenChange(false);
   }
 
   return (
@@ -264,6 +268,8 @@ export default function NodeFormModal({
       <Modal
         open={open}
         className="vela-confirm-editor-close"
+        closable={{ disabled: submitting }}
+        keyboard={!submitting}
         title={title}
         confirmLoading={submitting}
         okText={t('save')}

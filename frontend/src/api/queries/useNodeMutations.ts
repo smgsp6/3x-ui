@@ -6,6 +6,8 @@ import { keys } from '@/api/queryKeys';
 import type { NodeRecord } from '@/api/queries/useNodesQuery';
 import { ProbeResultSchema, type ProbeResult } from '@/schemas/node';
 
+const NODE_PROBE_TIMEOUT = 25_000;
+
 export type { ProbeResult };
 
 export interface NodeUpdateResult {
@@ -92,12 +94,12 @@ export function useNodeMutations() {
     updatePanels: (ids: number[], dev: boolean): Promise<Msg<NodeUpdateResult[]>> =>
       updatePanelsMut.mutateAsync({ ids, dev }),
     testConnection: async (payload: Partial<NodeRecord>): Promise<Msg<ProbeResult>> => {
-      const raw = await HttpUtil.post('/panel/api/nodes/test', payload);
+      const raw = await HttpUtil.post('/panel/api/nodes/test', payload, { timeout: NODE_PROBE_TIMEOUT });
       return parseMsg(raw, ProbeResultSchema, 'nodes/test');
     },
     fetchFingerprint: (payload: Partial<NodeRecord>): Promise<Msg<string>> =>
-      HttpUtil.post<string>('/panel/api/nodes/certFingerprint', payload),
+      HttpUtil.post<string>('/panel/api/nodes/certFingerprint', payload, { timeout: NODE_PROBE_TIMEOUT }),
     fetchInbounds: (payload: Partial<NodeRecord>): Promise<Msg<RemoteInboundOption[]>> =>
-      HttpUtil.post<RemoteInboundOption[]>('/panel/api/nodes/inbounds', payload),
+      HttpUtil.post<RemoteInboundOption[]>('/panel/api/nodes/inbounds', payload, { timeout: NODE_PROBE_TIMEOUT }),
   };
 }

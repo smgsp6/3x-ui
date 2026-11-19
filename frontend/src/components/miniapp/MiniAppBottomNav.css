@@ -30,3 +30,17 @@
   padding-inline-start:max(18px, env(safe-area-inset-left, 0px));
   padding-inline-end:max(18px, env(safe-area-inset-right, 0px));
 }
+
+@media (max-width: 760px), (max-height: 500px) and (pointer: coarse) {
+  body:has(.tg-app-bottom-nav) #app {
+    padding-top: env(safe-area-inset-top, 0px);
+  }
+  body:has(.tg-app-bottom-nav) .ant-modal-wrap {
+    padding-inline: env(safe-area-inset-left, 0px) env(safe-area-inset-right, 0px);
+    padding-block: env(safe-area-inset-top, 0px) env(safe-area-inset-bottom, 0px);
+  }
+  body:has(.tg-app-bottom-nav) .vela-confirm-editor-close,
+  body:has(.tg-app-bottom-nav) .vela-editor-discard {
+    top: 12px !important;
+  }
+}

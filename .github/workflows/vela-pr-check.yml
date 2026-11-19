@@ -81,15 +81,15 @@ jobs:
       - name: React unit and browser tests
         working-directory: frontend
         run: npm test
-      - name: Vela mobile viewport and touch target checks
-        working-directory: frontend
-        run: node scripts/test-vela-mobile-layout.mjs
       # Vela's Go server uses //go:embed all:dist. The upstream repository
       # does not track internal/web/dist. Building Go before Vite fails on a
       # clean checkout even if the Go sources are otherwise valid.
       - name: Build React panel AND Telegram Mini App first
         working-directory: frontend
         run: npm --ignore-scripts run build
+      - name: Vela mobile panel browser workflows
+        working-directory: frontend
+        run: node scripts/test-vela-mobile-layout.mjs
       - name: Ensure both app entry points were generated
         shell: bash
         run: |
