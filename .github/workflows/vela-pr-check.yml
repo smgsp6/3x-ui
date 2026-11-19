@@ -199,7 +199,7 @@ jobs:
             --entrypoint /app/x-ui vela-integration-ci:local \
             setting -webCert /etc/x-ui/vela-ci-cert.pem \
                     -webCertKey /etc/x-ui/vela-ci-key.pem >/dev/null 2>&1
-      - name: Verify HTTPS auth, Xray and live certificate rotation
+      - name: Verify genuine HTTPS auth, Xray and live certificate rotation
         shell: bash
         run: |
           set -euo pipefail
