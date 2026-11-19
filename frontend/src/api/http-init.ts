@@ -3,14 +3,19 @@ const CSRF_TOKEN_PATH = '/csrf-token';
 
 let csrfToken: string | null = null;
 let csrfFetchPromise: Promise<string | null> | null = null;
-let sessionExpired = false;
+const session = new AbortController();
 let basePathPrefix = '';
 
 export function leaveMiniAppSession(): void {
-  if (sessionExpired) return;
-  sessionExpired = true;
+  endSession('?signedOut=1');
+}
+
+function endSession(suffix: string): void {
+  if (session.signal.aborted) return;
+  csrfToken = null;
+  session.abort(new DOMException('Session ended', 'AbortError'));
   const base = window.X_UI_BASE_PATH || basePathPrefix || '/';
-  window.location.replace(base + '?signedOut=1');
+  window.location.replace(base + suffix);
 }
 
 export interface HttpResponse {
@@ -43,10 +48,11 @@ function readMetaToken(): string | null {
   return document.querySelector('meta[name="csrf-token"]')?.getAttribute('content') || null;
 }
 
-async function fetchCsrfToken(): Promise<string | null> {
+async function fetchCsrfToken(signal: AbortSignal): Promise<string | null> {
   try {
     const res = await fetch(basePathPrefix + CSRF_TOKEN_PATH, {
       method: 'GET',
+      signal,
       credentials: 'same-origin',
       headers: { 'X-Requested-With': 'XMLHttpRequest' },
     });
@@ -65,11 +71,14 @@ async function ensureCsrfToken(): Promise<string | null> {
     csrfToken = meta;
     return csrfToken;
   }
-  if (!csrfFetchPromise) csrfFetchPromise = fetchCsrfToken();
-  const fetched = await csrfFetchPromise;
-  csrfFetchPromise = null;
-  if (fetched) csrfToken = fetched;
-  return csrfToken;
+  csrfFetchPromise ??= withRequestSignal({ timeout: 15_000 }, fetchCsrfToken)
+    .then((fetched) => {
+      if (!session.signal.aborted && fetched) csrfToken = fetched;
+      return csrfToken;
+    })
+    .catch(() => null)
+    .finally(() => { csrfFetchPromise = null; });
+  return csrfFetchPromise;
 }
 
 function encodeForm(data: unknown): string {
@@ -107,16 +116,40 @@ function appendQuery(url: string, query: string): string {
   return `${path}${separator}${query}${hash}`;
 }
 
-function requestSignal(options: HttpRequestOptions): AbortSignal | undefined {
-  if (!options.timeout) return options.signal;
-  const timeout = AbortSignal.timeout(options.timeout);
-  if (!options.signal) return timeout;
-  if (typeof AbortSignal.any === 'function') return AbortSignal.any([options.signal, timeout]);
+async function withRequestSignal<T>(
+  options: HttpRequestOptions,
+  operation: (signal: AbortSignal) => Promise<T>,
+): Promise<T> {
   const controller = new AbortController();
-  const abort = () => controller.abort();
-  options.signal.addEventListener('abort', abort, { once: true });
-  timeout.addEventListener('abort', abort, { once: true });
-  return controller.signal;
+  const { signal } = controller;
+  const cancelSession = () => controller.abort(session.signal.reason);
+  const cancelCaller = () => controller.abort(new DOMException('Request aborted', 'AbortError'));
+  if (session.signal.aborted) cancelSession();
+  if (options.signal?.aborted) cancelCaller();
+  signal.throwIfAborted();
+
+  session.signal.addEventListener('abort', cancelSession);
+  options.signal?.addEventListener('abort', cancelCaller);
+  const timer = options.timeout
+    ? window.setTimeout(
+        () => controller.abort(new DOMException('Request timed out', 'TimeoutError')),
+        options.timeout,
+      )
+    : undefined;
+
+  let onAbort: (() => void) | undefined;
+  try {
+    return await new Promise<T>((resolve, reject) => {
+      onAbort = () => reject(signal.reason);
+      signal.addEventListener('abort', onAbort, { once: true });
+      operation(signal).then(resolve, reject);
+    });
+  } finally {
+    if (onAbort) signal.removeEventListener('abort', onAbort);
+    window.clearTimeout(timer);
+    session.signal.removeEventListener('abort', cancelSession);
+    options.signal?.removeEventListener('abort', cancelCaller);
+  }
 }
 
 async function performFetch(
@@ -124,6 +157,7 @@ async function performFetch(
   url: string,
   data: unknown,
   options: HttpRequestOptions,
+  signal: AbortSignal,
   csrfOverride?: string,
 ): Promise<Response> {
   const upper = method.toUpperCase();
@@ -148,13 +182,12 @@ async function performFetch(
 
   if (!SAFE_METHODS.has(upper)) {
     const token = csrfOverride ?? (await ensureCsrfToken());
-    if (sessionExpired && window.X_UI_TG_MINIAPP_MODE) return new Promise<Response>(() => {});
     if (token) headers.set('X-CSRF-Token', token);
   }
 
   const query = encodeForm(options.params);
   const fullUrl = basePathPrefix + appendQuery(url, query);
-  const signal = requestSignal(options);
+  signal.throwIfAborted();
 
   return fetch(fullUrl, { method: upper, headers, body, credentials: 'same-origin', signal });
 }
@@ -180,37 +213,33 @@ export async function httpRequest(
   data?: unknown,
   options: HttpRequestOptions = {},
 ): Promise<HttpResponse> {
-  if (sessionExpired && window.X_UI_TG_MINIAPP_MODE) return new Promise<HttpResponse>(() => {});
-  if (options.signal?.aborted) throw new DOMException('Request aborted', 'AbortError');
-  let res = await performFetch(method, url, data, options);
-  if (options.signal?.aborted) throw new DOMException('Request aborted', 'AbortError');
+  return withRequestSignal(options, async (signal) => {
+    let res = await performFetch(method, url, data, options, signal);
+    signal.throwIfAborted();
 
-  // A fresh CSRF token can belong to a different Telegram session. Require
-  // a deliberate action from a newly opened panel instead of replaying writes.
-  if (res.status === 403 && !window.X_UI_TG_MINIAPP_MODE && !SAFE_METHODS.has(method.toUpperCase())) {
-    csrfToken = null;
-    const fresh = await fetchCsrfToken();
-    if (fresh) {
-      csrfToken = fresh;
-      res = await performFetch(method, url, data, options, fresh);
+    // A fresh CSRF token can belong to a different Telegram session. Require
+    // a deliberate action from a newly opened panel instead of replaying writes.
+    if (res.status === 403 && !window.X_UI_TG_MINIAPP_MODE && !SAFE_METHODS.has(method.toUpperCase())) {
+      csrfToken = null;
+      const fresh = await fetchCsrfToken(signal);
+      signal.throwIfAborted();
+      if (fresh) {
+        csrfToken = fresh;
+        res = await performFetch(method, url, data, options, signal, fresh);
+        signal.throwIfAborted();
+      }
     }
-  }
 
-  if (res.status === 401) {
-    if (window.X_UI_TG_MINIAPP_MODE) {
-      leaveMiniAppSession();
-    } else if (!sessionExpired) {
-      sessionExpired = true;
-      window.location.replace(window.X_UI_BASE_PATH || basePathPrefix || '/');
+    if (res.status === 401) {
+      endSession(window.X_UI_TG_MINIAPP_MODE ? '?signedOut=1' : '');
+      signal.throwIfAborted();
     }
-    return new Promise<HttpResponse>(() => {});
-  }
 
-  const parsed = await parseBody(res);
-  if (sessionExpired && window.X_UI_TG_MINIAPP_MODE) return new Promise<HttpResponse>(() => {});
-  if (options.signal?.aborted) throw new DOMException('Request aborted', 'AbortError');
-  if (!res.ok) throw new HttpError(res.status, res.statusText, parsed);
-  return { ok: true, status: res.status, statusText: res.statusText, data: parsed };
+    const parsed = await parseBody(res);
+    signal.throwIfAborted();
+    if (!res.ok) throw new HttpError(res.status, res.statusText, parsed);
+    return { ok: true, status: res.status, statusText: res.statusText, data: parsed };
+  });
 }
 
 export function withBasePath(path: string): string {
@@ -228,5 +257,5 @@ export function setupHttp(): void {
       ? basePath.replace(/\/$/, '')
       : '';
 
-  csrfToken = readMetaToken();
+  if (!session.signal.aborted) csrfToken = readMetaToken();
 }

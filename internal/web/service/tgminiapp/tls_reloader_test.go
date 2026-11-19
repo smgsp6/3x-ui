@@ -332,7 +332,25 @@ func TestTLSReloaderRefreshesChainWithSameLeaf(t *testing.T) {
 		NotBefore: now.Add(-time.Hour), NotAfter: now.Add(60 * 24 * time.Hour),
 		BasicConstraintsValid: true, IsCA: true, KeyUsage: x509.KeyUsageCertSign,
 	}
-	caDER, err := x509.CreateCertificate(rand.Reader, ca, ca, &caKey.PublicKey, caKey)
+	root := *ca
+	root.Subject = pkix.Name{CommonName: "Test upper intermediate"}
+	root.SerialNumber = big.NewInt(4)
+	rootKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	anchor := *ca
+	anchor.Subject = pkix.Name{CommonName: "Test trust anchor"}
+	anchor.SerialNumber = big.NewInt(5)
+	anchorKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rootDER, err := x509.CreateCertificate(rand.Reader, &root, &anchor, &rootKey.PublicKey, anchorKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	caDER, err := x509.CreateCertificate(rand.Reader, ca, &root, &caKey.PublicKey, rootKey)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -341,7 +359,8 @@ func TestTLSReloaderRefreshesChainWithSameLeaf(t *testing.T) {
 		t.Fatal(err)
 	}
 	leafPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: leafDER})
-	chainPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: caDER})
+	intermediatePEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: caDER})
+	chainPEM := append(append([]byte{}, intermediatePEM...), pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: rootDER})...)
 	if err := os.WriteFile(path, leafPEM, 0600); err != nil {
 		t.Fatal(err)
 	}
@@ -354,7 +373,7 @@ func TestTLSReloaderRefreshesChainWithSameLeaf(t *testing.T) {
 		t.Fatal(err)
 	}
 	updated := reloader.currentAt(now.Add(2 * tlsRefreshInterval))
-	if len(updated.Certificate) != 2 {
+	if len(updated.Certificate) != 3 {
 		t.Fatalf("expected updated chain with unchanged leaf, got %d certificates", len(updated.Certificate))
 	}
 	if err := os.WriteFile(path, leafPEM, 0600); err != nil {
@@ -388,10 +407,16 @@ func TestTLSReloaderRefreshesChainWithSameLeaf(t *testing.T) {
 	if got := reloader.currentAt(now.Add(6 * tlsRefreshInterval)); got != updated {
 		t.Fatal("a new leaf from the same issuer replaced the full chain before its issuer arrived")
 	}
+	if err := os.WriteFile(path, append(append([]byte{}, renewedPEM...), intermediatePEM...), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if got := reloader.currentAt(now.Add(8 * tlsRefreshInterval)); got != updated {
+		t.Fatal("a partially renewed chain with a known missing issuer replaced the full chain")
+	}
 	if err := os.WriteFile(path, append(renewedPEM, chainPEM...), 0600); err != nil {
 		t.Fatal(err)
 	}
-	if got := reloader.currentAt(now.Add(8 * tlsRefreshInterval)); got == updated || len(got.Certificate) != 2 {
+	if got := reloader.currentAt(now.Add(10 * tlsRefreshInterval)); got == updated || len(got.Certificate) != 3 {
 		t.Fatal("complete renewed chain did not replace the previous chain")
 	}
 }

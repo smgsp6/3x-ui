@@ -89,12 +89,19 @@ test('mobile logout waits for server success before leaving the session', async 
   window.X_UI_TG_MINIAPP_MODE = true;
   vi.mocked(leaveMiniAppSession).mockImplementation(() => {});
   const post = vi.mocked(HttpUtil.post);
-  post.mockResolvedValueOnce(new Msg(false)).mockResolvedValueOnce(new Msg(true));
+  let failLogout!: (result: Msg) => void;
+  post
+    .mockImplementationOnce(() => new Promise((resolve) => { failLogout = resolve; }))
+    .mockResolvedValueOnce(new Msg(true));
   renderNav();
   fireEvent.click(screen.getByRole('button', { name: '更多' }));
   const entries = document.querySelectorAll<HTMLButtonElement>('.vela-more-entry');
   const logout = entries[entries.length - 1]!;
   fireEvent.click(logout);
+  expect(logout.disabled).toBe(true);
+  fireEvent.click(logout);
+  expect(post).toHaveBeenCalledTimes(1);
+  failLogout(new Msg(false));
   await waitFor(() => expect(logout.disabled).toBe(false));
   expect(leaveMiniAppSession).not.toHaveBeenCalled();
   fireEvent.click(logout);

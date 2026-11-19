@@ -230,6 +230,18 @@ os.execv('/usr/bin/tar', ['/usr/bin/tar', *sys.argv[1:]])
         self.assertIn('个人内测文件预检未通过', bad.stderr)
         self.assertNotIn(' config', self.log.read_text() if self.log.exists() else '')
 
+    def test_maintenance_rejects_symlinked_parent_before_touching_docker(self):
+        alias = Path(self.temp.name) / 'alias'
+        alias.symlink_to(self.root.parent, target_is_directory=True)
+        for command in ('backup', 'recover', 'update'):
+            with self.subTest(command=command):
+                bad = self.run_cli(command, VELA_HOME=str(alias / 'vela'))
+                self.assertNotEqual(bad.returncode, 0)
+                self.assertIn('VELA_HOME', bad.stderr)
+        self.assertFalse(self.log.exists())
+        self.assertFalse((self.root / '.vela.lock').exists())
+        self.assertEqual((self.root / 'db' / 'x-ui.db').read_text(), 'original-db')
+
     def test_doctor_rejects_modified_compose_template(self):
         self.prepare_reviewed_doctor_fixture()
         (self.root / 'compose.yml').write_text('services: {vela: {privileged: true}}')

@@ -22,6 +22,12 @@ SEQUENCE_FILE="$ROOT/release.sequence"
 LOCK="$ROOT/.vela.lock"
 PENDING="$ROOT/.pending-update"
 cmd=${1:-help}
+case "$cmd" in
+  backup|recover|update)
+    [[ "$(cd -- "$ROOT_INPUT" && pwd -L)" == "$ROOT" ]] ||
+      { echo '维护操作要求 VELA_HOME 路径不含符号链接' >&2; exit 2; }
+    ;;
+esac
 # A release key must be established out-of-band by the Vela maintainer. This
 # literal intentionally prevents EVERY production update until a reviewed
 # signing key and its fingerprint are embedded in a released CLI.

@@ -150,27 +150,15 @@ describe('http-init fetch wrapper', () => {
     expect(dataCalls).toBe(2);
   });
 
-  it('redirects once on 401 and never settles', async () => {
+  it('redirects once on 401 and cancels subsequent requests', async () => {
     window.X_UI_BASE_PATH = '/xui';
-    document.head.innerHTML = '<meta name="csrf-token" content="tok">';
     http.setupHttp();
     fetchMock.mockResolvedValue(new Response('', { status: 401 }));
 
-    const pending = Symbol('pending');
-    const first = await Promise.race([
-      http.httpRequest('POST', '/p', { a: 1 }),
-      new Promise((resolve) => setTimeout(() => resolve(pending), 20)),
-    ]);
-    expect(first).toBe(pending);
-    expect(replaceMock).toHaveBeenCalledTimes(1);
-    expect(replaceMock).toHaveBeenCalledWith('/xui');
-
-    const second = await Promise.race([
-      http.httpRequest('POST', '/p', { a: 1 }),
-      new Promise((resolve) => setTimeout(() => resolve(pending), 20)),
-    ]);
-    expect(second).toBe(pending);
-    expect(replaceMock).toHaveBeenCalledTimes(1);
+    await expect(http.httpRequest('GET', '/p')).rejects.toMatchObject({ name: 'AbortError' });
+    await expect(http.httpRequest('POST', '/p')).rejects.toMatchObject({ name: 'AbortError' });
+    expect(replaceMock).toHaveBeenCalledExactlyOnceWith('/xui');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it('never replays a Mini App write after a 403', async () => {
@@ -188,16 +176,32 @@ describe('http-init fetch wrapper', () => {
     let finish!: (response: Response) => void;
     fetchMock.mockImplementationOnce(() => new Promise<Response>((resolve) => { finish = resolve; }));
     fetchMock.mockResolvedValueOnce(new Response('', { status: 401 }));
-    const old = http.httpRequest('GET', '/panel/api/old');
-    void http.httpRequest('GET', '/panel/api/expiry');
-    await vi.waitFor(() => expect(replaceMock).toHaveBeenCalledTimes(1));
-    expect(replaceMock).toHaveBeenCalledWith('/?signedOut=1');
+    const old = expect(http.httpRequest('GET', '/panel/api/old')).rejects.toMatchObject({ name: 'AbortError' });
+    await expect(http.httpRequest('GET', '/panel/api/expiry')).rejects.toMatchObject({ name: 'AbortError' });
+    await old;
+    expect(initOf(0).signal?.aborted).toBe(true);
+    expect(replaceMock).toHaveBeenCalledExactlyOnceWith('/?signedOut=1');
     finish(okEnvelope());
-    const pending = Symbol();
-    await expect(Promise.race([old, new Promise((resolve) => setTimeout(() => resolve(pending), 20))]))
-      .resolves.toBe(pending);
-    void http.httpRequest('POST', '/panel/api/new', { a: 1 });
+    http.setupHttp();
+    await expect(http.httpRequest('POST', '/panel/api/new')).rejects.toMatchObject({ name: 'AbortError' });
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('cancels queued writes during logout even while CSRF is loading', async () => {
+    window.X_UI_TG_MINIAPP_MODE = true;
+    http.setupHttp();
+    let finish!: (response: Response) => void;
+    fetchMock.mockImplementationOnce(() => new Promise<Response>((resolve) => { finish = resolve; }));
+    const writes = ['/first', '/second'].map((url) =>
+      expect(http.httpRequest('POST', url)).rejects.toMatchObject({ name: 'AbortError' }),
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    http.leaveMiniAppSession();
+    await Promise.all(writes);
+    expect(initOf().signal?.aborted).toBe(true);
+    finish(okEnvelope('synthetic'));
+    await Promise.resolve();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
   it('parses empty, 204, non-JSON, and malformed bodies tolerantly', async () => {
@@ -236,66 +240,29 @@ describe('http-init fetch wrapper', () => {
     expect(initOf().signal).toBeInstanceOf(AbortSignal);
   });
 
-  it('preserves a caller cancellation signal when a timeout is set', async () => {
+  it('cancels an active request when the caller aborts before its timeout', async () => {
     http.setupHttp();
-    fetchMock.mockResolvedValue(okEnvelope());
+    fetchMock.mockImplementation(() => new Promise(() => {}));
     const controller = new AbortController();
-
-    await http.httpRequest('GET', '/x', undefined, { timeout: 1_000, signal: controller.signal });
+    const request = expect(
+      http.httpRequest('GET', '/x', undefined, { timeout: 1_000, signal: controller.signal }),
+    ).rejects.toMatchObject({ name: 'AbortError' });
     controller.abort();
-
+    await request;
     expect(initOf().signal?.aborted).toBe(true);
   });
 
-  it('preserves both cancellation paths when AbortSignal.any is unavailable', async () => {
-    const timeout = AbortSignal.timeout.bind(AbortSignal);
-    vi.resetModules();
-    vi.stubGlobal('AbortSignal', { timeout });
-    http = await import('@/api/http-init');
+  it('times out response body reads even when a caller signal is present', async () => {
     http.setupHttp();
-    fetchMock.mockResolvedValue(okEnvelope());
+    const response = new Response('');
+    vi.spyOn(response, 'text').mockImplementation(() => new Promise(() => {}));
+    fetchMock.mockResolvedValue(response);
     const controller = new AbortController();
-
-    await http.httpRequest('GET', '/x', undefined, { timeout: 1_000, signal: controller.signal });
-    controller.abort();
-
+    await expect(
+      http.httpRequest('GET', '/x', undefined, { timeout: 20, signal: controller.signal }),
+    ).rejects.toMatchObject({ name: 'TimeoutError' });
     expect(initOf().signal?.aborted).toBe(true);
-  });
-
-  it('times out when AbortSignal.any is unavailable', async () => {
-    const timeout = AbortSignal.timeout.bind(AbortSignal);
-    vi.resetModules();
-    vi.stubGlobal('AbortSignal', { timeout });
-    http = await import('@/api/http-init');
-    http.setupHttp();
-    fetchMock.mockResolvedValue(okEnvelope());
-    const controller = new AbortController();
-
-    await http.httpRequest('GET', '/x', undefined, { timeout: 20, signal: controller.signal });
-    const signal = initOf().signal as AbortSignal;
-    await new Promise<void>((resolve) =>
-      signal.addEventListener('abort', () => resolve(), { once: true }),
-    );
-
-    expect(signal.aborted).toBe(true);
-  });
-
-  it('aborts on the timeout when a caller signal is present', async () => {
-    http.setupHttp();
-    fetchMock.mockResolvedValue(okEnvelope());
-    const controller = new AbortController();
-
-    await http.httpRequest('GET', '/x', undefined, { timeout: 20, signal: controller.signal });
-    const signal = initOf().signal as AbortSignal;
-    await new Promise<void>((resolve) => {
-      if (signal.aborted) {
-        resolve();
-        return;
-      }
-      signal.addEventListener('abort', () => resolve(), { once: true });
-    });
-
-    expect(signal.aborted).toBe(true);
+    expect(controller.signal.aborted).toBe(false);
   });
 
   it.each([

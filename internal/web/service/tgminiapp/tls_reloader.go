@@ -144,12 +144,23 @@ func losesKnownIssuers(current, candidate *tls.Certificate) bool {
 	if bytes.Equal(candidate.Certificate[0], current.Certificate[0]) {
 		return true
 	}
-	if len(candidate.Certificate) != 1 {
-		return false
+	tail := candidate.Leaf
+	if len(candidate.Certificate) > 1 {
+		var err error
+		tail, err = x509.ParseCertificate(candidate.Certificate[len(candidate.Certificate)-1])
+		if err != nil {
+			return true
+		}
 	}
-	issuer, err := x509.ParseCertificate(current.Certificate[1])
-	return err == nil && bytes.Equal(candidate.Leaf.RawIssuer, issuer.RawSubject) &&
-		candidate.Leaf.CheckSignatureFrom(issuer) == nil
+	// A truncated bundle may end at any intermediate, not only at the leaf.
+	for _, der := range current.Certificate[1:] {
+		issuer, err := x509.ParseCertificate(der)
+		if err == nil && !bytes.Equal(tail.Raw, issuer.Raw) &&
+			bytes.Equal(tail.RawIssuer, issuer.RawSubject) && tail.CheckSignatureFrom(issuer) == nil {
+			return true
+		}
+	}
+	return false
 }
 
 // currentAt is separated from TLS to permit deterministic offline rotation

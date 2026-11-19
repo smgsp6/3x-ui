@@ -79,6 +79,7 @@ export class HttpUtil {
       if (!silent) this._handleMsg(msg, silentSuccess);
       return msg;
     } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return new Msg<T>(false, '');
       const err = error as {
         response?: { data?: { msg?: string; message?: string } };
         message?: string;
@@ -108,6 +109,7 @@ export class HttpUtil {
       if (!silent) this._handleMsg(msg, silentSuccess);
       return msg;
     } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return new Msg<T>(false, '');
       const err = error as {
         response?: { data?: { msg?: string; message?: string } };
         message?: string;
@@ -133,6 +135,7 @@ export class HttpUtil {
       if (!silent) this._handleMsg(msg, silentSuccess);
       return msg;
     } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return new Msg<T>(false, '');
       console.error('DELETE request failed:', error);
       const err = error as {
         response?: { data?: { msg?: string; message?: string } };
