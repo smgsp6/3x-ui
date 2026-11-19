@@ -269,3 +269,12 @@ python3 /path/to/vela-phase12/apply_to_repo.py .
 - 第二批四个 Job 全部通过，提交 `8452c791d64957a11e429b64e523576e1bb75f4d`。[对应 Actions](https://github.com/smgsp6/3x-ui/actions/runs/44443097018)
 - 客户端筛选保存失败时继续支持当前页面搜索，避免受限 WebView 的本地存储异常打断界面。组件回归覆盖正常跨页面恢复和禁用持久化时的请求。
 - HTTPS 集成增加 VLESS 客户端启用、设置到期时间和停用回读，验证标识不被替换、到期时间保留、入站保持关闭。
+
+### 第十五阶段 · 会话取消与恢复权限
+
+- 基线 `f65f71884590a5aafb00fdc3cffedb3441e5f4f4` 的四个 Job 已重新核对成功。[基线 Actions](https://github.com/smgsp6/3x-ui/actions/runs/44445151147)
+- 提交 `f28fb95c423bdaee7ac5f9755527842cbfe89970` 在注销或 401 后取消当前页面的请求和 CSRF 等待。取消会结束 Promise 并释放 loading，迟到的响应不会重启请求。Mini App 写请求遇到 403 仍不自动重放。四个 Job 全部通过，包含隔离容器的 HTTPS、Xray TCP/UDP 与 SQLite 恢复。[对应 Actions](https://github.com/smgsp6/3x-ui/actions/runs/44449405969)
+- 合成 HTTPS 集成在注销后重新建立合法会话，并复核新会话不会恢复旧 Cookie。证书热加载回归覆盖新叶证书带有部分签发链的场景，完整的新链到齐后才切换。
+- 备份、恢复和更新拒绝经过符号链接的安装父路径。恢复在替换数据前拒绝归档中具有 setuid、setgid 或允许组及其他用户写入的普通文件和目录，并保留当前数据及升级记录。
+- Vela 的 CSRF 失败日志只保留事件类别。证书状态页明确标注检查对象为配置文件，真实入口呈现的链仍通过新的客户端 HTTPS 握手核对。
+- 真实 Telegram 手机、外部 CA/ACME、独立环境防火墙和故障断电验收仍需操作者批准并执行。

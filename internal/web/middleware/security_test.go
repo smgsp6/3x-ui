@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/mhsanaei/3x-ui/v3/internal/logger"
 	"github.com/mhsanaei/3x-ui/v3/internal/web/session"
 
 	"github.com/gin-contrib/sessions"
@@ -147,5 +148,26 @@ func TestSecurityHeadersMiddlewareSkipsHSTSWithoutDirectHTTPS(t *testing.T) {
 
 	if got := rec.Result().Header.Get("Strict-Transport-Security"); got != "" {
 		t.Fatalf("Strict-Transport-Security = %q, want empty", got)
+	}
+}
+
+func TestVelaCSRFRejectsWithoutLoggingRequestIdentifiers(t *testing.T) {
+	t.Setenv("XUI_TG_MINIAPP_ENABLED", "true")
+	router := gin.New()
+	router.Use(sessions.Sessions("3x-ui", cookie.NewStore([]byte("01234567890123456789012345678901"))))
+	router.Use(CSRFMiddleware(func(*gin.Context) string {
+		t.Error("Vela CSRF rejection should not look up client IP")
+		return "192.0.2.1"
+	}))
+	const path = "/synthetic-client-identifier"
+	router.POST(path, func(c *gin.Context) { t.Error("request passed without CSRF") })
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, path, nil))
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403", rec.Code)
+	}
+	logs := logger.GetLogs(1, "WARNING")
+	if len(logs) != 1 || !strings.HasSuffix(logs[0], "Vela CSRF validation failed, request rejected") {
+		t.Fatal("CSRF rejection did not emit the expected redacted warning")
 	}
 }

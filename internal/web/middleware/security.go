@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/mhsanaei/3x-ui/v3/internal/logger"
+	"github.com/mhsanaei/3x-ui/v3/internal/web/service/tgminiapp"
 	"github.com/mhsanaei/3x-ui/v3/internal/web/session"
 
 	"github.com/gin-gonic/gin"
@@ -60,7 +61,11 @@ func CSRFMiddleware(clientIP func(*gin.Context) string) gin.HandlerFunc {
 			return
 		}
 		if !session.ValidateCSRFToken(c) {
-			logger.Warningf("CSRF validation failed, request rejected: method=%s path=%s IP=%s", c.Request.Method, c.Request.URL.Path, clientIP(c))
+			if tgminiapp.Enabled() {
+				logger.Warning("Vela CSRF validation failed, request rejected")
+			} else {
+				logger.Warningf("CSRF validation failed, request rejected: method=%s path=%s IP=%s", c.Request.Method, c.Request.URL.Path, clientIP(c))
+			}
 			c.AbortWithStatus(http.StatusForbidden)
 			return
 		}

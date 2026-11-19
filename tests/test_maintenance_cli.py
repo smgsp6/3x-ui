@@ -718,6 +718,28 @@ os.execv('/usr/bin/tar', ['/usr/bin/tar', *sys.argv[1:]])
                 self.assertEqual((self.root / 'db' / 'x-ui.db').read_text(), 'original-db')
                 self.assertNotIn(' stop ', self.log.read_text())
 
+    def test_recover_rejects_unsafe_modes_without_replacing_data(self):
+        archive_dir = self.root / 'backups'
+        archive_dir.mkdir(mode=0o700)
+        snapshot = archive_dir / 'vela-20260101T000000Z-123.tar.gz'
+        journal = self.root / '.pending-update'
+        journal.write_text(OLD + '\n' + NEW + '\n' + str(snapshot) + '\n')
+        for unsafe_mode in (0o4770, 0o2750, 0o702):
+            with self.subTest(mode=oct(unsafe_mode)):
+                with tarfile.open(snapshot, 'w:gz') as tar:
+                    for name in ('db', 'cert', 'acme'):
+                        entry = tarfile.TarInfo(name)
+                        entry.type = tarfile.DIRTYPE
+                        entry.mode = unsafe_mode if name == 'cert' else 0o700
+                        tar.addfile(entry)
+                snapshot.chmod(0o600)
+                result = self.run_cli('recover')
+                self.assertNotEqual(result.returncode, 0)
+                self.assertIn('unsafe file or directory permissions', result.stderr)
+                self.assertTrue(journal.exists())
+                self.assertEqual((self.root / 'db' / 'x-ui.db').read_text(), 'original-db')
+        self.assertNotIn(' stop ', self.log.read_text())
+
     def test_recover_rejects_archive_path_traversal(self):
         import io
         initial = self.run_cli('backup')

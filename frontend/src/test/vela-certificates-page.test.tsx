@@ -24,3 +24,18 @@ test('late certificate status cannot overwrite the current request', async () =>
     get.mockRestore();
   }
 });
+
+test('certificate diagnostics describe configured files and how to verify the served chain', async () => {
+  const get = vi.spyOn(HttpUtil, 'get').mockResolvedValue(new Msg(true, '', {
+    certificates: [{ purpose: 'panel', dnsNames: ['panel.example.test'], status: 'valid', daysRemaining: 45 }],
+    alertsEnabled: true,
+  }));
+  try {
+    render(<MemoryRouter><CertificatesPage /></MemoryRouter>);
+    expect(await screen.findByText('证书文件检查通过')).toBeTruthy();
+    expect(screen.getByText(/核对服务实际呈现的证书链/)).toBeTruthy();
+    expect(screen.getByText(/检查管理面板和订阅服务配置的证书文件/)).toBeTruthy();
+  } finally {
+    get.mockRestore();
+  }
+});

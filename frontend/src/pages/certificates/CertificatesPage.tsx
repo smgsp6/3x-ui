@@ -81,12 +81,12 @@ export default function CertificatesPage() {
             <div>
               <div className="tg-cert-kicker">VELA · SECURITY CENTER</div>
               <h1>证书管理</h1>
-              <p>统一查看 TLS 证书、有效期及配置状态</p>
+              <p>检查面板和订阅服务配置的 TLS 证书文件及有效期</p>
             </div>
             <Button icon={<ReloadOutlined />} onClick={() => void refresh()} loading={loading}>刷新</Button>
           </header>
           <section className="tg-cert-overview" aria-label="证书概览">
-            <div className="tg-cert-summary-item"><SafetyCertificateOutlined /><span>已接入证书</span><strong>{certs.filter(c => c.status !== 'unconfigured').length}</strong></div>
+            <div className="tg-cert-summary-item"><SafetyCertificateOutlined /><span>已配置证书</span><strong>{certs.filter(c => c.status !== 'unconfigured').length}</strong></div>
             <div className="tg-cert-summary-item"><WarningOutlined /><span>需关注</span><strong>{expiring}</strong></div>
           </section>
           {alertsEnabled !== null && <Alert
@@ -95,7 +95,7 @@ export default function CertificatesPage() {
             className="tg-cert-alert"
             message={alertsEnabled ? 'Telegram 到期提醒已启用' : 'Telegram 到期提醒尚未启用'}
             description={alertsEnabled
-              ? '每天按面板时区 09:00 检查管理面板和订阅证书，只通知授权的私人 Telegram 账号；消息不含域名、IP 或私钥路径。'
+              ? '每天按面板时区 09:00 检查管理面板和订阅服务配置的证书文件，只通知授权的私人 Telegram 账号；消息不含域名、IP 或私钥路径。'
               : '为保护隐私，此功能默认关闭。管理员可在服务器本地配置 XUI_TG_CERT_ALERT_ENABLED=true 后重启 Vela。'}
           />}
           {error && <Alert type="error" message={error} showIcon className="tg-cert-alert" />}
@@ -117,14 +117,14 @@ export default function CertificatesPage() {
                     <div><span>密钥匹配</span><strong>{cert.status === 'unconfigured' ? '未配置' : cert.status === 'invalid' ? '需检查' : '已核验'}</strong></div>
                   </div>
                   <div className="tg-cert-actions">
-                    <span>{cert.status === 'valid' ? <CheckCircleOutlined /> : <ClockCircleOutlined />} {cert.status === 'valid' ? '证书检查通过' : '请核实证书配置'}</span>
+                    <span>{cert.status === 'valid' ? <CheckCircleOutlined /> : <ClockCircleOutlined />} {cert.status === 'valid' ? '证书文件检查通过' : '请核实证书配置'}</span>
                     <Button onClick={() => navigate('/settings#general')} icon={<SettingOutlined />}>设置证书</Button>
                   </div>
                 </article>
               ))}
             </div>
           </Spin>
-          <p className="tg-cert-notice">此页提供证书状态和每日 Telegram 到期提醒设置说明。证书文件在面板设置中配置，签发和续签由部署环境负责。</p>
+          <p className="tg-cert-notice">更新后请建立新的 HTTPS 连接，核对服务实际呈现的证书链。若使用反向代理，请核对代理入口的证书，并在部署环境配置签发与续签。</p>
         </div>
       </Layout.Content>
     </Layout>

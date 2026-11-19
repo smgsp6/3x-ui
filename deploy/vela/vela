@@ -259,7 +259,7 @@ health() {
 verify_backup_archive() {
   local archive=$1
   python3 - "$archive" <<'PYTHON'
-import posixpath, sys, tarfile
+import posixpath, stat, sys, tarfile
 try:
     with tarfile.open(sys.argv[1], 'r:gz') as tar:
         members = tar.getmembers()
@@ -276,6 +276,8 @@ try:
             if pieces[0] not in roots or any(p in {'', '.', '..'} for p in pieces):
                 raise ValueError('path outside expected data roots')
             if entry.isfile() or entry.isdir():
+                if entry.mode & (stat.S_ISUID | stat.S_ISGID | stat.S_IWGRP | stat.S_IWOTH):
+                    raise ValueError('unsafe file or directory permissions')
                 continue
             if entry.issym() or entry.islnk():
                 target = entry.linkname
