@@ -11,6 +11,7 @@ import hmac
 import http.cookiejar
 import json
 from pathlib import Path
+import socket
 import ssl
 import time
 from urllib import error, parse, request
@@ -74,6 +75,42 @@ def csrf_token():
 def login(payload, csrf=None):
     return http("/tg-miniapp/auth", method="POST",
                 payload={"initData": payload}, csrf=csrf)
+
+def check_live_certificate_rotation():
+    active_cert = Path(TRUST)
+    active_key = active_cert.with_name("vela-ci-key.pem")
+    next_cert = active_cert.with_name("vela-ci-next-cert.pem")
+    next_key = active_cert.with_name("vela-ci-next-key.pem")
+    incoming = ssl.create_default_context(cafile=str(next_cert))
+    overlap = ssl.create_default_context(cafile=TRUST)
+    overlap.load_verify_locations(cafile=str(next_cert))
+
+    def peer(tls_context):
+        with socket.create_connection(("127.0.0.1", 2053), timeout=4) as stream:
+            with tls_context.wrap_socket(stream, server_hostname="127.0.0.1") as secure:
+                return secure.getpeercert(binary_form=True)
+
+    old_leaf = peer(context)
+    expected = ssl.PEM_cert_to_DER_cert(next_cert.read_text())
+    require(expected != old_leaf, "renewal fixture must differ from the active certificate")
+    next_cert.replace(active_cert)
+    # The reloader checks at most every 30 seconds. Keep polling with the
+    # original trust until it has had a full interval to see the mismatch.
+    deadline = time.monotonic() + 31
+    while time.monotonic() < deadline:
+        require(peer(context) == old_leaf, "incomplete renewal displaced the working certificate")
+        time.sleep(1)
+    require(peer(context) == old_leaf, "old certificate stopped serving before the new key arrived")
+
+    next_key.replace(active_key)
+    deadline = time.monotonic() + 36
+    while time.monotonic() < deadline:
+        if peer(overlap) == expected:
+            require(peer(incoming) == expected, "renewed certificate did not verify independently")
+            print("Live TLS rotation retained the old certificate until the matching pair arrived")
+            return
+        time.sleep(1)
+    raise AssertionError("renewed certificate was not loaded")
 
 def main():
     token = Path(BOT_TOKEN_FILE).read_text().strip()
@@ -740,6 +777,7 @@ def main():
     require(copied_cookie_status() == 401,
             "new Telegram session reactivated a revoked cookie")
     print("27/27 fresh Telegram launch succeeded without reviving the old cookie; HTTPS smoke PASS")
+    check_live_certificate_rotation()
 
 if __name__ == "__main__":
     try:

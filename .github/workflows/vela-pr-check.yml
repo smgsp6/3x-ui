@@ -179,8 +179,12 @@ jobs:
             -keyout "$scratch/vela-ci-key.pem" -out "$scratch/vela-ci-cert.pem" \
             -days 1 -subj '/CN=localhost' \
             -addext 'subjectAltName=DNS:localhost,IP:127.0.0.1' >/dev/null 2>&1
-          sudo chmod 600 "$scratch/vela-ci-key.pem"
-          sudo chmod 644 "$scratch/vela-ci-cert.pem"
+          sudo openssl req -x509 -newkey rsa:2048 -sha256 -noenc \
+            -keyout "$scratch/vela-ci-next-key.pem" -out "$scratch/vela-ci-next-cert.pem" \
+            -days 2 -subj '/CN=localhost' \
+            -addext 'subjectAltName=DNS:localhost,IP:127.0.0.1' >/dev/null 2>&1
+          sudo chmod 600 "$scratch/vela-ci-key.pem" "$scratch/vela-ci-next-key.pem"
+          sudo chmod 644 "$scratch/vela-ci-cert.pem" "$scratch/vela-ci-next-cert.pem"
           sudo python3 - "$scratch" <<'PY'
           from pathlib import Path
           import secrets, sys
@@ -195,7 +199,7 @@ jobs:
             --entrypoint /app/x-ui vela-integration-ci:local \
             setting -webCert /etc/x-ui/vela-ci-cert.pem \
                     -webCertKey /etc/x-ui/vela-ci-key.pem >/dev/null 2>&1
-      - name: Verify genuine HTTPS cookie, signature, CSRF and admin API
+      - name: Verify HTTPS auth, Xray and live certificate rotation
         shell: bash
         run: |
           set -euo pipefail
