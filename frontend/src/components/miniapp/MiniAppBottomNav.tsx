@@ -30,6 +30,19 @@ const primary = [
 
 const editableSelector = 'textarea:not([readonly]):not([disabled]), input:not([readonly]):not([disabled]):is([type="text"], [type="search"], [type="email"], [type="password"], [type="tel"], [type="url"], [type="number"], :not([type])), [contenteditable]:not([contenteditable="false"])';
 
+function dismissPageDialog(): boolean {
+  const dialogs = document.querySelectorAll<HTMLElement>('[role="dialog"][aria-modal="true"]');
+  for (const dialog of Array.from(dialogs).reverse()) {
+    if (dialog.closest('.vela-more-drawer, [hidden], [aria-hidden="true"], .ant-drawer-content-wrapper-hidden')) continue;
+    const wrapper = dialog.closest<HTMLElement>('.ant-modal-wrap') ?? dialog;
+    if (window.getComputedStyle(wrapper).display === 'none') continue;
+    // Use the dialog's own close action so its cancel and draft logic still run.
+    dialog.querySelector<HTMLButtonElement>('.ant-modal-close:not(:disabled), .ant-drawer-close:not(:disabled)')?.click();
+    return true;
+  }
+  return false;
+}
+
 /** All advanced Xray settings remain reachable; do not hide features on mobile. */
 export default function MiniAppBottomNav() {
   const { t } = useTranslation();
@@ -72,7 +85,7 @@ export default function MiniAppBottomNav() {
   // The official Telegram WebApp BackButton is a separate control from
   // browser history. Never navigate(-1): a Mini App may open as a deep link
   // with no same-origin previous entry. Close the app drawer first, then
-  // return to the safe dashboard root on subsequent back presses.
+  // dismiss a page dialog, or return to the safe dashboard root.
   useEffect(() => {
     if (!window.X_UI_TG_MINIAPP_MODE) return;
     const backButton = window.Telegram?.WebApp?.BackButton;
@@ -84,7 +97,7 @@ export default function MiniAppBottomNav() {
     }
     const handleBack = () => {
       if (moreOpen) setMoreOpen(false);
-      else navigate('/');
+      else if (!dismissPageDialog()) navigate('/');
     };
     backButton.onClick(handleBack);
     backButton.show();

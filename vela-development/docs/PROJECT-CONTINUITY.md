@@ -278,3 +278,5 @@ python3 /path/to/vela-phase12/apply_to_repo.py .
 - 备份、恢复和更新拒绝经过符号链接的安装父路径。恢复在替换数据前拒绝归档中具有 setuid、setgid 或允许组及其他用户写入的普通文件和目录，并保留当前数据及升级记录。
 - Vela 的 CSRF 失败日志只保留事件类别。证书状态页明确标注检查对象为配置文件，真实入口呈现的链仍通过新的客户端 HTTPS 握手核对。
 - 真实 Telegram 手机、外部 CA/ACME、独立环境防火墙和故障断电验收仍需操作者批准并执行。
+- 恢复权限和日志脱敏见提交 `f4fb8a4a630d3cf4297c76b143218b7bb88caa8c`，四个 Job 全部通过。[对应 Actions](https://github.com/smgsp6/3x-ui/actions/runs/44451516337)
+- Telegram 原生返回先关闭打开的「更多」抽屉或由当前编辑弹窗处理关闭，再返回首页。组件测试及 Chromium Storybook 交互覆盖先关闭弹窗、保留当前客户端页、随后返回首页的顺序。真实 WebView 与软键盘组合仍需实机检查。

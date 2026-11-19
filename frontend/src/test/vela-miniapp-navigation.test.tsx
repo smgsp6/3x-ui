@@ -1,4 +1,6 @@
-import { fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { Modal } from 'antd';
+import { useState } from 'react';
 import { MemoryRouter, useLocation } from 'react-router';
 import { afterEach, expect, test, vi } from 'vitest';
 
@@ -145,6 +147,36 @@ test('Telegram native BackButton closes More first then returns safely to dashbo
   rendered.unmount();
   expect(callbacks.size).toBe(0);
   expect(back.offClick).toHaveBeenCalled();
+});
+
+test('Telegram native BackButton lets an open edit dialog handle cancellation first', async () => {
+  let clickBack: (() => void) | undefined;
+  window.Telegram = { WebApp: { initData: '', BackButton: {
+    show: vi.fn(),
+    hide: vi.fn(),
+    onClick: (callback) => { clickBack = callback; },
+    offClick: () => { clickBack = undefined; },
+  } } };
+  window.X_UI_TG_MINIAPP_MODE = true;
+
+  function EditDialog() {
+    const [open, setOpen] = useState(true);
+    return open ? <Modal open title="Edit synthetic client" onCancel={() => setOpen(false)} /> : null;
+  }
+  renderWithProviders(
+    <MemoryRouter initialEntries={['/clients']}>
+      <MiniAppBottomNav />
+      <CurrentPath />
+      <EditDialog />
+    </MemoryRouter>,
+  );
+
+  expect(screen.getByRole('dialog', { name: 'Edit synthetic client' })).toBeTruthy();
+  act(() => clickBack?.());
+  await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+  expect(screen.getByTestId('current-route').textContent).toBe('/clients');
+  act(() => clickBack?.());
+  expect(screen.getByTestId('current-route').textContent).toBe('/');
 });
 
 test('missing Telegram WebApp bridge does not block regular Mini App navigation', () => {
