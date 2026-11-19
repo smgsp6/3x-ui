@@ -33,6 +33,7 @@ jobs:
           persist-credentials: false
           path: candidate
       - name: Preflight and stage reviewed public inputs
+        id: inputs
         run: |
           set -euo pipefail
           test "$(uname -m)" = x86_64
@@ -47,12 +48,20 @@ jobs:
           # The unmodified recovery harness runs as root for its protected
           # SQLite, maintenance lock and synthetic certificate fixture.
           sudo -n true
+          test "$(getconf _NPROCESSORS_ONLN)" -ge 2
           awk '/^MemTotal:/ {exit !($2 >= 6500000)}' /proc/meminfo
           df --output=avail -k "$RUNNER_TEMP" | awk 'NR == 2 {exit !($1 >= 12582912)}'
           test -z "${GH_TOKEN:-}${GITHUB_TOKEN:-}"
-          install -d -m 700 "$RUNNER_TEMP/vela-beta"
-          python3 control/deploy/vela/beta-stage-inputs.py \
-            control/deploy/vela/beta-build-lock.json "$RUNNER_TEMP/vela-beta"
+          root="$RUNNER_TEMP/vela-beta"
+          install -d -m 700 "$root"
+          git -C control show "$GITHUB_SHA:deploy/vela/beta-build-lock.json" > "$root/reviewed-lock.json"
+          python3 control/deploy/vela/beta-stage-inputs.py "$root/reviewed-lock.json" "$root"
+          {
+            echo "image_lock_sha=$(sha256sum "$root/image-lock.json" | cut -d' ' -f1)"
+            echo "trivy_sha=$(cat "$root/trivy.sha256")"
+            echo "db_sha=$(cat "$root/db.sha256")"
+            echo "db_metadata_sha=$(jq -er .db.metadata_sha256 "$root/reviewed-lock.json")"
+          } >> "$GITHUB_OUTPUT"
       - uses: actions/setup-go@44694675825211faa026b3c33043df3e48a5fa00
         with:
           go-version: '1.27.4'
@@ -62,6 +71,11 @@ jobs:
           node-version: '26.13.1'
       - name: Build and test locally on this disposable VM
         working-directory: candidate
+        env:
+          APPROVED_INPUT_LOCK_SHA256: ${{ steps.inputs.outputs.image_lock_sha }}
+          APPROVED_TRIVY_SHA256: ${{ steps.inputs.outputs.trivy_sha }}
+          APPROVED_TRIVY_DB_SHA256: ${{ steps.inputs.outputs.db_sha }}
+          APPROVED_TRIVY_DB_METADATA_SHA256: ${{ steps.inputs.outputs.db_metadata_sha }}
         run: |
           set -euo pipefail
           root="$RUNNER_TEMP/vela-beta"
@@ -72,10 +86,9 @@ jobs:
           export APPROVED_DELIVERY_SHA=ab4e3dfd1b1640797ffdba439b151e6c37d40b0f
           export VELA_INPUT_LOCK="$root/image-lock.json"
           export VELA_INPUT_DIR="$root/inputs"
-          export APPROVED_INPUT_LOCK_SHA256="$(sha256sum "$VELA_INPUT_LOCK" | cut -d' ' -f1)"
-          export APPROVED_TRIVY_SHA256="$(cat "$root/trivy.sha256")"
-          export APPROVED_TRIVY_DB_SHA256="$(cat "$root/db.sha256")"
           export TRIVY_CACHE_DIR="$root/trivy-cache"
+          [[ "$APPROVED_TRIVY_DB_METADATA_SHA256" =~ ^[0-9a-f]{64}$ ]]
+          test "$(sha256sum "$TRIVY_CACHE_DIR/db/metadata.json" | cut -d' ' -f1)" = "$APPROVED_TRIVY_DB_METADATA_SHA256"
           git switch -c vela-dev
           # Keep transient download URLs and fixture diagnostics on this VM.
           if ! bash ../delivery/deploy/vela/beta-image.sh build > "$root/build.log" 2>&1; then
