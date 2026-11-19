@@ -8,7 +8,6 @@ adds no scanner-detectable finding relative to the pinned upstream baseline.
 from pathlib import Path
 import subprocess
 import sys
-import tempfile
 
 BASE = "5297fd3c8495d80fab97ae511553fa545c69e913"
 EXACT_UPSTREAM_FIXTURES = {
@@ -18,11 +17,17 @@ EXACT_UPSTREAM_FIXTURES = {
     "internal/web/service/setting_mtls_bundle_test.go": "3526725dbfff5b21fbee5c4ec2664a67bf938328",
 }
 
+# Exact blob from the historical image-audit test. The markers were followed
+# by literal synthetic placeholders, with no complete key material.
+EXACT_VELA_HISTORICAL_FIXTURES = {
+    "BLOCK: 83627b0ffc78c9cbeacac7f7a37c06ca6ac61cbd: historical private key block",
+}
+
 def git(*args):
     return subprocess.check_output(["git", *args], text=True).strip()
 
-def findings(script, repo):
-    result = subprocess.run([sys.executable, script, str(repo)], capture_output=True, text=True)
+def findings(script, repo, *args):
+    result = subprocess.run([sys.executable, script, str(repo), *args], capture_output=True, text=True)
     blocks = sorted(x for x in (result.stdout + result.stderr).splitlines() if x.startswith("BLOCK: "))
     if result.returncode not in (0, 1) or (result.returncode and not blocks):
         raise RuntimeError("scanner failed to complete safely: " + script)
@@ -42,16 +47,14 @@ def audit():
     expected = sorted("BLOCK: " + path + ": private key block" for path in EXACT_UPSTREAM_FIXTURES)
     if source != expected:
         raise RuntimeError("new or different private-content source finding")
-    with tempfile.TemporaryDirectory(prefix="vela-phase13-history-") as temp:
-        try:
-            subprocess.run(["git", "worktree", "add", "--detach", temp, BASE], check=True, capture_output=True)
-            baseline = findings("deploy/vela/git_history_audit.py", Path(temp))
-            candidate = findings("deploy/vela/git_history_audit.py", Path("."))
-            if baseline != candidate:
-                raise RuntimeError("new historical private-content finding")
-            print(f"PASS (development only): zero new source findings; {len(baseline)} pre-existing historic marker matches")
-        finally:
-            subprocess.run(["git", "worktree", "remove", "--force", temp], capture_output=True)
+    script = "deploy/vela/git_history_audit.py"
+    baseline = set(findings(script, Path("."), "--ref", BASE))
+    candidate = set(findings(script, Path("."), "--ref", "HEAD"))
+    if candidate - baseline - EXACT_VELA_HISTORICAL_FIXTURES:
+        raise RuntimeError("new historical private-content finding")
+    print(f"PASS (development only): zero unreviewed historical findings; "
+          f"{len(candidate & baseline)} inherited and "
+          f"{len(candidate & EXACT_VELA_HISTORICAL_FIXTURES)} pinned synthetic matches")
     print("WARNING: inherited historical findings still block a production release")
 
 if __name__ == "__main__":

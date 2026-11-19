@@ -8,6 +8,7 @@ independent review.
 """
 from __future__ import annotations
 
+import argparse
 import subprocess
 import sys
 from pathlib import Path
@@ -37,8 +38,14 @@ def _discard(stream, count: int) -> None:
         count -= len(data)
 
 
-def audit_history(repo: Path) -> tuple[list[str], int]:
-    listing = subprocess.run(['git', 'rev-list', '--objects', '--all'], cwd=repo,
+def audit_history(repo: Path, ref: str | None = None) -> tuple[list[str], int]:
+    revision = '--all'
+    if ref is not None:
+        revision = subprocess.check_output(
+            ['git', 'rev-parse', '--verify', '--end-of-options', f'{ref}^{{commit}}'],
+            cwd=repo, stderr=subprocess.PIPE, text=True,
+        ).strip()
+    listing = subprocess.run(['git', 'rev-list', '--objects', revision], cwd=repo,
                              stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
     refs = []
     for row in listing.stdout.splitlines():
@@ -85,7 +92,7 @@ def audit_history(repo: Path) -> tuple[list[str], int]:
                 raise ValueError('invalid Git batch delimiter')
         for oid, label in sorted(seen):
             # IDs are non-secret object hashes; never display matched bytes.
-            findings.append(f'{oid[:12]}: {label}')
+            findings.append(f'{oid}: {label}')
     finally:
         if proc.stdin:
             proc.stdin.close()
@@ -97,16 +104,17 @@ def audit_history(repo: Path) -> tuple[list[str], int]:
 
 
 def main() -> int:
-    if len(sys.argv) > 2:
-        print('Usage: git_history_audit.py [repo_dir]', file=sys.stderr)
-        return 2
-    repo = Path(sys.argv[1] if len(sys.argv) == 2 else '.').resolve()
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('repo_dir', nargs='?', default='.')
+    parser.add_argument('--ref', help='scan only objects reachable from this commit')
+    args = parser.parse_args()
+    repo = Path(args.repo_dir).resolve()
     try:
         shallow = subprocess.run(['git', 'rev-parse', '--is-shallow-repository'], cwd=repo,
                                  capture_output=True, text=True, check=True).stdout.strip()
         if shallow != 'false':
             raise ValueError('shallow Git checkout; historical scan cannot be considered complete')
-        findings, count = audit_history(repo)
+        findings, count = audit_history(repo, args.ref)
     except (subprocess.CalledProcessError, FileNotFoundError, ValueError, OSError, subprocess.TimeoutExpired) as error:
         print(f'BLOCKED: cannot complete historic Git object audit: {error}', file=sys.stderr)
         return 1

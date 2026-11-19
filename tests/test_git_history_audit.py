@@ -45,6 +45,22 @@ class GitHistoryAuditTests(unittest.TestCase):
         self.assertTrue(any('Telegram bot token' in item for item in findings))
         self.assertNotIn(secret, '\n'.join(findings))
 
+    def test_pinned_baseline_excludes_a_later_fixture_on_another_ref(self):
+        baseline = subprocess.check_output(
+            ['git', 'rev-parse', 'HEAD'], cwd=self.repo, text=True,
+        ).strip()
+        self.git('checkout', '-qb', 'candidate')
+        (self.repo / 'marker.txt').write_text('-----BEGIN ' + 'PRIVATE KEY-----\nFIXTURE')
+        self.git('add', '.')
+        self.git('commit', '-qm', 'candidate marker')
+        self.git('checkout', '--detach', baseline)
+        baseline_findings, _ = audit.audit_history(self.repo, baseline)
+        candidate_findings, _ = audit.audit_history(self.repo, 'candidate')
+        all_findings, _ = audit.audit_history(self.repo)
+        self.assertEqual(baseline_findings, [])
+        self.assertEqual(len(candidate_findings), 1)
+        self.assertEqual(all_findings, candidate_findings)
+
     def test_historical_sensitive_filename_detected(self):
         (self.repo/'prod-private.key').write_text('placeholder only')
         self.git('add', '.')
