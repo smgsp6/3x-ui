@@ -1,0 +1,1295 @@
+﻿2026-11-20T02:20:27.4762685Z Current runner version: '2.338.2'
+2026-11-20T02:20:27.4792771Z ##[group]Runner Image Provisioner
+2026-11-20T02:20:27.4793844Z Hosted Compute Agent
+2026-11-20T02:20:27.4794446Z Version: 20261111.635
+2026-11-20T02:20:27.4795235Z Commit: b8a594ea514ff44cadb5342986c68b1eac6e22ed
+2026-11-20T02:20:27.4795987Z Build Date: 2026-11-11T01:49:01Z
+2026-11-20T02:20:27.4796663Z Worker ID: {fcd71ce6-0758-4e4a-bf80-8ddc55ebe736}
+2026-11-20T02:20:27.4797485Z Region: westus
+2026-11-20T02:20:27.4798043Z Cloud: Azure
+2026-11-20T02:20:27.4798672Z ##[endgroup]
+2026-11-20T02:20:27.4800878Z ##[group]Operating System
+2026-11-20T02:20:27.4801548Z Ubuntu
+2026-11-20T02:20:27.4802216Z 24.04.5
+2026-11-20T02:20:27.4802736Z LTS
+2026-11-20T02:20:27.4803306Z ##[endgroup]
+2026-11-20T02:20:27.4803891Z ##[group]Runner Image
+2026-11-20T02:20:27.4804540Z Image: ubuntu-24.04
+2026-11-20T02:20:27.4805211Z Version: 20261116.376.1
+2026-11-20T02:20:27.4806593Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20261116.376/images/ubuntu/Ubuntu2404-Readme.md
+2026-11-20T02:20:27.4808271Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20261116.376
+2026-11-20T02:20:27.4809235Z ##[endgroup]
+2026-11-20T02:20:27.4810971Z ##[group]GITHUB_TOKEN Permissions
+2026-11-20T02:20:27.4813379Z Contents: read
+2026-11-20T02:20:27.4814126Z Metadata: read
+2026-11-20T02:20:27.4814692Z ##[endgroup]
+2026-11-20T02:20:27.4817057Z Secret source: Actions
+2026-11-20T02:20:27.4818007Z Cache mode: write
+2026-11-20T02:20:27.4819136Z Prepare workflow directory
+2026-11-20T02:20:27.5183660Z Prepare all required actions
+2026-11-20T02:20:27.5293528Z Complete job name: evidence
+2026-11-20T02:20:27.6473299Z ##[group]Run set -euo pipefail
+2026-11-20T02:20:27.6474267Z [36;1mset -euo pipefail[0m
+2026-11-20T02:20:27.6475003Z [36;1mtest "$(uname -m)" = x86_64[0m
+2026-11-20T02:20:27.6475959Z [36;1mtest "$(docker context show)" = default[0m
+2026-11-20T02:20:27.6477146Z [36;1mtest "$(docker context inspect default --format '{{.Endpoints.docker.Host}}')" = unix:///var/run/docker.sock[0m
+2026-11-20T02:20:27.6478355Z [36;1mcontainers=$(docker ps -aq)[0m
+2026-11-20T02:20:27.6479152Z [36;1mtest -z "$containers"[0m
+2026-11-20T02:20:27.6480467Z [36;1mroot=$(mktemp -d "$RUNNER_TEMP/vela-apk.XXXXXXXX")[0m
+2026-11-20T02:20:27.6481332Z [36;1mtrap 'rm -rf -- "$root"' EXIT[0m
+2026-11-20T02:20:27.6481989Z [36;1mresolve() {[0m
+2026-11-20T02:20:27.6482666Z [36;1m  local stage=$1 base=$2[0m
+2026-11-20T02:20:27.6483294Z [36;1m  shift 2[0m
+2026-11-20T02:20:27.6483979Z [36;1m  local evidence="$root/$stage"[0m
+2026-11-20T02:20:27.6484711Z [36;1m  mkdir -m 0700 "$evidence"[0m
+2026-11-20T02:20:27.6485611Z [36;1m  docker pull --platform linux/amd64 "$base"[0m
+2026-11-20T02:20:27.6486489Z [36;1m  docker run --rm --platform linux/amd64 --cap-drop ALL \[0m
+2026-11-20T02:20:27.6487338Z [36;1m    --user "$(id -u):$(id -g)" \[0m
+2026-11-20T02:20:27.6488225Z [36;1m    --security-opt no-new-privileges --entrypoint /bin/sh \[0m
+2026-11-20T02:20:27.6489131Z [36;1m    -v "$evidence:/evidence" "$base" -eu -c '[0m
+2026-11-20T02:20:27.6490664Z [36;1m      test "$(apk --print-arch)" = x86_64[0m
+2026-11-20T02:20:27.6491472Z [36;1m      umask 077[0m
+2026-11-20T02:20:27.6492370Z [36;1m      # apk update needs a writable database lock, log and index cache.[0m
+2026-11-20T02:20:27.6493292Z [36;1m      apk_root=$(mktemp -d)[0m
+2026-11-20T02:20:27.6494092Z [36;1m      mkdir -p "$apk_root/lib/apk/db" "$apk_root/etc/apk" \[0m
+2026-11-20T02:20:27.6495067Z [36;1m        "$apk_root/var/cache/apk" "$apk_root/var/log"[0m
+2026-11-20T02:20:27.6496433Z [36;1m      cp /lib/apk/db/installed "$apk_root/lib/apk/db/"[0m
+2026-11-20T02:20:27.6498130Z [36;1m      cp /etc/apk/world "$apk_root/etc/apk/"[0m
+2026-11-20T02:20:27.6499407Z [36;1m      cp -R /etc/apk/keys "$apk_root/etc/apk/"[0m
+2026-11-20T02:20:27.6501357Z [36;1m      branch=$(cut -d. -f1,2 /etc/alpine-release)[0m
+2026-11-20T02:20:27.6502896Z [36;1m      for section in main community; do[0m
+2026-11-20T02:20:27.6505112Z [36;1m        printf "https://dl-cdn.alpinelinux.org/alpine/v%s/%s\n" "$branch" "$section"[0m
+2026-11-20T02:20:27.6507027Z [36;1m      done >"$apk_root/etc/apk/repositories"[0m
+2026-11-20T02:20:27.6508534Z [36;1m      apk --root "$apk_root" update[0m
+2026-11-20T02:20:27.6509919Z [36;1m      cd /evidence[0m
+2026-11-20T02:20:27.6511250Z [36;1m      # apk-tools 2.x can write packages even when reporting URLs.[0m
+2026-11-20T02:20:27.6512394Z [36;1m      apk --root "$apk_root" fetch --recursive --simulate --url "$@" > urls[0m
+2026-11-20T02:20:27.6513400Z [36;1m      apk --root "$apk_root" fetch --recursive "$@"[0m
+2026-11-20T02:20:27.6514376Z [36;1m      for package in ./*.apk; do apk verify "$package"; done[0m
+2026-11-20T02:20:27.6515205Z [36;1m      sha256sum ./*.apk > SHA256SUMS[0m
+2026-11-20T02:20:27.6515947Z [36;1m      sha256sum /etc/apk/keys/* > key-SHA256SUMS[0m
+2026-11-20T02:20:27.6516738Z [36;1m    ' sh "$@"[0m
+2026-11-20T02:20:27.6517309Z [36;1m[0m
+2026-11-20T02:20:27.6518077Z [36;1m  docker run --rm --platform linux/amd64 --network none \[0m
+2026-11-20T02:20:27.6519064Z [36;1m    --security-opt no-new-privileges --entrypoint /bin/sh \[0m
+2026-11-20T02:20:27.6520406Z [36;1m    -v "$evidence:/evidence:ro" "$base" -eu -c '[0m
+2026-11-20T02:20:27.6521388Z [36;1m      cd /evidence[0m
+2026-11-20T02:20:27.6522057Z [36;1m      sha256sum -c SHA256SUMS[0m
+2026-11-20T02:20:27.6522981Z [36;1m      apk --repositories-file /dev/null add --no-network --no-cache ./*.apk[0m
+2026-11-20T02:20:27.6524095Z [36;1m      for package; do grep -Fx "P:$package" /lib/apk/db/installed >/dev/null; done[0m
+2026-11-20T02:20:27.6525367Z [36;1m      awk "/^[PVALD]:/ || /^$/" /lib/apk/db/installed[0m
+2026-11-20T02:20:27.6526253Z [36;1m    ' sh "$@" > "$evidence/installed"[0m
+2026-11-20T02:20:27.6527011Z [36;1m  python3 - "$stage" "$evidence" <<'PY'[0m
+2026-11-20T02:20:27.6527780Z [36;1mimport re[0m
+2026-11-20T02:20:27.6528348Z [36;1mimport sys[0m
+2026-11-20T02:20:27.6528958Z [36;1mfrom pathlib import Path[0m
+2026-11-20T02:20:27.6529947Z [36;1mfrom urllib.parse import urlsplit[0m
+2026-11-20T02:20:27.6530681Z [36;1m[0m
+2026-11-20T02:20:27.6531349Z [36;1mstage, directory = sys.argv[1:][0m
+2026-11-20T02:20:27.6532763Z [36;1mroot = Path(directory)[0m
+2026-11-20T02:20:27.6534637Z [36;1murls = {}[0m
+2026-11-20T02:20:27.6535714Z [36;1mfor url in root.joinpath("urls").read_text().splitlines():[0m
+2026-11-20T02:20:27.6536715Z [36;1m    assert re.fullmatch([0m
+2026-11-20T02:20:27.6537640Z [36;1m        r"https://dl-cdn\.alpinelinux\.org/alpine/v\d+\.\d+/"[0m
+2026-11-20T02:20:27.6538640Z [36;1m        r"(main|community)/x86_64/[A-Za-z0-9_.+-]+\.apk", url[0m
+2026-11-20T02:20:27.6540220Z [36;1m    ), "unexpected APK origin"[0m
+2026-11-20T02:20:27.6542067Z [36;1m    name = Path(urlsplit(url).path).name[0m
+2026-11-20T02:20:27.6543672Z [36;1m    assert name not in urls, "ambiguous package origin"[0m
+2026-11-20T02:20:27.6545155Z [36;1m    urls[name] = url[0m
+2026-11-20T02:20:27.6546012Z [36;1m[0m
+2026-11-20T02:20:27.6546767Z [36;1mpackages = {}[0m
+2026-11-20T02:20:27.6547638Z [36;1mfor line in root.joinpath("SHA256SUMS").read_text().splitlines():[0m
+2026-11-20T02:20:27.6548705Z [36;1m    digest, file = line.split()[0m
+2026-11-20T02:20:27.6550221Z [36;1m    name = Path(file).name[0m
+2026-11-20T02:20:27.6551625Z [36;1m    assert re.fullmatch(r"[a-f0-9]{64}", digest) and name not in packages[0m
+2026-11-20T02:20:27.6552598Z [36;1m    packages[name] = digest[0m
+2026-11-20T02:20:27.6553544Z [36;1massert packages and packages.keys() == urls.keys(), "URL/download inventory mismatch"[0m
+2026-11-20T02:20:27.6554561Z [36;1m[0m
+2026-11-20T02:20:27.6555188Z [36;1mprint(f"{stage} approved base key fingerprints")[0m
+2026-11-20T02:20:27.6556061Z [36;1mprint(root.joinpath("key-SHA256SUMS").read_text(), end="")[0m
+2026-11-20T02:20:27.6557016Z [36;1mprint(f"{stage} APK SHA-256 and upstream URLs")[0m
+2026-11-20T02:20:27.6557875Z [36;1mfor name, digest in sorted(packages.items()):[0m
+2026-11-20T02:20:27.6558950Z [36;1m    print(digest, urls[name])[0m
+2026-11-20T02:20:27.6560218Z [36;1mprint(f"{stage} offline installation output and installed package metadata")[0m
+2026-11-20T02:20:27.6561333Z [36;1mprint(root.joinpath("installed").read_text(), end="")[0m
+2026-11-20T02:20:27.6562120Z [36;1mPY[0m
+2026-11-20T02:20:27.6562726Z [36;1m}[0m
+2026-11-20T02:20:27.6563915Z [36;1mresolve builder docker.io/library/golang@sha256:ea30e25680a5470bac02b08bb0e0a735fb75bd0ab7d431b9b95ee0abef362586 \[0m
+2026-11-20T02:20:27.6565135Z [36;1m  build-base gcc curl unzip[0m
+2026-11-20T02:20:27.6566324Z [36;1mresolve runtime docker.io/library/alpine@sha256:2039be0c5ec6ce8566809626a252c930216a92109c043f282504accb5ee3c0c6 \[0m
+2026-11-20T02:20:27.6567582Z [36;1m  ca-certificates tzdata fail2ban bash curl openssl[0m
+2026-11-20T02:20:27.6946652Z shell: /usr/bin/bash --noprofile --norc -e -o pipefail {0}
+2026-11-20T02:20:27.6948259Z ##[endgroup]
+2026-11-20T02:20:28.4649097Z docker.io/library/golang@sha256:ea30e25680a5470bac02b08bb0e0a735fb75bd0ab7d431b9b95ee0abef362586: Pulling from library/golang
+2026-11-20T02:20:28.4651313Z 881fc932939e: Pulling fs layer
+2026-11-20T02:20:28.4652112Z 1d88fd0fb393: Pulling fs layer
+2026-11-20T02:20:28.4652730Z 83d129a974dd: Pulling fs layer
+2026-11-20T02:20:28.4653482Z c050182f513f: Pulling fs layer
+2026-11-20T02:20:28.4654067Z 4f4fb700ef54: Pulling fs layer
+2026-11-20T02:20:28.4654816Z c050182f513f: Waiting
+2026-11-20T02:20:28.4655353Z 4f4fb700ef54: Waiting
+2026-11-20T02:20:28.6988558Z 1d88fd0fb393: Verifying Checksum
+2026-11-20T02:20:28.6990513Z 1d88fd0fb393: Download complete
+2026-11-20T02:20:28.7113752Z 881fc932939e: Verifying Checksum
+2026-11-20T02:20:28.7121347Z 881fc932939e: Download complete
+2026-11-20T02:20:28.8555549Z 881fc932939e: Pull complete
+2026-11-20T02:20:28.9128560Z c050182f513f: Verifying Checksum
+2026-11-20T02:20:28.9130251Z c050182f513f: Download complete
+2026-11-20T02:20:28.9233761Z 4f4fb700ef54: Verifying Checksum
+2026-11-20T02:20:28.9236196Z 4f4fb700ef54: Download complete
+2026-11-20T02:20:29.0000087Z 83d129a974dd: Verifying Checksum
+2026-11-20T02:20:29.0001353Z 83d129a974dd: Download complete
+2026-11-20T02:20:29.0026076Z 1d88fd0fb393: Pull complete
+2026-11-20T02:20:34.5939244Z 83d129a974dd: Pull complete
+2026-11-20T02:20:34.6046430Z c050182f513f: Pull complete
+2026-11-20T02:20:34.6142148Z 4f4fb700ef54: Pull complete
+2026-11-20T02:20:34.6196615Z Digest: sha256:ea30e25680a5470bac02b08bb0e0a735fb75bd0ab7d431b9b95ee0abef362586
+2026-11-20T02:20:34.6206451Z Status: Downloaded newer image for golang@sha256:ea30e25680a5470bac02b08bb0e0a735fb75bd0ab7d431b9b95ee0abef362586
+2026-11-20T02:20:34.6215459Z docker.io/library/golang@sha256:ea30e25680a5470bac02b08bb0e0a735fb75bd0ab7d431b9b95ee0abef362586
+2026-11-20T02:20:35.3252929Z v3.24.4-139-g73a8bf6f46b [https://dl-cdn.alpinelinux.org/alpine/v3.24/main]
+2026-11-20T02:20:35.3254023Z v3.24.4-140-g7d6b8aa652d [https://dl-cdn.alpinelinux.org/alpine/v3.24/community]
+2026-11-20T02:20:35.3254753Z OK: 28673 distinct packages available
+2026-11-20T02:20:35.9410292Z Downloading binutils-2.45.1-r1
+2026-11-20T02:20:36.0345136Z Downloading brotli-libs-1.2.1-r0
+2026-11-20T02:20:36.0432853Z Downloading build-base-0.5-r4
+2026-11-20T02:20:36.0475251Z Downloading c-ares-1.34.9-r0
+2026-11-20T02:20:36.0517164Z Downloading ca-certificates-bundle-20261020-r0
+2026-11-20T02:20:36.0553743Z Downloading curl-8.23.0-r0
+2026-11-20T02:20:36.0589258Z Downloading file-5.47-r2
+2026-11-20T02:20:36.0608135Z Downloading fortify-headers-3.0.1-r2
+2026-11-20T02:20:36.0627889Z Downloading g++-15.2.0-r5
+2026-11-20T02:20:36.2917547Z Downloading gcc-15.2.0-r5
+2026-11-20T02:20:37.0477794Z Downloading gmp-6.3.0-r4
+2026-11-20T02:20:37.0519880Z Downloading isl26-0.26-r2
+2026-11-20T02:20:37.0654035Z Downloading jansson-2.15.0-r0
+2026-11-20T02:20:37.0677193Z Downloading libatomic-15.2.0-r5
+2026-11-20T02:20:37.0701342Z Downloading libcrypto3-3.5.9-r1
+2026-11-20T02:20:37.0960884Z Downloading libcurl-8.23.0-r0
+2026-11-20T02:20:37.1054278Z Downloading libgcc-15.2.0-r5
+2026-11-20T02:20:37.1108726Z Downloading libgcc-static-15.2.0-r5
+2026-11-20T02:20:37.1301466Z Downloading libgomp-15.2.0-r5
+2026-11-20T02:20:37.1363578Z Downloading libidn2-2.3.8-r0
+2026-11-20T02:20:37.1401642Z Downloading libmagic-5.47-r2
+2026-11-20T02:20:37.1577492Z Downloading libpsl-0.21.5-r3
+2026-11-20T02:20:37.1605528Z Downloading libssl3-3.5.9-r1
+2026-11-20T02:20:37.1682432Z Downloading libstdc++-15.2.0-r5
+2026-11-20T02:20:37.1815601Z Downloading libstdc++-dev-15.2.0-r5
+2026-11-20T02:20:37.2633115Z Downloading libunistring-1.4.2-r0
+2026-11-20T02:20:37.2738003Z Downloading make-4.4.1-r4
+2026-11-20T02:20:37.2774569Z Downloading mpc1-1.3.1-r1
+2026-11-20T02:20:37.2818527Z Downloading mpfr4-4.2.2-r0
+2026-11-20T02:20:37.2887060Z Downloading musl-1.2.6-r3
+2026-11-20T02:20:37.2960630Z Downloading musl-dev-1.2.6-r3
+2026-11-20T02:20:37.3285083Z Downloading nghttp2-libs-1.70.0-r0
+2026-11-20T02:20:37.3309942Z Downloading patch-2.8.1-r0
+2026-11-20T02:20:37.3341426Z Downloading unzip-6.0-r16
+2026-11-20T02:20:37.3376572Z Downloading zlib-1.4-r0
+2026-11-20T02:20:37.3404780Z Downloading zstd-libs-1.5.7-r2
+2026-11-20T02:20:37.4238308Z ./binutils-2.45.1-r1.apk: OK
+2026-11-20T02:20:37.4362976Z ./brotli-libs-1.2.1-r0.apk: OK
+2026-11-20T02:20:37.4436885Z ./build-base-0.5-r4.apk: OK
+2026-11-20T02:20:37.4523372Z ./c-ares-1.34.9-r0.apk: OK
+2026-11-20T02:20:37.4603917Z ./ca-certificates-bundle-20261020-r0.apk: OK
+2026-11-20T02:20:37.4689502Z ./curl-8.23.0-r0.apk: OK
+2026-11-20T02:20:37.4765306Z ./file-5.47-r2.apk: OK
+2026-11-20T02:20:37.4842105Z ./fortify-headers-3.0.1-r2.apk: OK
+2026-11-20T02:20:37.6841717Z ./g++-15.2.0-r5.apk: OK
+2026-11-20T02:20:38.3365999Z ./gcc-15.2.0-r5.apk: OK
+2026-11-20T02:20:38.3465013Z ./gmp-6.3.0-r4.apk: OK
+2026-11-20T02:20:38.3635777Z ./isl26-0.26-r2.apk: OK
+2026-11-20T02:20:38.3711775Z ./jansson-2.15.0-r0.apk: OK
+2026-11-20T02:20:38.3811182Z ./libatomic-15.2.0-r5.apk: OK
+2026-11-20T02:20:38.4057703Z ./libcrypto3-3.5.9-r1.apk: OK
+2026-11-20T02:20:38.4175616Z ./libcurl-8.23.0-r0.apk: OK
+2026-11-20T02:20:38.4264721Z ./libgcc-15.2.0-r5.apk: OK
+2026-11-20T02:20:38.4430218Z ./libgcc-static-15.2.0-r5.apk: OK
+2026-11-20T02:20:38.4520779Z ./libgomp-15.2.0-r5.apk: OK
+2026-11-20T02:20:38.4605626Z ./libidn2-2.3.8-r0.apk: OK
+2026-11-20T02:20:38.4811455Z ./libmagic-5.47-r2.apk: OK
+2026-11-20T02:20:38.4888732Z ./libpsl-0.21.5-r3.apk: OK
+2026-11-20T02:20:38.5000294Z ./libssl3-3.5.9-r1.apk: OK
+2026-11-20T02:20:38.5173904Z ./libstdc++-15.2.0-r5.apk: OK
+2026-11-20T02:20:38.5816386Z ./libstdc++-dev-15.2.0-r5.apk: OK
+2026-11-20T02:20:38.5962235Z ./libunistring-1.4.2-r0.apk: OK
+2026-11-20T02:20:38.6047072Z ./make-4.4.1-r4.apk: OK
+2026-11-20T02:20:38.6125002Z ./mpc1-1.3.1-r1.apk: OK
+2026-11-20T02:20:38.6229950Z ./mpfr4-4.2.2-r0.apk: OK
+2026-11-20T02:20:38.6356926Z ./musl-1.2.6-r3.apk: OK
+2026-11-20T02:20:38.6705522Z ./musl-dev-1.2.6-r3.apk: OK
+2026-11-20T02:20:38.6791113Z ./nghttp2-libs-1.70.0-r0.apk: OK
+2026-11-20T02:20:38.6873884Z ./patch-2.8.1-r0.apk: OK
+2026-11-20T02:20:38.6962561Z ./unzip-6.0-r16.apk: OK
+2026-11-20T02:20:38.7042407Z ./zlib-1.4-r0.apk: OK
+2026-11-20T02:20:38.7153108Z ./zstd-libs-1.5.7-r2.apk: OK
+2026-11-20T02:20:42.1311443Z builder approved base key fingerprints
+2026-11-20T02:20:42.1313121Z 9c102bcc376af1498d549b77bdbfa815ae86faa1d2d82f040e616b18ef2df2d4  /etc/apk/keys/alpine-devel@lists.alpinelinux.org-4a6a0840.rsa.pub
+2026-11-20T02:20:42.1314964Z 12f899e55a7691225603d6fb3324940fc51cd7f133e7ead788663c2b7eecb00c  /etc/apk/keys/alpine-devel@lists.alpinelinux.org-5261cecb.rsa.pub
+2026-11-20T02:20:42.1316778Z 207e4696d3c05f7cb05966aee557307151f1f00217af4143c1bcaf33b8df733f  /etc/apk/keys/alpine-devel@lists.alpinelinux.org-6165ee59.rsa.pub
+2026-11-20T02:20:42.1317973Z builder APK SHA-256 and upstream URLs
+2026-11-20T02:20:42.1319216Z 15682887459d216585feb438bbfb7ec63e1f33e77c453f44637d2d9d8c35977d https://dl-cdn.alpinelinux.org/alpine/v3.24/main/x86_64/binutils-2.45.1-r1.apk
+2026-11-20T02:20:42.1321388Z 62a7e37e43bbfc1f8525a00ad2125fd5897135dc93b849733884cb78ffd8e26c https://dl-cdn.alpinelinux.org/alpine/v3.24/main/x86_64/brotli-libs-1.2.1-r0.apk
+2026-11-20T02:20:42.1323832Z 3ac72e74e96150995e8d797b6c33fc3b46d69e3667c47bd0ff25ce89f9fc4eaf https://dl-cdn.alpinelinux.org/alpine/v3.24/main/x86_64/build-base-0.5-r4.apk
+2026-11-20T02:20:42.1325760Z 3539a3e11c1ef1516117d8179a546ac882086e94e0d78ad51d687b3fa2b3b5f2 https://dl-cdn.alpinelinux.org/alpine/v3.24/main/x86_64/c-ares-1.34.9-r0.apk
+2026-11-20T02:20:42.1327673Z bb008f6d214b6af7576324659856fb63dc8dcb4373f8345ff706388696f1254d https://dl-cdn.alpinelinux.org/alpine/v3.24/main/x86_64/ca-certificates-bundle-20261020-r0.apk
+2026-11-20T02:20:42.1329897Z 531ae298451a4c1c44f563fc3b2eedc2c1d7e0a26a33bdfc0efe6faaff6a5942 https://dl-cdn.alpinelinux.org/alpine/v3.24/main/x86_64/curl-8.23.0-r0.apk
+2026-11-20T02:20:42.1331711Z 4681c153c509aec126e2b9ea2c959730309b24a792d49fc8cc26fa5fa87e8fdd https://dl-cdn.alpinelinux.org/alpine/v3.24/main/x86_64/file-5.47-r2.apk
+2026-11-20T02:20:42.1333698Z 5ffaebd9f141ac3e3fa0cc99f798f64b4c0aa16fb06a7a77e68f63f350fe23aa https://dl-cdn.alpinelinux.org/alpine/v3.24/main/x86_64/fortify-headers-3.0.1-r2.apk
+2026-11-20T02:20:42.1335671Z 35c39e8d3667d8603fe209dbafe67681c64b1cda66bf9c836bfb4d05b19a71fd https://dl-cdn.alpinelinux.org/alpine/v3.24/main/x86_64/g++-15.2.0-r5.apk
+2026-11-20T02:20:42.1337553Z d1d482472ed91240731c60dbae8176bc1e32e1dfb694856da6759f6d32716325 https://dl-cdn.alpinelinux.org/alpine/v3.24/main/x86_64/gcc-15.2.0-r5.apk
+2026-11-20T02:20:42.1339435Z 85323ef5bce8ff234736dc2d6592ea37aebdc6348a531e27430bdfe38364d256 https://dl-cdn.alpinelinux.org/alpine/v3.24/main/x86_64/gmp-6.3.0-r4.apk
+2026-11-20T02:20:42.1341680Z 30999fb66e296c8ea7aa102cad0d3095519b3022abb622d2951dd29367310ea9 https://dl-cdn.alpinelinux.org/alpine/v3.24/main/x86_64/isl26-0.26-r2.apk
+2026-11-20T02:20:42.1343554Z 7681b41486e1f2b2efce11875c839533464ae8857d30fc49130f0039c6585fdb https://dl-cdn.alpinelinux.org/alpine/v3.24/main/x86_64/jansson-2.15.0-r0.apk
+2026-11-20T02:20:42.1345457Z c5ec550c73dd7b4e81e206fdff3cf4c46b0ae1b29fec1db5cd4e12d88416abbf https://dl-cdn.alpinelinux.org/alpine/v3.24/main/x86_64/libatomic-15.2.0-r5.apk
+2026-11-20T02:20:42.1347372Z 042026082cc9bc7872d1baa81755c50efa70b05f03b5369fdc5f0a1303009720 https://dl-cdn.alpinelinux.org/alpine/v3.24/main/x86_64/libcrypto3-3.5.9-r1.apk
+2026-11-20T02:20:42.1349157Z 1f70ca404818805a6465b615bbfe84ef861488a963d7e630108ebd7fbaa51665 https://dl-cdn.alpinelinux.org/alpine/v3.24/main/x86_64/libcurl-8.23.0-r0.apk
+2026-11-20T02:20:42.1351209Z 393dcd32629f06d7d85409c272d142d0c082772d10b87ef55ee82f47de3be637 https://dl-cdn.alpinelinux.org/alpine/v3.24/main/x86_64/libgcc-15.2.0-r5.apk
+2026-11-20T02:20:42.1353011Z 563244a562f5c48b921f7f0b4a571e373cfcba65175fe2d4f752c5f975738bcd https://dl-cdn.alpinelinux.org/alpine/v3.24/main/x86_64/libgcc-static-15.2.0-r5.apk
+2026-11-20T02:20:42.1354820Z e7204aad00e31d544e0a34eac5a7eb7d3586d2b7b22afd6e5907189c4e0337cc https://dl-cdn.alpinelinux.org/alpine/v3.24/main/x86_64/libgomp-15.2.0-r5.apk
+2026-11-20T02:20:42.1356591Z 7d038ac558dde464964b033ce5126dd2eaf84cc414dc15e77c5424a321d0ebee https://dl-cdn.alpinelinux.org/alpine/v3.24/main/x86_64/libidn2-2.3.8-r0.apk
+2026-11-20T02:20:42.1358446Z 1820acd299025619a848b19ac98c7996fd92c06965255898800b6a790a8b03a2 https://dl-cdn.alpinelinux.org/alpine/v3.24/main/x86_64/libmagic-5.47-r2.apk
+2026-11-20T02:20:42.1360416Z ec665a344b6e887f00f0a47015cc732c3a281b69e84641dc8662ea234fde6cdb https://dl-cdn.alpinelinux.org/alpine/v3.24/main/x86_64/libpsl-0.21.5-r3.apk
+2026-11-20T02:20:42.1362255Z 18c5778cbe52e1991303f8531970b05d4e6e036ea08349322f7422f42a689dc7 https://dl-cdn.alpinelinux.org/alpine/v3.24/main/x86_64/libssl3-3.5.9-r1.apk
+2026-11-20T02:20:42.1364073Z 14c987b556f5385a5db18376e788c75f37d85321b8dc1920d926ea7daac1d6f6 https://dl-cdn.alpinelinux.org/alpine/v3.24/main/x86_64/libstdc++-15.2.0-r5.apk
+2026-11-20T02:20:42.1365357Z 62ce308cdbf127dcac6eee1520a4ffec8dc98b30974653908842fe4cc7d90b43 https://dl-cdn.alpinelinux.org/alpine/v3.24/main/x86_64/libstdc++-dev-15.2.0-r5.apk
+2026-11-20T02:20:42.1366424Z 3aa6030e603e34d96192742f327c0509f409c6769ce2e7b1463685dede38d714 https://dl-cdn.alpinelinux.org/alpine/v3.24/main/x86_64/libunistring-1.4.2-r0.apk
+2026-11-20T02:20:42.1367854Z a916626a876f64c6b6fb32a6bf0fa93351d09fae0aa7684135642390da647e60 https://dl-cdn.alpinelinux.org/alpine/v3.24/main/x86_64/make-4.4.1-r4.apk
+2026-11-20T02:20:42.1368926Z c2247438e163f1c11646428f07576ceb3cf3167f9a9a5c6526021f778d77adb6 https://dl-cdn.alpinelinux.org/alpine/v3.24/main/x86_64/mpc1-1.3.1-r1.apk
+2026-11-20T02:20:42.1370280Z 93620a803d416e8c05150fb14413796df14ea370322dff6bd106455deab15646 https://dl-cdn.alpinelinux.org/alpine/v3.24/main/x86_64/mpfr4-4.2.2-r0.apk
+2026-11-20T02:20:42.1371303Z e142255d0fa397f14318996bc10378093dcc069dc3dd1b6818c8f28a789c21da https://dl-cdn.alpinelinux.org/alpine/v3.24/main/x86_64/musl-1.2.6-r3.apk
+2026-11-20T02:20:42.1372327Z 310b51cff12e1d5ce5f135c558a82e2550427da5465bbd16c9ff9b05e63ee3d9 https://dl-cdn.alpinelinux.org/alpine/v3.24/main/x86_64/musl-dev-1.2.6-r3.apk
+2026-11-20T02:20:42.1373383Z f0c4014eb2f10308dcdfd84cd49c121673c7b78cb8182b6e7a1388d8ae112a3b https://dl-cdn.alpinelinux.org/alpine/v3.24/main/x86_64/nghttp2-libs-1.70.0-r0.apk
+2026-11-20T02:20:42.1374446Z 9ea3be7dca8efce2031dbf3f885a54ad75515f2afe9a19e238d79e2ffbbe4240 https://dl-cdn.alpinelinux.org/alpine/v3.24/main/x86_64/patch-2.8.1-r0.apk
+2026-11-20T02:20:42.1375449Z e05e00290af872b3c8a313d6490ef53697f8b9921ef9eea999ff7d93643caf28 https://dl-cdn.alpinelinux.org/alpine/v3.24/main/x86_64/unzip-6.0-r16.apk
+2026-11-20T02:20:42.1376422Z 7b05bc778b8b25cd880835b40114182bd4d1581717504d0129c810c0a14291cb https://dl-cdn.alpinelinux.org/alpine/v3.24/main/x86_64/zlib-1.4-r0.apk
+2026-11-20T02:20:42.1377595Z 23c6065b0049b2406441564bcf0032515a43f78e80d76fcb85535a3803ef5d4e https://dl-cdn.alpinelinux.org/alpine/v3.24/main/x86_64/zstd-libs-1.5.7-r2.apk
+2026-11-20T02:20:42.1378353Z builder offline installation output and installed package metadata
+2026-11-20T02:20:42.1378723Z ./binutils-2.45.1-r1.apk: OK
+2026-11-20T02:20:42.1378977Z ./brotli-libs-1.2.1-r0.apk: OK
+2026-11-20T02:20:42.1379225Z ./build-base-0.5-r4.apk: OK
+2026-11-20T02:20:42.1379469Z ./c-ares-1.34.9-r0.apk: OK
+2026-11-20T02:20:42.1380018Z ./ca-certificates-bundle-20261020-r0.apk: OK
+2026-11-20T02:20:42.1380314Z ./curl-8.23.0-r0.apk: OK
+2026-11-20T02:20:42.1380532Z ./file-5.47-r2.apk: OK
+2026-11-20T02:20:42.1380758Z ./fortify-headers-3.0.1-r2.apk: OK
+2026-11-20T02:20:42.1381010Z ./g++-15.2.0-r5.apk: OK
+2026-11-20T02:20:42.1381217Z ./gcc-15.2.0-r5.apk: OK
+2026-11-20T02:20:42.1381432Z ./gmp-6.3.0-r4.apk: OK
+2026-11-20T02:20:42.1381634Z ./isl26-0.26-r2.apk: OK
+2026-11-20T02:20:42.1381850Z ./jansson-2.15.0-r0.apk: OK
+2026-11-20T02:20:42.1382090Z ./libatomic-15.2.0-r5.apk: OK
+2026-11-20T02:20:42.1382340Z ./libcrypto3-3.5.9-r1.apk: OK
+2026-11-20T02:20:42.1382576Z ./libcurl-8.23.0-r0.apk: OK
+2026-11-20T02:20:42.1382835Z ./libgcc-15.2.0-r5.apk: OK
+2026-11-20T02:20:42.1383074Z ./libgcc-static-15.2.0-r5.apk: OK
+2026-11-20T02:20:42.1383325Z ./libgomp-15.2.0-r5.apk: OK
+2026-11-20T02:20:42.1383551Z ./libidn2-2.3.8-r0.apk: OK
+2026-11-20T02:20:42.1383777Z ./libmagic-5.47-r2.apk: OK
+2026-11-20T02:20:42.1384040Z ./libpsl-0.21.5-r3.apk: OK
+2026-11-20T02:20:42.1384326Z ./libssl3-3.5.9-r1.apk: OK
+2026-11-20T02:20:42.1384614Z ./libstdc++-15.2.0-r5.apk: OK
+2026-11-20T02:20:42.1384942Z ./libstdc++-dev-15.2.0-r5.apk: OK
+2026-11-20T02:20:42.1385229Z ./libunistring-1.4.2-r0.apk: OK
+2026-11-20T02:20:42.1385470Z ./make-4.4.1-r4.apk: OK
+2026-11-20T02:20:42.1385680Z ./mpc1-1.3.1-r1.apk: OK
+2026-11-20T02:20:42.1385892Z ./mpfr4-4.2.2-r0.apk: OK
+2026-11-20T02:20:42.1386106Z ./musl-1.2.6-r3.apk: OK
+2026-11-20T02:20:42.1386319Z ./musl-dev-1.2.6-r3.apk: OK
+2026-11-20T02:20:42.1386555Z ./nghttp2-libs-1.70.0-r0.apk: OK
+2026-11-20T02:20:42.1386814Z ./patch-2.8.1-r0.apk: OK
+2026-11-20T02:20:42.1387034Z ./unzip-6.0-r16.apk: OK
+2026-11-20T02:20:42.1387247Z ./zlib-1.4-r0.apk: OK
+2026-11-20T02:20:42.1387465Z ./zstd-libs-1.5.7-r2.apk: OK
+2026-11-20T02:20:42.1387767Z ( 1/34) Upgrading libcrypto3 (3.5.9-r0 -> 3.5.9-r1)
+2026-11-20T02:20:42.1388096Z ( 2/34) Upgrading libssl3 (3.5.9-r0 -> 3.5.9-r1)
+2026-11-20T02:20:42.1388678Z ( 3/34) Upgrading zlib (1.3.2-r1 -> 1.4-r0)
+2026-11-20T02:20:42.1388965Z ( 4/34) Installing libgcc (15.2.0-r5)
+2026-11-20T02:20:42.1389239Z ( 5/34) Installing jansson (2.15.0-r0)
+2026-11-20T02:20:42.1389738Z ( 6/34) Installing libstdc++ (15.2.0-r5)
+2026-11-20T02:20:42.1390062Z ( 7/34) Installing zstd-libs (1.5.7-r2)
+2026-11-20T02:20:42.1390345Z ( 8/34) Installing binutils (2.45.1-r1)
+2026-11-20T02:20:42.1390620Z ( 9/34) Installing brotli-libs (1.2.1-r0)
+2026-11-20T02:20:42.1390896Z (10/34) Installing libmagic (5.47-r2)
+2026-11-20T02:20:42.1391155Z (11/34) Installing file (5.47-r2)
+2026-11-20T02:20:42.1391431Z (12/34) Installing libgcc-static (15.2.0-r5)
+2026-11-20T02:20:42.1391718Z (13/34) Installing libgomp (15.2.0-r5)
+2026-11-20T02:20:42.1391987Z (14/34) Installing libatomic (15.2.0-r5)
+2026-11-20T02:20:42.1392256Z (15/34) Installing gmp (6.3.0-r4)
+2026-11-20T02:20:42.1392506Z (16/34) Installing isl26 (0.26-r2)
+2026-11-20T02:20:42.1392764Z (17/34) Installing mpfr4 (4.2.2-r0)
+2026-11-20T02:20:42.1393035Z (18/34) Installing mpc1 (1.3.1-r1)
+2026-11-20T02:20:42.1393281Z (19/34) Installing gcc (15.2.0-r5)
+2026-11-20T02:20:42.1393570Z (20/34) Installing libstdc++-dev (15.2.0-r5)
+2026-11-20T02:20:42.1393857Z (21/34) Installing musl-dev (1.2.6-r3)
+2026-11-20T02:20:42.1394114Z (22/34) Installing g++ (15.2.0-r5)
+2026-11-20T02:20:42.1394357Z (23/34) Installing make (4.4.1-r4)
+2026-11-20T02:20:42.1394631Z (24/34) Installing fortify-headers (3.0.1-r2)
+2026-11-20T02:20:42.1394923Z (25/34) Installing patch (2.8.1-r0)
+2026-11-20T02:20:42.1395189Z (26/34) Installing build-base (0.5-r4)
+2026-11-20T02:20:42.1395608Z (27/34) Installing c-ares (1.34.9-r0)
+2026-11-20T02:20:42.1395885Z (28/34) Installing libunistring (1.4.2-r0)
+2026-11-20T02:20:42.1396171Z (29/34) Installing libidn2 (2.3.8-r0)
+2026-11-20T02:20:42.1396441Z (30/34) Installing nghttp2-libs (1.70.0-r0)
+2026-11-20T02:20:42.1396724Z (31/34) Installing libpsl (0.21.5-r3)
+2026-11-20T02:20:42.1396974Z (32/34) Installing libcurl (8.23.0-r0)
+2026-11-20T02:20:42.1397235Z (33/34) Installing curl (8.23.0-r0)
+2026-11-20T02:20:42.1397490Z (34/34) Installing unzip (6.0-r16)
+2026-11-20T02:20:42.1397746Z Executing busybox-1.37.0-r31.trigger
+2026-11-20T02:20:42.1398049Z Executing ca-certificates-20261020-r0.trigger
+2026-11-20T02:20:42.1398345Z OK: 280.3 MiB in 48 packages
+2026-11-20T02:20:42.1398584Z P:alpine-baselayout
+2026-11-20T02:20:42.1398790Z V:3.7.2-r1
+2026-11-20T02:20:42.1399016Z A:x86_64
+2026-11-20T02:20:42.1399196Z L:GPL-2.0-only
+2026-11-20T02:20:42.1399424Z D:alpine-baselayout-data=3.7.2-r1 /bin/sh
+2026-11-20T02:20:42.1399874Z 
+2026-11-20T02:20:42.1399969Z P:alpine-baselayout-data
+2026-11-20T02:20:42.1400205Z V:3.7.2-r1
+2026-11-20T02:20:42.1400376Z A:x86_64
+2026-11-20T02:20:42.1400555Z L:GPL-2.0-only
+2026-11-20T02:20:42.1400673Z 
+2026-11-20T02:20:42.1400758Z P:alpine-keys
+2026-11-20T02:20:42.1400947Z V:2.6-r0
+2026-11-20T02:20:42.1401119Z A:x86_64
+2026-11-20T02:20:42.1401290Z L:MIT
+2026-11-20T02:20:42.1401388Z 
+2026-11-20T02:20:42.1401473Z P:alpine-release
+2026-11-20T02:20:42.1401675Z V:3.24.4-r0
+2026-11-20T02:20:42.1401852Z A:x86_64
+2026-11-20T02:20:42.1402021Z L:MIT
+2026-11-20T02:20:42.1402196Z D:alpine-keys
+2026-11-20T02:20:42.1402314Z 
+2026-11-20T02:20:42.1402389Z P:apk-tools
+2026-11-20T02:20:42.1402568Z V:3.0.9-r0
+2026-11-20T02:20:42.1402741Z A:x86_64
+2026-11-20T02:20:42.1402925Z L:GPL-2.0-only
+2026-11-20T02:20:42.1403507Z D:musl>=1.2.3_git20230424 libcrypto3>=3.5 libapk=3.0.9-r0 ca-certificates-bundle so:libapk.so.3.0.0 so:libc.musl-x86_64.so.1 so:libz.so.1
+2026-11-20T02:20:42.1404153Z 
+2026-11-20T02:20:42.1404230Z P:binutils
+2026-11-20T02:20:42.1404416Z V:2.45.1-r1
+2026-11-20T02:20:42.1404610Z A:x86_64
+2026-11-20T02:20:42.1404903Z L:GPL-2.0-or-later AND LGPL-2.1-or-later AND BSD-3-Clause
+2026-11-20T02:20:42.1405568Z D:so:libc.musl-x86_64.so.1 so:libgcc_s.so.1 so:libjansson.so.4 so:libstdc++.so.6 so:libz.so.1 so:libzstd.so.1
+2026-11-20T02:20:42.1405976Z 
+2026-11-20T02:20:42.1406057Z P:brotli-libs
+2026-11-20T02:20:42.1406258Z V:1.2.1-r0
+2026-11-20T02:20:42.1406625Z A:x86_64
+2026-11-20T02:20:42.1406797Z L:MIT
+2026-11-20T02:20:42.1406982Z D:so:libc.musl-x86_64.so.1
+2026-11-20T02:20:42.1407132Z 
+2026-11-20T02:20:42.1407212Z P:build-base
+2026-11-20T02:20:42.1407395Z V:0.5-r4
+2026-11-20T02:20:42.1407566Z A:noarch
+2026-11-20T02:20:42.1407732Z L:MIT
+2026-11-20T02:20:42.1407989Z D:binutils file gcc g++ make libc-dev fortify-headers patch
+2026-11-20T02:20:42.1408244Z 
+2026-11-20T02:20:42.1408317Z P:busybox
+2026-11-20T02:20:42.1408491Z V:1.37.0-r31
+2026-11-20T02:20:42.1408666Z A:x86_64
+2026-11-20T02:20:42.1408858Z L:GPL-2.0-only
+2026-11-20T02:20:42.1409056Z D:so:libc.musl-x86_64.so.1
+2026-11-20T02:20:42.1409208Z 
+2026-11-20T02:20:42.1409293Z P:busybox-binsh
+2026-11-20T02:20:42.1409482Z V:1.37.0-r31
+2026-11-20T02:20:42.1409992Z A:x86_64
+2026-11-20T02:20:42.1410272Z L:GPL-2.0-only
+2026-11-20T02:20:42.1410561Z D:busybox=1.37.0-r31
+2026-11-20T02:20:42.1410767Z 
+2026-11-20T02:20:42.1410881Z P:c-ares
+2026-11-20T02:20:42.1411140Z V:1.34.9-r0
+2026-11-20T02:20:42.1411402Z A:x86_64
+2026-11-20T02:20:42.1411671Z L:MIT
+2026-11-20T02:20:42.1411988Z D:so:libc.musl-x86_64.so.1
+2026-11-20T02:20:42.1412141Z 
+2026-11-20T02:20:42.1412229Z P:ca-certificates
+2026-11-20T02:20:42.1412424Z V:20261020-r0
+2026-11-20T02:20:42.1412607Z A:x86_64
+2026-11-20T02:20:42.1412779Z L:MPL-2.0 AND MIT
+2026-11-20T02:20:42.1413024Z D:/bin/sh so:libc.musl-x86_64.so.1 so:libcrypto.so.3
+2026-11-20T02:20:42.1413254Z 
+2026-11-20T02:20:42.1413346Z P:ca-certificates-bundle
+2026-11-20T02:20:42.1413570Z V:20261020-r0
+2026-11-20T02:20:42.1413751Z A:x86_64
+2026-11-20T02:20:42.1413925Z L:MPL-2.0 AND MIT
+2026-11-20T02:20:42.1414043Z 
+2026-11-20T02:20:42.1414280Z P:curl
+2026-11-20T02:20:42.1414464Z V:8.23.0-r0
+2026-11-20T02:20:42.1414636Z A:x86_64
+2026-11-20T02:20:42.1414876Z L:curl
+2026-11-20T02:20:42.1415355Z D:libcurl=8.23.0-r0 so:libc.musl-x86_64.so.1 so:libcurl.so.4 so:libz.so.1
+2026-11-20T02:20:42.1415732Z 
+2026-11-20T02:20:42.1415813Z P:file
+2026-11-20T02:20:42.1415984Z V:5.47-r2
+2026-11-20T02:20:42.1416152Z A:x86_64
+2026-11-20T02:20:42.1416474Z L:BSD-2-Clause
+2026-11-20T02:20:42.1416741Z D:so:libc.musl-x86_64.so.1 so:libmagic.so.1
+2026-11-20T02:20:42.1416943Z 
+2026-11-20T02:20:42.1417022Z P:fortify-headers
+2026-11-20T02:20:42.1417215Z V:3.0.1-r2
+2026-11-20T02:20:42.1417393Z A:noarch
+2026-11-20T02:20:42.1417685Z L:0BSD
+2026-11-20T02:20:42.1417828Z 
+2026-11-20T02:20:42.1417905Z P:g++
+2026-11-20T02:20:42.1418076Z V:15.2.0-r5
+2026-11-20T02:20:42.1418247Z A:x86_64
+2026-11-20T02:20:42.1418442Z L:GPL-2.0-or-later AND LGPL-2.1-or-later
+2026-11-20T02:20:42.1419293Z D:libstdc++-dev=15.2.0-r5 gcc=15.2.0-r5 musl-dev libstdc++=15.2.0-r5 so:libc.musl-x86_64.so.1 so:libgmp.so.10 so:libisl.so.23 so:libmpc.so.3 so:libmpfr.so.6 so:libz.so.1
+2026-11-20T02:20:42.1420301Z 
+2026-11-20T02:20:42.1420379Z P:gcc
+2026-11-20T02:20:42.1420565Z V:15.2.0-r5
+2026-11-20T02:20:42.1420743Z A:x86_64
+2026-11-20T02:20:42.1420954Z L:GPL-2.0-or-later AND LGPL-2.1-or-later
+2026-11-20T02:20:42.1421963Z D:binutils libgcc-static libgomp=15.2.0-r5 libatomic=15.2.0-r5 libgomp=15.2.0-r5 so:libc.musl-x86_64.so.1 so:libgcc_s.so.1 so:libgmp.so.10 so:libisl.so.23 so:libmpc.so.3 so:libmpfr.so.6 so:libstdc++.so.6 so:libz.so.1
+2026-11-20T02:20:42.1422907Z 
+2026-11-20T02:20:42.1422987Z P:gmp
+2026-11-20T02:20:42.1423163Z V:6.3.0-r4
+2026-11-20T02:20:42.1423340Z A:x86_64
+2026-11-20T02:20:42.1423648Z L:LGPL-3.0-or-later OR GPL-2.0-or-later
+2026-11-20T02:20:42.1424175Z D:so:libc.musl-x86_64.so.1
+2026-11-20T02:20:42.1424454Z 
+2026-11-20T02:20:42.1424600Z P:isl26
+2026-11-20T02:20:42.1424978Z V:0.26-r2
+2026-11-20T02:20:42.1425320Z A:x86_64
+2026-11-20T02:20:42.1425631Z L:MIT
+2026-11-20T02:20:42.1425994Z D:so:libc.musl-x86_64.so.1 so:libgmp.so.10
+2026-11-20T02:20:42.1426365Z 
+2026-11-20T02:20:42.1426521Z P:jansson
+2026-11-20T02:20:42.1426736Z V:2.15.0-r0
+2026-11-20T02:20:42.1427016Z A:x86_64
+2026-11-20T02:20:42.1427240Z L:MIT
+2026-11-20T02:20:42.1427546Z D:so:libc.musl-x86_64.so.1
+2026-11-20T02:20:42.1427842Z 
+2026-11-20T02:20:42.1427933Z P:libapk
+2026-11-20T02:20:42.1428183Z V:3.0.9-r0
+2026-11-20T02:20:42.1428625Z A:x86_64
+2026-11-20T02:20:42.1428966Z L:GPL-2.0-only
+2026-11-20T02:20:42.1429320Z D:so:libc.musl-x86_64.so.1 so:libcrypto.so.3 so:libssl.so.3 so:libz.so.1
+2026-11-20T02:20:42.1429957Z 
+2026-11-20T02:20:42.1430118Z P:libatomic
+2026-11-20T02:20:42.1430370Z V:15.2.0-r5
+2026-11-20T02:20:42.1430693Z A:x86_64
+2026-11-20T02:20:42.1430909Z L:GPL-2.0-or-later AND LGPL-2.1-or-later
+2026-11-20T02:20:42.1431266Z D:so:libc.musl-x86_64.so.1
+2026-11-20T02:20:42.1431504Z 
+2026-11-20T02:20:42.1431585Z P:libcrypto3
+2026-11-20T02:20:42.1431773Z V:3.5.9-r1
+2026-11-20T02:20:42.1431947Z A:x86_64
+2026-11-20T02:20:42.1432121Z L:Apache-2.0
+2026-11-20T02:20:42.1432325Z D:so:libc.musl-x86_64.so.1
+2026-11-20T02:20:42.1432615Z 
+2026-11-20T02:20:42.1432716Z P:libcurl
+2026-11-20T02:20:42.1432892Z V:8.23.0-r0
+2026-11-20T02:20:42.1433062Z A:x86_64
+2026-11-20T02:20:42.1433230Z L:curl
+2026-11-20T02:20:42.1434133Z D:ca-certificates-bundle so:libbrotlidec.so.1 so:libc.musl-x86_64.so.1 so:libcares.so.2 so:libcrypto.so.3 so:libidn2.so.0 so:libnghttp2.so.14 so:libpsl.so.5 so:libssl.so.3 so:libz.so.1 so:libzstd.so.1
+2026-11-20T02:20:42.1435013Z 
+2026-11-20T02:20:42.1435097Z P:libgcc
+2026-11-20T02:20:42.1435270Z V:15.2.0-r5
+2026-11-20T02:20:42.1435443Z A:x86_64
+2026-11-20T02:20:42.1435644Z L:GPL-2.0-or-later AND LGPL-2.1-or-later
+2026-11-20T02:20:42.1435924Z D:so:libc.musl-x86_64.so.1
+2026-11-20T02:20:42.1436224Z 
+2026-11-20T02:20:42.1436317Z P:libgcc-static
+2026-11-20T02:20:42.1436509Z V:15.2.0-r5
+2026-11-20T02:20:42.1436682Z A:x86_64
+2026-11-20T02:20:42.1436874Z L:GPL-2.0-or-later AND LGPL-2.1-or-later
+2026-11-20T02:20:42.1437058Z 
+2026-11-20T02:20:42.1437433Z P:libgomp
+2026-11-20T02:20:42.1437664Z V:15.2.0-r5
+2026-11-20T02:20:42.1437844Z A:x86_64
+2026-11-20T02:20:42.1438044Z L:GPL-2.0-or-later AND LGPL-2.1-or-later
+2026-11-20T02:20:42.1438324Z D:so:libc.musl-x86_64.so.1
+2026-11-20T02:20:42.1438625Z 
+2026-11-20T02:20:42.1438749Z P:libidn2
+2026-11-20T02:20:42.1438933Z V:2.3.8-r0
+2026-11-20T02:20:42.1439117Z A:x86_64
+2026-11-20T02:20:42.1439326Z L:GPL-2.0-or-later OR LGPL-3.0-or-later
+2026-11-20T02:20:42.1439941Z D:so:libc.musl-x86_64.so.1 so:libunistring.so.5
+2026-11-20T02:20:42.1440164Z 
+2026-11-20T02:20:42.1440245Z P:libmagic
+2026-11-20T02:20:42.1440426Z V:5.47-r2
+2026-11-20T02:20:42.1440596Z A:x86_64
+2026-11-20T02:20:42.1440770Z L:BSD-2-Clause
+2026-11-20T02:20:42.1441121Z D:so:libc.musl-x86_64.so.1
+2026-11-20T02:20:42.1441293Z 
+2026-11-20T02:20:42.1441368Z P:libpsl
+2026-11-20T02:20:42.1441555Z V:0.21.5-r3
+2026-11-20T02:20:42.1441734Z A:x86_64
+2026-11-20T02:20:42.1441911Z L:MIT
+2026-11-20T02:20:42.1442326Z D:so:libc.musl-x86_64.so.1 so:libidn2.so.0 so:libunistring.so.5
+2026-11-20T02:20:42.1442613Z 
+2026-11-20T02:20:42.1442694Z P:libssl3
+2026-11-20T02:20:42.1442874Z V:3.5.9-r1
+2026-11-20T02:20:42.1443048Z A:x86_64
+2026-11-20T02:20:42.1443223Z L:Apache-2.0
+2026-11-20T02:20:42.1443661Z D:libcrypto3=3.5.9-r1 so:libc.musl-x86_64.so.1 so:libcrypto.so.3
+2026-11-20T02:20:42.1443936Z 
+2026-11-20T02:20:42.1444011Z P:libstdc++
+2026-11-20T02:20:42.1444197Z V:15.2.0-r5
+2026-11-20T02:20:42.1444367Z A:x86_64
+2026-11-20T02:20:42.1444697Z L:GPL-2.0-or-later AND LGPL-2.1-or-later
+2026-11-20T02:20:42.1445012Z D:so:libc.musl-x86_64.so.1 so:libgcc_s.so.1
+2026-11-20T02:20:42.1445205Z 
+2026-11-20T02:20:42.1445290Z P:libstdc++-dev
+2026-11-20T02:20:42.1445483Z V:15.2.0-r5
+2026-11-20T02:20:42.1445705Z A:x86_64
+2026-11-20T02:20:42.1446009Z L:GPL-2.0-or-later AND LGPL-2.1-or-later
+2026-11-20T02:20:42.1446276Z D:libstdc++=15.2.0-r5
+2026-11-20T02:20:42.1446409Z 
+2026-11-20T02:20:42.1446484Z P:libunistring
+2026-11-20T02:20:42.1446670Z V:1.4.2-r0
+2026-11-20T02:20:42.1446875Z A:x86_64
+2026-11-20T02:20:42.1447203Z L:GPL-2.0-or-later OR LGPL-3.0-or-later
+2026-11-20T02:20:42.1447478Z D:so:libc.musl-x86_64.so.1
+2026-11-20T02:20:42.1447628Z 
+2026-11-20T02:20:42.1447703Z P:make
+2026-11-20T02:20:42.1447871Z V:4.4.1-r4
+2026-11-20T02:20:42.1448088Z A:x86_64
+2026-11-20T02:20:42.1448373Z L:GPL-3.0-or-later
+2026-11-20T02:20:42.1448584Z D:so:libc.musl-x86_64.so.1
+2026-11-20T02:20:42.1448899Z 
+2026-11-20T02:20:42.1448981Z P:mpc1
+2026-11-20T02:20:42.1449151Z V:1.3.1-r1
+2026-11-20T02:20:42.1449441Z A:x86_64
+2026-11-20T02:20:42.1449815Z L:LGPL-3.0-or-later
+2026-11-20T02:20:42.1450207Z D:so:libc.musl-x86_64.so.1 so:libgmp.so.10 so:libmpfr.so.6
+2026-11-20T02:20:42.1450585Z 
+2026-11-20T02:20:42.1450727Z P:mpfr4
+2026-11-20T02:20:42.1450958Z V:4.2.2-r0
+2026-11-20T02:20:42.1451136Z A:x86_64
+2026-11-20T02:20:42.1451315Z L:LGPL-3.0-or-later
+2026-11-20T02:20:42.1451543Z D:so:libc.musl-x86_64.so.1 so:libgmp.so.10
+2026-11-20T02:20:42.1451786Z 
+2026-11-20T02:20:42.1451926Z P:musl
+2026-11-20T02:20:42.1452158Z V:1.2.6-r3
+2026-11-20T02:20:42.1452340Z A:x86_64
+2026-11-20T02:20:42.1452513Z L:MIT
+2026-11-20T02:20:42.1452615Z 
+2026-11-20T02:20:42.1452688Z P:musl-dev
+2026-11-20T02:20:42.1452861Z V:1.2.6-r3
+2026-11-20T02:20:42.1453150Z A:x86_64
+2026-11-20T02:20:42.1453366Z L:MIT
+2026-11-20T02:20:42.1453541Z D:musl=1.2.6-r3
+2026-11-20T02:20:42.1453655Z 
+2026-11-20T02:20:42.1453737Z P:musl-utils
+2026-11-20T02:20:42.1453927Z V:1.2.6-r3
+2026-11-20T02:20:42.1454097Z A:x86_64
+2026-11-20T02:20:42.1454456Z L:MIT AND BSD-2-Clause AND GPL-2.0-or-later
+2026-11-20T02:20:42.1454764Z D:scanelf so:libc.musl-x86_64.so.1
+2026-11-20T02:20:42.1454940Z 
+2026-11-20T02:20:42.1455019Z P:nghttp2-libs
+2026-11-20T02:20:42.1455215Z V:1.70.0-r0
+2026-11-20T02:20:42.1455480Z A:x86_64
+2026-11-20T02:20:42.1455725Z L:MIT
+2026-11-20T02:20:42.1455910Z D:so:libc.musl-x86_64.so.1
+2026-11-20T02:20:42.1456062Z 
+2026-11-20T02:20:42.1456140Z P:patch
+2026-11-20T02:20:42.1456308Z V:2.8.1-r0
+2026-11-20T02:20:42.1456481Z A:x86_64
+2026-11-20T02:20:42.1456807Z L:GPL-3.0-or-later
+2026-11-20T02:20:42.1457228Z D:so:libc.musl-x86_64.so.1
+2026-11-20T02:20:42.1457394Z 
+2026-11-20T02:20:42.1457471Z P:scanelf
+2026-11-20T02:20:42.1457649Z V:1.3.9-r1
+2026-11-20T02:20:42.1457949Z A:x86_64
+2026-11-20T02:20:42.1458180Z L:GPL-2.0-only
+2026-11-20T02:20:42.1458379Z D:so:libc.musl-x86_64.so.1
+2026-11-20T02:20:42.1458527Z 
+2026-11-20T02:20:42.1458608Z P:ssl_client
+2026-11-20T02:20:42.1458800Z V:1.37.0-r31
+2026-11-20T02:20:42.1459026Z A:x86_64
+2026-11-20T02:20:42.1459286Z L:GPL-2.0-only
+2026-11-20T02:20:42.1459693Z D:so:libc.musl-x86_64.so.1 so:libcrypto.so.3 so:libssl.so.3
+2026-11-20T02:20:42.1459948Z 
+2026-11-20T02:20:42.1460031Z P:unzip
+2026-11-20T02:20:42.1460370Z V:6.0-r16
+2026-11-20T02:20:42.1460624Z A:x86_64
+2026-11-20T02:20:42.1460795Z L:custom
+2026-11-20T02:20:42.1460976Z D:so:libc.musl-x86_64.so.1
+2026-11-20T02:20:42.1461126Z 
+2026-11-20T02:20:42.1461197Z P:zlib
+2026-11-20T02:20:42.1461369Z V:1.4-r0
+2026-11-20T02:20:42.1461707Z A:x86_64
+2026-11-20T02:20:42.1461990Z L:Zlib
+2026-11-20T02:20:42.1462181Z D:so:libc.musl-x86_64.so.1
+2026-11-20T02:20:42.1462327Z 
+2026-11-20T02:20:42.1462411Z P:zstd-libs
+2026-11-20T02:20:42.1462593Z V:1.5.7-r2
+2026-11-20T02:20:42.1462924Z A:x86_64
+2026-11-20T02:20:42.1463225Z L:BSD-3-Clause OR GPL-2.0-or-later
+2026-11-20T02:20:42.1463488Z D:so:libc.musl-x86_64.so.1
+2026-11-20T02:20:42.1463643Z 
+2026-11-20T02:20:42.7508555Z docker.io/library/alpine@sha256:2039be0c5ec6ce8566809626a252c930216a92109c043f282504accb5ee3c0c6: Pulling from library/alpine
+2026-11-20T02:20:42.7509987Z 84f5eff04246: Pulling fs layer
+2026-11-20T02:20:42.9862122Z 84f5eff04246: Verifying Checksum
+2026-11-20T02:20:42.9862944Z 84f5eff04246: Download complete
+2026-11-20T02:20:43.0941984Z 84f5eff04246: Pull complete
+2026-11-20T02:20:43.0974546Z Digest: sha256:2039be0c5ec6ce8566809626a252c930216a92109c043f282504accb5ee3c0c6
+2026-11-20T02:20:43.0982076Z Status: Downloaded newer image for alpine@sha256:2039be0c5ec6ce8566809626a252c930216a92109c043f282504accb5ee3c0c6
+2026-11-20T02:20:43.0996308Z docker.io/library/alpine@sha256:2039be0c5ec6ce8566809626a252c930216a92109c043f282504accb5ee3c0c6
+2026-11-20T02:20:43.2627621Z fetch https://dl-cdn.alpinelinux.org/alpine/v3.22/main/x86_64/APKINDEX.tar.gz
+2026-11-20T02:20:43.3356099Z fetch https://dl-cdn.alpinelinux.org/alpine/v3.22/community/x86_64/APKINDEX.tar.gz
+2026-11-20T02:20:43.6620792Z v3.22.8-47-g7cf2a75b759 [https://dl-cdn.alpinelinux.org/alpine/v3.22/main]
+2026-11-20T02:20:43.6622234Z v3.22.8-43-g707d0a6d58d [https://dl-cdn.alpinelinux.org/alpine/v3.22/community]
+2026-11-20T02:20:43.6622876Z OK: 26334 distinct packages available
+2026-11-20T02:20:44.6369293Z Downloading acl-libs-2.3.2-r1
+2026-11-20T02:20:44.6588909Z Downloading bash-5.2.37-r0
+2026-11-20T02:20:44.6798853Z Downloading brotli-libs-1.1.1-r0
+2026-11-20T02:20:44.6881071Z Downloading busybox-1.37.0-r20
+2026-11-20T02:20:44.6973827Z Downloading busybox-binsh-1.37.0-r20
+2026-11-20T02:20:44.7004810Z Downloading c-ares-1.34.9-r0
+2026-11-20T02:20:44.7042062Z Downloading ca-certificates-20261020-r0
+2026-11-20T02:20:44.7088306Z Downloading ca-certificates-bundle-20261020-r0
+2026-11-20T02:20:44.7163642Z Downloading curl-8.14.1-r4
+2026-11-20T02:20:44.7223268Z Downloading fail2ban-1.1.0-r3
+2026-11-20T02:20:44.7353426Z Downloading fail2ban-pyc-1.1.0-r3
+2026-11-20T02:20:44.7483124Z Downloading gdbm-1.24-r0
+2026-11-20T02:20:44.7509685Z Downloading iptables-1.8.11-r1
+2026-11-20T02:20:44.7616623Z Downloading libbz2-1.0.8-r6
+2026-11-20T02:20:44.7649353Z Downloading libcrypto3-3.5.9-r0
+2026-11-20T02:20:44.8017307Z Downloading libcurl-8.14.1-r4
+2026-11-20T02:20:44.8082595Z Downloading libexpat-2.10.0-r0
+2026-11-20T02:20:44.8107574Z Downloading libffi-3.4.8-r0
+2026-11-20T02:20:44.8126010Z Downloading libgcc-14.2.0-r6
+2026-11-20T02:20:44.8163785Z Downloading libidn2-2.3.7-r0
+2026-11-20T02:20:44.8218902Z Downloading libmnl-1.0.5-r2
+2026-11-20T02:20:44.8256378Z Downloading libncursesw-6.5_p20250503-r0
+2026-11-20T02:20:44.8301482Z Downloading libnftnl-1.2.9-r0
+2026-11-20T02:20:44.8341353Z Downloading libpanelw-6.5_p20250503-r0
+2026-11-20T02:20:44.8358095Z Downloading libpsl-0.21.5-r3
+2026-11-20T02:20:44.8378801Z Downloading libssl3-3.5.9-r0
+2026-11-20T02:20:44.8464279Z Downloading libstdc++-14.2.0-r6
+2026-11-20T02:20:44.8617178Z Downloading libunistring-1.3-r0
+2026-11-20T02:20:44.8711577Z Downloading libxtables-1.8.11-r1
+2026-11-20T02:20:44.8763002Z Downloading logrotate-3.21.0-r1
+2026-11-20T02:20:44.8972286Z Downloading mpdecimal-4.0.1-r0
+2026-11-20T02:20:44.9053596Z Downloading musl-1.2.5-r13
+2026-11-20T02:20:44.9144920Z Downloading ncurses-terminfo-base-6.5_p20250503-r0
+2026-11-20T02:20:44.9172030Z Downloading nghttp2-libs-1.69.0-r0
+2026-11-20T02:20:44.9202214Z Downloading openssl-3.5.9-r0
+2026-11-20T02:20:44.9291331Z Downloading popt-1.19-r4
+2026-11-20T02:20:44.9376054Z Downloading pyc-3.12.16-r0
+2026-11-20T02:20:44.9405292Z Downloading python3-3.12.16-r0
+2026-11-20T02:20:45.0575469Z Downloading python3-pyc-3.12.16-r0
+2026-11-20T02:20:45.0615935Z Downloading python3-pycache-pyc0-3.12.16-r0
+2026-11-20T02:20:45.1260192Z Downloading readline-8.2.13-r1
+2026-11-20T02:20:45.1305099Z Downloading sqlite-libs-3.49.2-r1
+2026-11-20T02:20:45.1455754Z Downloading ssl_client-1.37.0-r20
+2026-11-20T02:20:45.1488526Z Downloading tzdata-2026f-r0
+2026-11-20T02:20:45.1564582Z Downloading xz-libs-5.8.4-r0
+2026-11-20T02:20:45.1595544Z Downloading zlib-1.4-r0
+2026-11-20T02:20:45.1619195Z Downloading zstd-libs-1.5.7-r0
+2026-11-20T02:20:45.2487040Z WARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.22/main: No such file or directory
+2026-11-20T02:20:45.2488564Z WARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.22/community: No such file or directory
+2026-11-20T02:20:45.2505644Z ./acl-libs-2.3.2-r1.apk: 0 - OK
+2026-11-20T02:20:45.2555565Z WARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.22/main: No such file or directory
+2026-11-20T02:20:45.2556938Z WARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.22/community: No such file or directory
+2026-11-20T02:20:45.2659215Z ./bash-5.2.37-r0.apk: 0 - OK
+2026-11-20T02:20:45.2694994Z WARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.22/main: No such file or directory
+2026-11-20T02:20:45.2696362Z WARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.22/community: No such file or directory
+2026-11-20T02:20:45.2755731Z ./brotli-libs-1.1.1-r0.apk: 0 - OK
+2026-11-20T02:20:45.2806072Z WARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.22/main: No such file or directory
+2026-11-20T02:20:45.2807771Z WARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.22/community: No such file or directory
+2026-11-20T02:20:45.2871223Z ./busybox-1.37.0-r20.apk: 0 - OK
+2026-11-20T02:20:45.2926604Z WARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.22/main: No such file or directory
+2026-11-20T02:20:45.2928019Z WARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.22/community: No such file or directory
+2026-11-20T02:20:45.2944123Z ./busybox-binsh-1.37.0-r20.apk: 0 - OK
+2026-11-20T02:20:45.2997307Z WARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.22/main: No such file or directory
+2026-11-20T02:20:45.2998803Z WARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.22/community: No such file or directory
+2026-11-20T02:20:45.3029052Z ./c-ares-1.34.9-r0.apk: 0 - OK
+2026-11-20T02:20:45.3080998Z WARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.22/main: No such file or directory
+2026-11-20T02:20:45.3082381Z WARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.22/community: No such file or directory
+2026-11-20T02:20:45.3111246Z ./ca-certificates-20261020-r0.apk: 0 - OK
+2026-11-20T02:20:45.3159328Z WARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.22/main: No such file or directory
+2026-11-20T02:20:45.3160794Z WARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.22/community: No such file or directory
+2026-11-20T02:20:45.3184745Z ./ca-certificates-bundle-20261020-r0.apk: 0 - OK
+2026-11-20T02:20:45.3234328Z WARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.22/main: No such file or directory
+2026-11-20T02:20:45.3235714Z WARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.22/community: No such file or directory
+2026-11-20T02:20:45.3261937Z ./curl-8.14.1-r4.apk: 0 - OK
+2026-11-20T02:20:45.3308761Z WARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.22/main: No such file or directory
+2026-11-20T02:20:45.3310401Z WARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.22/community: No such file or directory
+2026-11-20T02:20:45.3363986Z ./fail2ban-1.1.0-r3.apk: 0 - OK
+2026-11-20T02:20:45.3413342Z WARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.22/main: No such file or directory
+2026-11-20T02:20:45.3414405Z WARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.22/community: No such file or directory
+2026-11-20T02:20:45.3494327Z ./fail2ban-pyc-1.1.0-r3.apk: 0 - OK
+2026-11-20T02:20:45.3544077Z WARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.22/main: No such file or directory
+2026-11-20T02:20:45.3545140Z WARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.22/community: No such file or directory
+2026-11-20T02:20:45.3563399Z ./gdbm-1.24-r0.apk: 0 - OK
+2026-11-20T02:20:45.3611262Z WARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.22/main: No such file or directory
+2026-11-20T02:20:45.3612313Z WARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.22/community: No such file or directory
+2026-11-20T02:20:45.3690112Z ./iptables-1.8.11-r1.apk: 0 - OK
+2026-11-20T02:20:45.3741082Z WARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.22/main: No such file or directory
+2026-11-20T02:20:45.3742465Z WARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.22/community: No such file or directory
+2026-11-20T02:20:45.3760564Z ./libbz2-1.0.8-r6.apk: 0 - OK
+2026-11-20T02:20:45.3809769Z WARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.22/main: No such file or directory
+2026-11-20T02:20:45.3811157Z WARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.22/community: No such file or directory
+2026-11-20T02:20:45.4023472Z ./libcrypto3-3.5.9-r0.apk: 0 - OK
+2026-11-20T02:20:45.4074555Z WARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.22/main: No such file or directory
+2026-11-20T02:20:45.4075930Z WARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.22/community: No such file or directory
+2026-11-20T02:20:45.4126658Z ./libcurl-8.14.1-r4.apk: 0 - OK
+2026-11-20T02:20:45.4175619Z WARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.22/main: No such file or directory
+2026-11-20T02:20:45.4176632Z WARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.22/community: No such file or directory
+2026-11-20T02:20:45.4198074Z ./libexpat-2.10.0-r0.apk: 0 - OK
+2026-11-20T02:20:45.4247312Z WARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.22/main: No such file or directory
+2026-11-20T02:20:45.4248345Z WARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.22/community: No such file or directory
+2026-11-20T02:20:45.4264508Z ./libffi-3.4.8-r0.apk: 0 - OK
+2026-11-20T02:20:45.4312329Z WARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.22/main: No such file or directory
+2026-11-20T02:20:45.4313407Z WARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.22/community: No such file or directory
+2026-11-20T02:20:45.4337159Z ./libgcc-14.2.0-r6.apk: 0 - OK
+2026-11-20T02:20:45.4384461Z WARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.22/main: No such file or directory
+2026-11-20T02:20:45.4385475Z WARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.22/community: No such file or directory
+2026-11-20T02:20:45.4410265Z ./libidn2-2.3.7-r0.apk: 0 - OK
+2026-11-20T02:20:45.4457715Z WARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.22/main: No such file or directory
+2026-11-20T02:20:45.4459147Z WARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.22/community: No such file or directory
+2026-11-20T02:20:45.4474697Z ./libmnl-1.0.5-r2.apk: 0 - OK
+2026-11-20T02:20:45.4524271Z WARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.22/main: No such file or directory
+2026-11-20T02:20:45.4525632Z WARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.22/community: No such file or directory
+2026-11-20T02:20:45.4557707Z ./libncursesw-6.5_p20250503-r0.apk: 0 - OK
+2026-11-20T02:20:45.4606897Z WARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.22/main: No such file or directory
+2026-11-20T02:20:45.4608244Z WARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.22/community: No such file or directory
+2026-11-20T02:20:45.4630950Z ./libnftnl-1.2.9-r0.apk: 0 - OK
+2026-11-20T02:20:45.4681018Z WARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.22/main: No such file or directory
+2026-11-20T02:20:45.4682429Z WARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.22/community: No such file or directory
+2026-11-20T02:20:45.4697094Z ./libpanelw-6.5_p20250503-r0.apk: 0 - OK
+2026-11-20T02:20:45.4744660Z WARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.22/main: No such file or directory
+2026-11-20T02:20:45.4745815Z WARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.22/community: No such file or directory
+2026-11-20T02:20:45.4765043Z ./libpsl-0.21.5-r3.apk: 0 - OK
+2026-11-20T02:20:45.4813562Z WARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.22/main: No such file or directory
+2026-11-20T02:20:45.4814442Z WARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.22/community: No such file or directory
+2026-11-20T02:20:45.4870601Z ./libssl3-3.5.9-r0.apk: 0 - OK
+2026-11-20T02:20:45.4919953Z WARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.22/main: No such file or directory
+2026-11-20T02:20:45.4921631Z WARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.22/community: No such file or directory
+2026-11-20T02:20:45.5038778Z ./libstdc++-14.2.0-r6.apk: 0 - OK
+2026-11-20T02:20:45.5089260Z WARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.22/main: No such file or directory
+2026-11-20T02:20:45.5090876Z WARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.22/community: No such file or directory
+2026-11-20T02:20:45.5180512Z ./libunistring-1.3-r0.apk: 0 - OK
+2026-11-20T02:20:45.5226524Z WARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.22/main: No such file or directory
+2026-11-20T02:20:45.5227850Z WARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.22/community: No such file or directory
+2026-11-20T02:20:45.5246418Z ./libxtables-1.8.11-r1.apk: 0 - OK
+2026-11-20T02:20:45.5295290Z WARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.22/main: No such file or directory
+2026-11-20T02:20:45.5296664Z WARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.22/community: No such file or directory
+2026-11-20T02:20:45.5315832Z ./logrotate-3.21.0-r1.apk: 0 - OK
+2026-11-20T02:20:45.5364509Z WARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.22/main: No such file or directory
+2026-11-20T02:20:45.5365453Z WARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.22/community: No such file or directory
+2026-11-20T02:20:45.5389297Z ./mpdecimal-4.0.1-r0.apk: 0 - OK
+2026-11-20T02:20:45.5437856Z WARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.22/main: No such file or directory
+2026-11-20T02:20:45.5439199Z WARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.22/community: No such file or directory
+2026-11-20T02:20:45.5490689Z ./musl-1.2.5-r13.apk: 0 - OK
+2026-11-20T02:20:45.5542520Z WARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.22/main: No such file or directory
+2026-11-20T02:20:45.5544212Z WARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.22/community: No such file or directory
+2026-11-20T02:20:45.5564485Z ./ncurses-terminfo-base-6.5_p20250503-r0.apk: 0 - OK
+2026-11-20T02:20:45.5613375Z WARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.22/main: No such file or directory
+2026-11-20T02:20:45.5614709Z WARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.22/community: No such file or directory
+2026-11-20T02:20:45.5637570Z ./nghttp2-libs-1.69.0-r0.apk: 0 - OK
+2026-11-20T02:20:45.5689220Z WARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.22/main: No such file or directory
+2026-11-20T02:20:45.5690726Z WARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.22/community: No such file or directory
+2026-11-20T02:20:45.5750579Z ./openssl-3.5.9-r0.apk: 0 - OK
+2026-11-20T02:20:45.5792842Z WARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.22/main: No such file or directory
+2026-11-20T02:20:45.5793678Z WARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.22/community: No such file or directory
+2026-11-20T02:20:45.5811498Z ./popt-1.19-r4.apk: 0 - OK
+2026-11-20T02:20:45.5859906Z WARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.22/main: No such file or directory
+2026-11-20T02:20:45.5861335Z WARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.22/community: No such file or directory
+2026-11-20T02:20:45.5874730Z ./pyc-3.12.16-r0.apk: 0 - OK
+2026-11-20T02:20:45.5922554Z WARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.22/main: No such file or directory
+2026-11-20T02:20:45.5923514Z WARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.22/community: No such file or directory
+2026-11-20T02:20:45.6769123Z ./python3-3.12.16-r0.apk: 0 - OK
+2026-11-20T02:20:45.6823619Z WARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.22/main: No such file or directory
+2026-11-20T02:20:45.6824916Z WARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.22/community: No such file or directory
+2026-11-20T02:20:45.6840160Z ./python3-pyc-3.12.16-r0.apk: 0 - OK
+2026-11-20T02:20:45.6890822Z WARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.22/main: No such file or directory
+2026-11-20T02:20:45.6891839Z WARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.22/community: No such file or directory
+2026-11-20T02:20:45.7360674Z ./python3-pycache-pyc0-3.12.16-r0.apk: 0 - OK
+2026-11-20T02:20:45.7412574Z WARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.22/main: No such file or directory
+2026-11-20T02:20:45.7413747Z WARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.22/community: No such file or directory
+2026-11-20T02:20:45.7442751Z ./readline-8.2.13-r1.apk: 0 - OK
+2026-11-20T02:20:45.7492081Z WARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.22/main: No such file or directory
+2026-11-20T02:20:45.7493417Z WARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.22/community: No such file or directory
+2026-11-20T02:20:45.7595576Z ./sqlite-libs-3.49.2-r1.apk: 0 - OK
+2026-11-20T02:20:45.7646795Z WARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.22/main: No such file or directory
+2026-11-20T02:20:45.7647960Z WARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.22/community: No such file or directory
+2026-11-20T02:20:45.7662826Z ./ssl_client-1.37.0-r20.apk: 0 - OK
+2026-11-20T02:20:45.7711720Z WARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.22/main: No such file or directory
+2026-11-20T02:20:45.7713003Z WARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.22/community: No such file or directory
+2026-11-20T02:20:45.7759215Z ./tzdata-2026f-r0.apk: 0 - OK
+2026-11-20T02:20:45.7808579Z WARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.22/main: No such file or directory
+2026-11-20T02:20:45.7809923Z WARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.22/community: No such file or directory
+2026-11-20T02:20:45.7837554Z ./xz-libs-5.8.4-r0.apk: 0 - OK
+2026-11-20T02:20:45.7887002Z WARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.22/main: No such file or directory
+2026-11-20T02:20:45.7888151Z WARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.22/community: No such file or directory
+2026-11-20T02:20:45.7908699Z ./zlib-1.4-r0.apk: 0 - OK
+2026-11-20T02:20:45.7960722Z WARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.22/main: No such file or directory
+2026-11-20T02:20:45.7961767Z WARNING: opening from cache https://dl-cdn.alpinelinux.org/alpine/v3.22/community: No such file or directory
+2026-11-20T02:20:45.8016453Z ./zstd-libs-1.5.7-r0.apk: 0 - OK
+2026-11-20T02:20:47.1686223Z runtime approved base key fingerprints
+2026-11-20T02:20:47.1687595Z 9c102bcc376af1498d549b77bdbfa815ae86faa1d2d82f040e616b18ef2df2d4  /etc/apk/keys/alpine-devel@lists.alpinelinux.org-4a6a0840.rsa.pub
+2026-11-20T02:20:47.1689450Z ebf31683b56410ecc4c00acd9f6e2839e237a3b62b5ae7ef686705c7ba0396a9  /etc/apk/keys/alpine-devel@lists.alpinelinux.org-5243ef4b.rsa.pub
+2026-11-20T02:20:47.1691484Z 12f899e55a7691225603d6fb3324940fc51cd7f133e7ead788663c2b7eecb00c  /etc/apk/keys/alpine-devel@lists.alpinelinux.org-5261cecb.rsa.pub
+2026-11-20T02:20:47.1693157Z 207e4696d3c05f7cb05966aee557307151f1f00217af4143c1bcaf33b8df733f  /etc/apk/keys/alpine-devel@lists.alpinelinux.org-6165ee59.rsa.pub
+2026-11-20T02:20:47.1694783Z 128d34d4aec39b0daedea8163cd8dc24dff36fd3d848630ab97eeb1d3084bbb3  /etc/apk/keys/alpine-devel@lists.alpinelinux.org-61666e3f.rsa.pub
+2026-11-20T02:20:47.1695972Z runtime APK SHA-256 and upstream URLs
+2026-11-20T02:20:47.1697204Z 83c35935dcc0d592f65bc4626cec243b2c5f1a0a3d3e1361f10c4bb221a941f1 https://dl-cdn.alpinelinux.org/alpine/v3.22/main/x86_64/acl-libs-2.3.2-r1.apk
+2026-11-20T02:20:47.1699111Z 8218982214f1b51f520d282b0c81d654846e974ce009e758acc6187bd64fe228 https://dl-cdn.alpinelinux.org/alpine/v3.22/main/x86_64/bash-5.2.37-r0.apk
+2026-11-20T02:20:47.1701086Z 9e52618457762f65bf273f42d71db8084633a1e9d938ff2611015ba20d44a8cf https://dl-cdn.alpinelinux.org/alpine/v3.22/main/x86_64/brotli-libs-1.1.1-r0.apk
+2026-11-20T02:20:47.1702929Z 7cc34c2dda2520b456ab4a55abc37fe245ac90f98ab9f1c7a9be3aec035df48e https://dl-cdn.alpinelinux.org/alpine/v3.22/main/x86_64/busybox-1.37.0-r20.apk
+2026-11-20T02:20:47.1704959Z ad33d8d799ed80eab45bb68d63c14062165d3653f4fb52e73959cd31d032210e https://dl-cdn.alpinelinux.org/alpine/v3.22/main/x86_64/busybox-binsh-1.37.0-r20.apk
+2026-11-20T02:20:47.1707283Z 9b23aa07901ed64bde0be7ec544f8d2b29de80d996277dc861218c54fff8bc97 https://dl-cdn.alpinelinux.org/alpine/v3.22/main/x86_64/c-ares-1.34.9-r0.apk
+2026-11-20T02:20:47.1709266Z 8dd7538699961927a36327d622b3b9e9f5c944fd7d486a0cb8b6b833dc74cfbf https://dl-cdn.alpinelinux.org/alpine/v3.22/main/x86_64/ca-certificates-20261020-r0.apk
+2026-11-20T02:20:47.1711558Z d35216a0a9adde79031df246759bad03f235cf201bf0aff8436b88bff59594eb https://dl-cdn.alpinelinux.org/alpine/v3.22/main/x86_64/ca-certificates-bundle-20261020-r0.apk
+2026-11-20T02:20:47.1713457Z 3e782736df7039c2b8da2ff9bb4c79a67aee9520561c63e746b1c22ebb0938fb https://dl-cdn.alpinelinux.org/alpine/v3.22/main/x86_64/curl-8.14.1-r4.apk
+2026-11-20T02:20:47.1715334Z baad0145040ffd4a38656a4b3b476958c9ca9c7590f6f7dc1283a1a2dd05982e https://dl-cdn.alpinelinux.org/alpine/v3.22/main/x86_64/fail2ban-1.1.0-r3.apk
+2026-11-20T02:20:47.1717395Z f292a9743d02844d4e04b6903eb42ba69c45ab88f2a05b94fb04b521f053f8c2 https://dl-cdn.alpinelinux.org/alpine/v3.22/main/x86_64/fail2ban-pyc-1.1.0-r3.apk
+2026-11-20T02:20:47.1719295Z cb524a457ffbd9c79c6711d9ee883a64a5a9bc6aec4f4b4d047ee67527ac6e6d https://dl-cdn.alpinelinux.org/alpine/v3.22/main/x86_64/gdbm-1.24-r0.apk
+2026-11-20T02:20:47.1721337Z defe876173d08fe30b664b2d9f60d0237298a639e3a7d0e3f83ac637fd6519db https://dl-cdn.alpinelinux.org/alpine/v3.22/main/x86_64/iptables-1.8.11-r1.apk
+2026-11-20T02:20:47.1723234Z 0c98810f9332bf1bb1b0acc64eaac4b101036689bffba9ea621416b4b3c190cd https://dl-cdn.alpinelinux.org/alpine/v3.22/main/x86_64/libbz2-1.0.8-r6.apk
+2026-11-20T02:20:47.1725368Z 3f5825ced5fde1c66a5376a3f6076b3c08538ad52d9ef23f069857e212d9175a https://dl-cdn.alpinelinux.org/alpine/v3.22/main/x86_64/libcrypto3-3.5.9-r0.apk
+2026-11-20T02:20:47.1727187Z 3887f3b2e66b513cb0f8211af6369a0ffaf87270c05ed1f18f7313eddc6b3660 https://dl-cdn.alpinelinux.org/alpine/v3.22/main/x86_64/libcurl-8.14.1-r4.apk
+2026-11-20T02:20:47.1729008Z 8ff83a897b5393832edbd2a7500c37bab685a17d7821925d95460f01747dbac2 https://dl-cdn.alpinelinux.org/alpine/v3.22/main/x86_64/libexpat-2.10.0-r0.apk
+2026-11-20T02:20:47.1731143Z 9a75cb9024693c1e52c3d8d7c9afb7c79e6e20f6c08df28effdb8dd816095083 https://dl-cdn.alpinelinux.org/alpine/v3.22/main/x86_64/libffi-3.4.8-r0.apk
+2026-11-20T02:20:47.1732977Z 04f3467bc967e705221a843fe4d3de5850db826e571686e0c0ed453d38cb5c59 https://dl-cdn.alpinelinux.org/alpine/v3.22/main/x86_64/libgcc-14.2.0-r6.apk
+2026-11-20T02:20:47.1734206Z 515cfe061176c7456ea3548651d0014084d77dd3774b78e2c944404ae75a41ff https://dl-cdn.alpinelinux.org/alpine/v3.22/main/x86_64/libidn2-2.3.7-r0.apk
+2026-11-20T02:20:47.1735185Z e9dc63c95a0c8a263dc7f0705e6f7a2220d632a675ce85db798d33a40b1c1b0b https://dl-cdn.alpinelinux.org/alpine/v3.22/main/x86_64/libmnl-1.0.5-r2.apk
+2026-11-20T02:20:47.1736361Z aeafdfca68147b014705b4e2564639ade6345198debb522f2c6c51d32e417651 https://dl-cdn.alpinelinux.org/alpine/v3.22/main/x86_64/libncursesw-6.5_p20250503-r0.apk
+2026-11-20T02:20:47.1737613Z bef674635aec00dca296b8206751245f7664ba10c416f31c01a563af596720ae https://dl-cdn.alpinelinux.org/alpine/v3.22/main/x86_64/libnftnl-1.2.9-r0.apk
+2026-11-20T02:20:47.1738641Z 046257a4535a9ced124595a33053948f6bf8b2f02988fefd1108f514d213ad4b https://dl-cdn.alpinelinux.org/alpine/v3.22/main/x86_64/libpanelw-6.5_p20250503-r0.apk
+2026-11-20T02:20:47.1739969Z 1e79da4fa1364b7153b8950a363a6de0bef1d1b48d46fcb3b850cd4f233727b2 https://dl-cdn.alpinelinux.org/alpine/v3.22/main/x86_64/libpsl-0.21.5-r3.apk
+2026-11-20T02:20:47.1740961Z 6801c740b9760b5b08da8db6367ebc18b2cc4dbaf371f7148429538b8bb04e23 https://dl-cdn.alpinelinux.org/alpine/v3.22/main/x86_64/libssl3-3.5.9-r0.apk
+2026-11-20T02:20:47.1741953Z 939f7c99898f3e8154207a17f4acbe8bc40437e1bb1b43f5525620ca9e452a2e https://dl-cdn.alpinelinux.org/alpine/v3.22/main/x86_64/libstdc++-14.2.0-r6.apk
+2026-11-20T02:20:47.1742945Z 989640e58f7646c0495c3950df36eb7b4df152d8150c2c888f8ab954fed8c908 https://dl-cdn.alpinelinux.org/alpine/v3.22/main/x86_64/libunistring-1.3-r0.apk
+2026-11-20T02:20:47.1744136Z 5367f1f5c309a0aeede0a08d73af717f582f7a135ff97080aa0e5b7c72fd97af https://dl-cdn.alpinelinux.org/alpine/v3.22/main/x86_64/libxtables-1.8.11-r1.apk
+2026-11-20T02:20:47.1745152Z bfffd54f0d049ccf48d0a9fe549c8bc29864b3567ee0537afe22786616352a46 https://dl-cdn.alpinelinux.org/alpine/v3.22/main/x86_64/logrotate-3.21.0-r1.apk
+2026-11-20T02:20:47.1746158Z 28f3d868efbc1e9093b95f4a3f6e74393acd4a37292fcb5c0e0e0612fe83fff3 https://dl-cdn.alpinelinux.org/alpine/v3.22/main/x86_64/mpdecimal-4.0.1-r0.apk
+2026-11-20T02:20:47.1747147Z 359890bc7c4dc5fee7a85192de60a471c987e4664767288578beca60a44db2c8 https://dl-cdn.alpinelinux.org/alpine/v3.22/main/x86_64/musl-1.2.5-r13.apk
+2026-11-20T02:20:47.1748194Z 0815a5f0403974bb9c34d456e71dc9c0222cb5455d393bc63c44b573da3d7fe0 https://dl-cdn.alpinelinux.org/alpine/v3.22/main/x86_64/ncurses-terminfo-base-6.5_p20250503-r0.apk
+2026-11-20T02:20:47.1749456Z d6ee515d30d703e94b55ef9c0a02aea053313f654acbd2c655d18e3907ecb66a https://dl-cdn.alpinelinux.org/alpine/v3.22/main/x86_64/nghttp2-libs-1.69.0-r0.apk
+2026-11-20T02:20:47.1750915Z 7bcae61e09fd231b13fa3bb03684938abfe51729d32c7a0c3212eddacd738965 https://dl-cdn.alpinelinux.org/alpine/v3.22/main/x86_64/openssl-3.5.9-r0.apk
+2026-11-20T02:20:47.1752007Z 0f00f96b98b63628a5c7d25597dd00d088c2951b31439e415427618ddcee40b5 https://dl-cdn.alpinelinux.org/alpine/v3.22/main/x86_64/popt-1.19-r4.apk
+2026-11-20T02:20:47.1753073Z 3588fbae1376094b8c73f8300bfeb7ff394d17a666d407649f06d9072a3f2094 https://dl-cdn.alpinelinux.org/alpine/v3.22/main/x86_64/pyc-3.12.16-r0.apk
+2026-11-20T02:20:47.1754217Z 4bd1bf5b980cdf906c04a507258cfae8b44b3070d82b7c4cbf77ef2552bbdb06 https://dl-cdn.alpinelinux.org/alpine/v3.22/main/x86_64/python3-3.12.16-r0.apk
+2026-11-20T02:20:47.1755378Z b49968ff0d8e8378709d4ef6ea2e31b2e7b69b24945207b247bb6bf085ee1dce https://dl-cdn.alpinelinux.org/alpine/v3.22/main/x86_64/python3-pyc-3.12.16-r0.apk
+2026-11-20T02:20:47.1756562Z b1b1732e093d34ce9c1e126fbc013c9299895ed5a09615d088e220e8303e227b https://dl-cdn.alpinelinux.org/alpine/v3.22/main/x86_64/python3-pycache-pyc0-3.12.16-r0.apk
+2026-11-20T02:20:47.1757730Z 520fa586c689144928191bee13e2c85ff4e170ad87d1471ec48e3e97611673d8 https://dl-cdn.alpinelinux.org/alpine/v3.22/main/x86_64/readline-8.2.13-r1.apk
+2026-11-20T02:20:47.1758735Z 7af9a58595642de91ea35d3d070cd38d969680a720ce76b14966859e6fb4af99 https://dl-cdn.alpinelinux.org/alpine/v3.22/main/x86_64/sqlite-libs-3.49.2-r1.apk
+2026-11-20T02:20:47.1760028Z 11b2a5f91caf8eb5daa9a0bc2586f93545de62897f3a704fd49533e1654b7a68 https://dl-cdn.alpinelinux.org/alpine/v3.22/main/x86_64/ssl_client-1.37.0-r20.apk
+2026-11-20T02:20:47.1761041Z cf2a759aa58e439061227ff1be1e43bfd91c11367f2da5f0ae82463d83a1ed03 https://dl-cdn.alpinelinux.org/alpine/v3.22/main/x86_64/tzdata-2026f-r0.apk
+2026-11-20T02:20:47.1762022Z 37e169b7b400304fa7027cab79f9c1c7a280e83acf6c95463384b8abb7ebb254 https://dl-cdn.alpinelinux.org/alpine/v3.22/main/x86_64/xz-libs-5.8.4-r0.apk
+2026-11-20T02:20:47.1762984Z a271d6491037f7037010ac98b40f7d2b81c733f425b20294ee771b6ed7571038 https://dl-cdn.alpinelinux.org/alpine/v3.22/main/x86_64/zlib-1.4-r0.apk
+2026-11-20T02:20:47.1763983Z 1bdd6e57cfbfbfd6e8481cad37ddd5d199950715bec1879b3afb600272dbb09e https://dl-cdn.alpinelinux.org/alpine/v3.22/main/x86_64/zstd-libs-1.5.7-r0.apk
+2026-11-20T02:20:47.1764729Z runtime offline installation output and installed package metadata
+2026-11-20T02:20:47.1765094Z ./acl-libs-2.3.2-r1.apk: OK
+2026-11-20T02:20:47.1765329Z ./bash-5.2.37-r0.apk: OK
+2026-11-20T02:20:47.1765562Z ./brotli-libs-1.1.1-r0.apk: OK
+2026-11-20T02:20:47.1765802Z ./busybox-1.37.0-r20.apk: OK
+2026-11-20T02:20:47.1766050Z ./busybox-binsh-1.37.0-r20.apk: OK
+2026-11-20T02:20:47.1766307Z ./c-ares-1.34.9-r0.apk: OK
+2026-11-20T02:20:47.1766554Z ./ca-certificates-20261020-r0.apk: OK
+2026-11-20T02:20:47.1766856Z ./ca-certificates-bundle-20261020-r0.apk: OK
+2026-11-20T02:20:47.1767147Z ./curl-8.14.1-r4.apk: OK
+2026-11-20T02:20:47.1767379Z ./fail2ban-1.1.0-r3.apk: OK
+2026-11-20T02:20:47.1767618Z ./fail2ban-pyc-1.1.0-r3.apk: OK
+2026-11-20T02:20:47.1767857Z ./gdbm-1.24-r0.apk: OK
+2026-11-20T02:20:47.1768226Z ./iptables-1.8.11-r1.apk: OK
+2026-11-20T02:20:47.1768455Z ./libbz2-1.0.8-r6.apk: OK
+2026-11-20T02:20:47.1768681Z ./libcrypto3-3.5.9-r0.apk: OK
+2026-11-20T02:20:47.1768914Z ./libcurl-8.14.1-r4.apk: OK
+2026-11-20T02:20:47.1769144Z ./libexpat-2.10.0-r0.apk: OK
+2026-11-20T02:20:47.1769372Z ./libffi-3.4.8-r0.apk: OK
+2026-11-20T02:20:47.1769872Z ./libgcc-14.2.0-r6.apk: OK
+2026-11-20T02:20:47.1770104Z ./libidn2-2.3.7-r0.apk: OK
+2026-11-20T02:20:47.1770325Z ./libmnl-1.0.5-r2.apk: OK
+2026-11-20T02:20:47.1770556Z ./libncursesw-6.5_p20250503-r0.apk: OK
+2026-11-20T02:20:47.1770814Z ./libnftnl-1.2.9-r0.apk: OK
+2026-11-20T02:20:47.1771058Z ./libpanelw-6.5_p20250503-r0.apk: OK
+2026-11-20T02:20:47.1771309Z ./libpsl-0.21.5-r3.apk: OK
+2026-11-20T02:20:47.1771527Z ./libssl3-3.5.9-r0.apk: OK
+2026-11-20T02:20:47.1771752Z ./libstdc++-14.2.0-r6.apk: OK
+2026-11-20T02:20:47.1771992Z ./libunistring-1.3-r0.apk: OK
+2026-11-20T02:20:47.1772233Z ./libxtables-1.8.11-r1.apk: OK
+2026-11-20T02:20:47.1772473Z ./logrotate-3.21.0-r1.apk: OK
+2026-11-20T02:20:47.1772723Z ./mpdecimal-4.0.1-r0.apk: OK
+2026-11-20T02:20:47.1772953Z ./musl-1.2.5-r13.apk: OK
+2026-11-20T02:20:47.1773207Z ./ncurses-terminfo-base-6.5_p20250503-r0.apk: OK
+2026-11-20T02:20:47.1773509Z ./nghttp2-libs-1.69.0-r0.apk: OK
+2026-11-20T02:20:47.1773752Z ./openssl-3.5.9-r0.apk: OK
+2026-11-20T02:20:47.1773972Z ./popt-1.19-r4.apk: OK
+2026-11-20T02:20:47.1774183Z ./pyc-3.12.16-r0.apk: OK
+2026-11-20T02:20:47.1774402Z ./python3-3.12.16-r0.apk: OK
+2026-11-20T02:20:47.1774640Z ./python3-pyc-3.12.16-r0.apk: OK
+2026-11-20T02:20:47.1774909Z ./python3-pycache-pyc0-3.12.16-r0.apk: OK
+2026-11-20T02:20:47.1775321Z ./readline-8.2.13-r1.apk: OK
+2026-11-20T02:20:47.1775578Z ./sqlite-libs-3.49.2-r1.apk: OK
+2026-11-20T02:20:47.1775825Z ./ssl_client-1.37.0-r20.apk: OK
+2026-11-20T02:20:47.1776064Z ./tzdata-2026f-r0.apk: OK
+2026-11-20T02:20:47.1776288Z ./xz-libs-5.8.4-r0.apk: OK
+2026-11-20T02:20:47.1776512Z ./zlib-1.4-r0.apk: OK
+2026-11-20T02:20:47.1776725Z ./zstd-libs-1.5.7-r0.apk: OK
+2026-11-20T02:20:47.1776995Z (1/44) Upgrading musl (1.2.5-r12 -> 1.2.5-r13)
+2026-11-20T02:20:47.1777287Z (2/44) Installing acl-libs (2.3.2-r1)
+2026-11-20T02:20:47.1777576Z (3/44) Upgrading libcrypto3 (3.5.6-r0 -> 3.5.9-r0)
+2026-11-20T02:20:47.1777960Z (4/44) Upgrading ca-certificates-bundle (20260413-r0 -> 20261020-r0)
+2026-11-20T02:20:47.1778334Z (5/44) Upgrading libssl3 (3.5.6-r0 -> 3.5.9-r0)
+2026-11-20T02:20:47.1778637Z (6/44) Upgrading zlib (1.3.2-r0 -> 1.4-r0)
+2026-11-20T02:20:47.1778960Z (7/44) Installing ncurses-terminfo-base (6.5_p20250503-r0)
+2026-11-20T02:20:47.1779305Z (8/44) Installing libncursesw (6.5_p20250503-r0)
+2026-11-20T02:20:47.1779901Z (9/44) Installing readline (8.2.13-r1)
+2026-11-20T02:20:47.1780176Z (10/44) Installing bash (5.2.37-r0)
+2026-11-20T02:20:47.1780443Z Executing bash-5.2.37-r0.post-install
+2026-11-20T02:20:47.1780718Z (11/44) Installing brotli-libs (1.1.1-r0)
+2026-11-20T02:20:47.1780989Z (12/44) Installing c-ares (1.34.9-r0)
+2026-11-20T02:20:47.1781264Z (13/44) Installing ca-certificates (20261020-r0)
+2026-11-20T02:20:47.1781574Z (14/44) Installing libunistring (1.3-r0)
+2026-11-20T02:20:47.1781842Z (15/44) Installing libidn2 (2.3.7-r0)
+2026-11-20T02:20:47.1782108Z (16/44) Installing nghttp2-libs (1.69.0-r0)
+2026-11-20T02:20:47.1782387Z (17/44) Installing libpsl (0.21.5-r3)
+2026-11-20T02:20:47.1782646Z (18/44) Installing zstd-libs (1.5.7-r0)
+2026-11-20T02:20:47.1782913Z (19/44) Installing libcurl (8.14.1-r4)
+2026-11-20T02:20:47.1783171Z (20/44) Installing curl (8.14.1-r4)
+2026-11-20T02:20:47.1783424Z (21/44) Installing libexpat (2.10.0-r0)
+2026-11-20T02:20:47.1783685Z (22/44) Installing libbz2 (1.0.8-r6)
+2026-11-20T02:20:47.1783947Z (23/44) Installing libffi (3.4.8-r0)
+2026-11-20T02:20:47.1784200Z (24/44) Installing gdbm (1.24-r0)
+2026-11-20T02:20:47.1784459Z (25/44) Installing xz-libs (5.8.4-r0)
+2026-11-20T02:20:47.1784716Z (26/44) Installing libgcc (14.2.0-r6)
+2026-11-20T02:20:47.1784974Z (27/44) Installing libstdc++ (14.2.0-r6)
+2026-11-20T02:20:47.1785244Z (28/44) Installing mpdecimal (4.0.1-r0)
+2026-11-20T02:20:47.1785665Z (29/44) Installing libpanelw (6.5_p20250503-r0)
+2026-11-20T02:20:47.1785963Z (30/44) Installing sqlite-libs (3.49.2-r1)
+2026-11-20T02:20:47.1786238Z (31/44) Installing python3 (3.12.16-r0)
+2026-11-20T02:20:47.1786537Z (32/44) Installing python3-pycache-pyc0 (3.12.16-r0)
+2026-11-20T02:20:47.1786844Z (33/44) Installing pyc (3.12.16-r0)
+2026-11-20T02:20:47.1787223Z (34/44) Installing libmnl (1.0.5-r2)
+2026-11-20T02:20:47.1787496Z (35/44) Installing libnftnl (1.2.9-r0)
+2026-11-20T02:20:47.1787871Z (36/44) Installing libxtables (1.8.11-r1)
+2026-11-20T02:20:47.1788239Z (37/44) Installing iptables (1.8.11-r1)
+2026-11-20T02:20:47.1788517Z (38/44) Installing popt (1.19-r4)
+2026-11-20T02:20:47.1788883Z (39/44) Installing logrotate (3.21.0-r1)
+2026-11-20T02:20:47.1789259Z (40/44) Installing fail2ban-pyc (1.1.0-r3)
+2026-11-20T02:20:47.1789821Z (41/44) Installing python3-pyc (3.12.16-r0)
+2026-11-20T02:20:47.1790232Z (42/44) Installing fail2ban (1.1.0-r3)
+2026-11-20T02:20:47.1790505Z (43/44) Installing openssl (3.5.9-r0)
+2026-11-20T02:20:47.1790873Z (44/44) Installing tzdata (2026f-r0)
+2026-11-20T02:20:47.1791155Z Executing busybox-1.37.0-r20.trigger
+2026-11-20T02:20:47.1791445Z Executing ca-certificates-20261020-r0.trigger
+2026-11-20T02:20:47.1791742Z OK: 59 MiB in 55 packages
+2026-11-20T02:20:47.1791962Z P:acl-libs
+2026-11-20T02:20:47.1792138Z V:2.3.2-r1
+2026-11-20T02:20:47.1792314Z A:x86_64
+2026-11-20T02:20:47.1792571Z L:LGPL-2.1-or-later AND GPL-2.0-or-later
+2026-11-20T02:20:47.1792912Z D:so:libc.musl-x86_64.so.1
+2026-11-20T02:20:47.1793066Z 
+2026-11-20T02:20:47.1793150Z P:alpine-baselayout
+2026-11-20T02:20:47.1793500Z V:3.7.0-r0
+2026-11-20T02:20:47.1793795Z A:x86_64
+2026-11-20T02:20:47.1793976Z L:GPL-2.0-only
+2026-11-20T02:20:47.1794205Z D:alpine-baselayout-data=3.7.0-r0 /bin/sh
+2026-11-20T02:20:47.1794398Z 
+2026-11-20T02:20:47.1794588Z P:alpine-baselayout-data
+2026-11-20T02:20:47.1794827Z V:3.7.0-r0
+2026-11-20T02:20:47.1794999Z A:x86_64
+2026-11-20T02:20:47.1795175Z L:GPL-2.0-only
+2026-11-20T02:20:47.1795300Z 
+2026-11-20T02:20:47.1795387Z P:alpine-keys
+2026-11-20T02:20:47.1795672Z V:2.5-r0
+2026-11-20T02:20:47.1795843Z A:x86_64
+2026-11-20T02:20:47.1796010Z L:MIT
+2026-11-20T02:20:47.1796115Z 
+2026-11-20T02:20:47.1796195Z P:alpine-release
+2026-11-20T02:20:47.1796479Z V:3.22.4-r0
+2026-11-20T02:20:47.1796670Z A:x86_64
+2026-11-20T02:20:47.1796839Z L:MIT
+2026-11-20T02:20:47.1797011Z D:alpine-keys
+2026-11-20T02:20:47.1797120Z 
+2026-11-20T02:20:47.1797270Z P:apk-tools
+2026-11-20T02:20:47.1797483Z V:2.14.9-r3
+2026-11-20T02:20:47.1797657Z A:x86_64
+2026-11-20T02:20:47.1797834Z L:GPL-2.0-only
+2026-11-20T02:20:47.1798393Z D:musl>=1.2.3_git20230424 libcrypto3>=3.5 ca-certificates-bundle so:libapk.so.2.14.9 so:libc.musl-x86_64.so.1 so:libcrypto.so.3 so:libz.so.1
+2026-11-20T02:20:47.1798998Z 
+2026-11-20T02:20:47.1799073Z P:bash
+2026-11-20T02:20:47.1799248Z V:5.2.37-r0
+2026-11-20T02:20:47.1799424Z A:x86_64
+2026-11-20T02:20:47.1799892Z L:GPL-3.0-or-later
+2026-11-20T02:20:47.1800189Z D:/bin/sh so:libc.musl-x86_64.so.1 so:libreadline.so.8
+2026-11-20T02:20:47.1800417Z 
+2026-11-20T02:20:47.1800502Z P:brotli-libs
+2026-11-20T02:20:47.1800687Z V:1.1.1-r0
+2026-11-20T02:20:47.1800861Z A:x86_64
+2026-11-20T02:20:47.1801117Z L:MIT
+2026-11-20T02:20:47.1801330Z D:so:libc.musl-x86_64.so.1
+2026-11-20T02:20:47.1801479Z 
+2026-11-20T02:20:47.1801551Z P:busybox
+2026-11-20T02:20:47.1801721Z V:1.37.0-r20
+2026-11-20T02:20:47.1802002Z A:x86_64
+2026-11-20T02:20:47.1802181Z L:GPL-2.0-only
+2026-11-20T02:20:47.1802385Z D:so:libc.musl-x86_64.so.1
+2026-11-20T02:20:47.1802525Z 
+2026-11-20T02:20:47.1802607Z P:busybox-binsh
+2026-11-20T02:20:47.1802799Z V:1.37.0-r20
+2026-11-20T02:20:47.1802975Z A:x86_64
+2026-11-20T02:20:47.1803147Z L:GPL-2.0-only
+2026-11-20T02:20:47.1803334Z D:busybox=1.37.0-r20
+2026-11-20T02:20:47.1803464Z 
+2026-11-20T02:20:47.1803536Z P:c-ares
+2026-11-20T02:20:47.1803704Z V:1.34.9-r0
+2026-11-20T02:20:47.1803875Z A:x86_64
+2026-11-20T02:20:47.1804041Z L:MIT
+2026-11-20T02:20:47.1804218Z D:so:libc.musl-x86_64.so.1
+2026-11-20T02:20:47.1804550Z 
+2026-11-20T02:20:47.1804637Z P:ca-certificates
+2026-11-20T02:20:47.1804831Z V:20261020-r0
+2026-11-20T02:20:47.1805008Z A:x86_64
+2026-11-20T02:20:47.1805182Z L:MPL-2.0 AND MIT
+2026-11-20T02:20:47.1805422Z D:/bin/sh so:libc.musl-x86_64.so.1 so:libcrypto.so.3
+2026-11-20T02:20:47.1805637Z 
+2026-11-20T02:20:47.1805737Z P:ca-certificates-bundle
+2026-11-20T02:20:47.1805955Z V:20261020-r0
+2026-11-20T02:20:47.1806137Z A:noarch
+2026-11-20T02:20:47.1806314Z L:MPL-2.0 AND MIT
+2026-11-20T02:20:47.1806435Z 
+2026-11-20T02:20:47.1806506Z P:curl
+2026-11-20T02:20:47.1806680Z V:8.14.1-r4
+2026-11-20T02:20:47.1806865Z A:x86_64
+2026-11-20T02:20:47.1807038Z L:curl
+2026-11-20T02:20:47.1807315Z D:libcurl=8.14.1-r4 so:libc.musl-x86_64.so.1 so:libcurl.so.4 so:libz.so.1
+2026-11-20T02:20:47.1807592Z 
+2026-11-20T02:20:47.1807671Z P:fail2ban
+2026-11-20T02:20:47.1807849Z V:1.1.0-r3
+2026-11-20T02:20:47.1808025Z A:noarch
+2026-11-20T02:20:47.1808205Z L:GPL-2.0-or-later
+2026-11-20T02:20:47.1808436Z D:python3 iptables logrotate python3~3.12
+2026-11-20T02:20:47.1808638Z 
+2026-11-20T02:20:47.1808715Z P:fail2ban-pyc
+2026-11-20T02:20:47.1808904Z V:1.1.0-r3
+2026-11-20T02:20:47.1809076Z A:noarch
+2026-11-20T02:20:47.1809261Z L:GPL-2.0-or-later
+2026-11-20T02:20:47.1809482Z D:python3 iptables logrotate python3~3.12
+2026-11-20T02:20:47.1809998Z 
+2026-11-20T02:20:47.1810079Z P:gdbm
+2026-11-20T02:20:47.1810255Z V:1.24-r0
+2026-11-20T02:20:47.1810424Z A:x86_64
+2026-11-20T02:20:47.1810596Z L:GPL-3.0-or-later
+2026-11-20T02:20:47.1810797Z D:so:libc.musl-x86_64.so.1
+2026-11-20T02:20:47.1810947Z 
+2026-11-20T02:20:47.1811021Z P:iptables
+2026-11-20T02:20:47.1811323Z V:1.8.11-r1
+2026-11-20T02:20:47.1811507Z A:x86_64
+2026-11-20T02:20:47.1811684Z L:GPL-2.0-or-later
+2026-11-20T02:20:47.1812031Z D:/bin/sh so:libc.musl-x86_64.so.1 so:libmnl.so.0 so:libnftnl.so.11 so:libxtables.so.12
+2026-11-20T02:20:47.1812356Z 
+2026-11-20T02:20:47.1812435Z P:libapk2
+2026-11-20T02:20:47.1812610Z V:2.14.9-r3
+2026-11-20T02:20:47.1812780Z A:x86_64
+2026-11-20T02:20:47.1812957Z L:GPL-2.0-only
+2026-11-20T02:20:47.1813654Z D:musl>=1.2.3_git20230424 libcrypto3>=3.5 ca-certificates-bundle so:libc.musl-x86_64.so.1 so:libcrypto.so.3 so:libssl.so.3 so:libz.so.1
+2026-11-20T02:20:47.1814297Z 
+2026-11-20T02:20:47.1814374Z P:libbz2
+2026-11-20T02:20:47.1814551Z V:1.0.8-r6
+2026-11-20T02:20:47.1814724Z A:x86_64
+2026-11-20T02:20:47.1815002Z L:bzip2-1.0.6
+2026-11-20T02:20:47.1815215Z D:so:libc.musl-x86_64.so.1
+2026-11-20T02:20:47.1815360Z 
+2026-11-20T02:20:47.1815442Z P:libcrypto3
+2026-11-20T02:20:47.1815738Z V:3.5.9-r0
+2026-11-20T02:20:47.1815914Z A:x86_64
+2026-11-20T02:20:47.1816088Z L:Apache-2.0
+2026-11-20T02:20:47.1816291Z D:so:libc.musl-x86_64.so.1
+2026-11-20T02:20:47.1816452Z 
+2026-11-20T02:20:47.1816609Z P:libcurl
+2026-11-20T02:20:47.1816810Z V:8.14.1-r4
+2026-11-20T02:20:47.1816989Z A:x86_64
+2026-11-20T02:20:47.1817156Z L:curl
+2026-11-20T02:20:47.1817986Z D:ca-certificates-bundle so:libbrotlidec.so.1 so:libc.musl-x86_64.so.1 so:libcares.so.2 so:libcrypto.so.3 so:libidn2.so.0 so:libnghttp2.so.14 so:libpsl.so.5 so:libssl.so.3 so:libz.so.1 so:libzstd.so.1
+2026-11-20T02:20:47.1818866Z 
+2026-11-20T02:20:47.1818950Z P:libexpat
+2026-11-20T02:20:47.1819209Z V:2.10.0-r0
+2026-11-20T02:20:47.1819412Z A:x86_64
+2026-11-20T02:20:47.1819854Z L:MIT
+2026-11-20T02:20:47.1820100Z D:so:libc.musl-x86_64.so.1
+2026-11-20T02:20:47.1820310Z 
+2026-11-20T02:20:47.1820386Z P:libffi
+2026-11-20T02:20:47.1820559Z V:3.4.8-r0
+2026-11-20T02:20:47.1820734Z A:x86_64
+2026-11-20T02:20:47.1821010Z L:MIT
+2026-11-20T02:20:47.1821196Z D:so:libc.musl-x86_64.so.1
+2026-11-20T02:20:47.1821349Z 
+2026-11-20T02:20:47.1821428Z P:libgcc
+2026-11-20T02:20:47.1821710Z V:14.2.0-r6
+2026-11-20T02:20:47.1821885Z A:x86_64
+2026-11-20T02:20:47.1822082Z L:GPL-2.0-or-later AND LGPL-2.1-or-later
+2026-11-20T02:20:47.1822356Z D:so:libc.musl-x86_64.so.1
+2026-11-20T02:20:47.1822499Z 
+2026-11-20T02:20:47.1822582Z P:libidn2
+2026-11-20T02:20:47.1822752Z V:2.3.7-r0
+2026-11-20T02:20:47.1822922Z A:x86_64
+2026-11-20T02:20:47.1823116Z L:GPL-2.0-or-later OR LGPL-3.0-or-later
+2026-11-20T02:20:47.1823565Z D:so:libc.musl-x86_64.so.1 so:libunistring.so.5
+2026-11-20T02:20:47.1823777Z 
+2026-11-20T02:20:47.1823850Z P:libmnl
+2026-11-20T02:20:47.1824115Z V:1.0.5-r2
+2026-11-20T02:20:47.1824320Z A:x86_64
+2026-11-20T02:20:47.1824499Z L:LGPL-2.1-or-later
+2026-11-20T02:20:47.1824717Z D:so:libc.musl-x86_64.so.1
+2026-11-20T02:20:47.1824967Z 
+2026-11-20T02:20:47.1825053Z P:libncursesw
+2026-11-20T02:20:47.1825241Z V:6.5_p20250503-r0
+2026-11-20T02:20:47.1825425Z A:x86_64
+2026-11-20T02:20:47.1825641Z L:X11
+2026-11-20T02:20:47.1825976Z D:ncurses-terminfo-base=6.5_p20250503-r0 so:libc.musl-x86_64.so.1
+2026-11-20T02:20:47.1826256Z 
+2026-11-20T02:20:47.1826329Z P:libnftnl
+2026-11-20T02:20:47.1826610Z V:1.2.9-r0
+2026-11-20T02:20:47.1826797Z A:x86_64
+2026-11-20T02:20:47.1826970Z L:GPL-2.0-or-later
+2026-11-20T02:20:47.1827188Z D:so:libc.musl-x86_64.so.1 so:libmnl.so.0
+2026-11-20T02:20:47.1827485Z 
+2026-11-20T02:20:47.1827566Z P:libpanelw
+2026-11-20T02:20:47.1827750Z V:6.5_p20250503-r0
+2026-11-20T02:20:47.1827945Z A:x86_64
+2026-11-20T02:20:47.1828117Z L:X11
+2026-11-20T02:20:47.1828445Z D:ncurses-terminfo-base=6.5_p20250503-r0 so:libc.musl-x86_64.so.1 so:libncursesw.so.6
+2026-11-20T02:20:47.1828782Z 
+2026-11-20T02:20:47.1828855Z P:libpsl
+2026-11-20T02:20:47.1829024Z V:0.21.5-r3
+2026-11-20T02:20:47.1829194Z A:x86_64
+2026-11-20T02:20:47.1829367Z L:MIT
+2026-11-20T02:20:47.1829814Z D:so:libc.musl-x86_64.so.1 so:libidn2.so.0 so:libunistring.so.5
+2026-11-20T02:20:47.1830071Z 
+2026-11-20T02:20:47.1830149Z P:libssl3
+2026-11-20T02:20:47.1830395Z V:3.5.9-r0
+2026-11-20T02:20:47.1830621Z A:x86_64
+2026-11-20T02:20:47.1830801Z L:Apache-2.0
+2026-11-20T02:20:47.1831293Z D:libcrypto3=3.5.9-r0 so:libc.musl-x86_64.so.1 so:libcrypto.so.3
+2026-11-20T02:20:47.1831576Z 
+2026-11-20T02:20:47.1831652Z P:libstdc++
+2026-11-20T02:20:47.1831839Z V:14.2.0-r6
+2026-11-20T02:20:47.1832068Z A:x86_64
+2026-11-20T02:20:47.1832333Z L:GPL-2.0-or-later AND LGPL-2.1-or-later
+2026-11-20T02:20:47.1832627Z D:so:libc.musl-x86_64.so.1 so:libgcc_s.so.1
+2026-11-20T02:20:47.1832910Z 
+2026-11-20T02:20:47.1833004Z P:libunistring
+2026-11-20T02:20:47.1833192Z V:1.3-r0
+2026-11-20T02:20:47.1833362Z A:x86_64
+2026-11-20T02:20:47.1833627Z L:GPL-2.0-or-later OR LGPL-3.0-or-later
+2026-11-20T02:20:47.1833938Z D:so:libc.musl-x86_64.so.1
+2026-11-20T02:20:47.1834085Z 
+2026-11-20T02:20:47.1834158Z P:libxtables
+2026-11-20T02:20:47.1834336Z V:1.8.11-r1
+2026-11-20T02:20:47.1834506Z A:x86_64
+2026-11-20T02:20:47.1834685Z L:GPL-2.0-or-later
+2026-11-20T02:20:47.1834888Z D:so:libc.musl-x86_64.so.1
+2026-11-20T02:20:47.1835038Z 
+2026-11-20T02:20:47.1835117Z P:logrotate
+2026-11-20T02:20:47.1835294Z V:3.21.0-r1
+2026-11-20T02:20:47.1835582Z A:x86_64
+2026-11-20T02:20:47.1835766Z L:GPL-2.0-or-later
+2026-11-20T02:20:47.1836046Z D:/bin/sh so:libacl.so.1 so:libc.musl-x86_64.so.1 so:libpopt.so.0
+2026-11-20T02:20:47.1836403Z 
+2026-11-20T02:20:47.1836489Z P:mpdecimal
+2026-11-20T02:20:47.1836668Z V:4.0.1-r0
+2026-11-20T02:20:47.1836844Z A:x86_64
+2026-11-20T02:20:47.1837020Z L:BSD-2-Clause
+2026-11-20T02:20:47.1837395Z D:so:libc.musl-x86_64.so.1 so:libgcc_s.so.1 so:libstdc++.so.6
+2026-11-20T02:20:47.1837647Z 
+2026-11-20T02:20:47.1837726Z P:musl
+2026-11-20T02:20:47.1837902Z V:1.2.5-r13
+2026-11-20T02:20:47.1838076Z A:x86_64
+2026-11-20T02:20:47.1838244Z L:MIT
+2026-11-20T02:20:47.1838340Z 
+2026-11-20T02:20:47.1838486Z P:musl-utils
+2026-11-20T02:20:47.1838728Z V:1.2.5-r12
+2026-11-20T02:20:47.1838908Z A:x86_64
+2026-11-20T02:20:47.1839105Z L:MIT AND BSD-2-Clause AND GPL-2.0-or-later
+2026-11-20T02:20:47.1839659Z D:scanelf so:libc.musl-x86_64.so.1
+2026-11-20T02:20:47.1839847Z 
+2026-11-20T02:20:47.1839939Z P:ncurses-terminfo-base
+2026-11-20T02:20:47.1840180Z V:6.5_p20250503-r0
+2026-11-20T02:20:47.1840489Z A:noarch
+2026-11-20T02:20:47.1840687Z L:X11
+2026-11-20T02:20:47.1840784Z 
+2026-11-20T02:20:47.1840871Z P:nghttp2-libs
+2026-11-20T02:20:47.1841062Z V:1.69.0-r0
+2026-11-20T02:20:47.1841244Z A:x86_64
+2026-11-20T02:20:47.1841523Z L:MIT
+2026-11-20T02:20:47.1841713Z D:so:libc.musl-x86_64.so.1
+2026-11-20T02:20:47.1842043Z 
+2026-11-20T02:20:47.1842120Z P:openssl
+2026-11-20T02:20:47.1842301Z V:3.5.9-r0
+2026-11-20T02:20:47.1842472Z A:x86_64
+2026-11-20T02:20:47.1842703Z L:Apache-2.0
+2026-11-20T02:20:47.1843070Z D:libssl3=3.5.9-r0 libcrypto3=3.5.9-r0 so:libc.musl-x86_64.so.1 so:libcrypto.so.3 so:libssl.so.3
+2026-11-20T02:20:47.1843422Z 
+2026-11-20T02:20:47.1843500Z P:popt
+2026-11-20T02:20:47.1843674Z V:1.19-r4
+2026-11-20T02:20:47.1843846Z A:x86_64
+2026-11-20T02:20:47.1844014Z L:MIT
+2026-11-20T02:20:47.1844193Z D:so:libc.musl-x86_64.so.1
+2026-11-20T02:20:47.1844340Z 
+2026-11-20T02:20:47.1844466Z P:pyc
+2026-11-20T02:20:47.1844720Z V:3.12.16-r0
+2026-11-20T02:20:47.1844908Z A:noarch
+2026-11-20T02:20:47.1845167Z L:PSF-2.0
+2026-11-20T02:20:47.1845271Z 
+2026-11-20T02:20:47.1845407Z P:python3
+2026-11-20T02:20:47.1845638Z V:3.12.16-r0
+2026-11-20T02:20:47.1845820Z A:x86_64
+2026-11-20T02:20:47.1845991Z L:PSF-2.0
+2026-11-20T02:20:47.1847050Z D:libssl3>=3.3.0 libexpat>=2.9.0 so:libbz2.so.1 so:libc.musl-x86_64.so.1 so:libcrypto.so.3 so:libexpat.so.1 so:libffi.so.8 so:libgdbm_compat.so.4 so:liblzma.so.5 so:libmpdec.so.4 so:libncursesw.so.6 so:libpanelw.so.6 so:libreadline.so.8 so:libsqlite3.so.0 so:libssl.so.3 so:libz.so.1
+2026-11-20T02:20:47.1848181Z 
+2026-11-20T02:20:47.1848317Z P:python3-pyc
+2026-11-20T02:20:47.1848558Z V:3.12.16-r0
+2026-11-20T02:20:47.1848745Z A:noarch
+2026-11-20T02:20:47.1848918Z L:PSF-2.0
+2026-11-20T02:20:47.1849223Z D:python3-pycache-pyc0=3.12.16-r0 pyc
+2026-11-20T02:20:47.1849408Z 
+2026-11-20T02:20:47.1849766Z P:python3-pycache-pyc0
+2026-11-20T02:20:47.1850050Z V:3.12.16-r0
+2026-11-20T02:20:47.1850238Z A:x86_64
+2026-11-20T02:20:47.1850732Z L:PSF-2.0
+2026-11-20T02:20:47.1851011Z D:libssl3>=3.3.0 libexpat>=2.9.0
+2026-11-20T02:20:47.1851183Z 
+2026-11-20T02:20:47.1851257Z P:readline
+2026-11-20T02:20:47.1851436Z V:8.2.13-r1
+2026-11-20T02:20:47.1851613Z A:x86_64
+2026-11-20T02:20:47.1851851Z L:GPL-3.0-or-later
+2026-11-20T02:20:47.1852152Z D:so:libc.musl-x86_64.so.1 so:libncursesw.so.6
+2026-11-20T02:20:47.1852361Z 
+2026-11-20T02:20:47.1852448Z P:scanelf
+2026-11-20T02:20:47.1852627Z V:1.3.8-r1
+2026-11-20T02:20:47.1852862Z A:x86_64
+2026-11-20T02:20:47.1853091Z L:GPL-2.0-only
+2026-11-20T02:20:47.1853299Z D:so:libc.musl-x86_64.so.1
+2026-11-20T02:20:47.1853452Z 
+2026-11-20T02:20:47.1853531Z P:sqlite-libs
+2026-11-20T02:20:47.1853721Z V:3.49.2-r1
+2026-11-20T02:20:47.1854008Z A:x86_64
+2026-11-20T02:20:47.1854187Z L:blessing
+2026-11-20T02:20:47.1854381Z D:so:libc.musl-x86_64.so.1
+2026-11-20T02:20:47.1854523Z 
+2026-11-20T02:20:47.1854687Z P:ssl_client
+2026-11-20T02:20:47.1854894Z V:1.37.0-r20
+2026-11-20T02:20:47.1855069Z A:x86_64
+2026-11-20T02:20:47.1855253Z L:GPL-2.0-only
+2026-11-20T02:20:47.1855622Z D:so:libc.musl-x86_64.so.1 so:libcrypto.so.3 so:libssl.so.3
+2026-11-20T02:20:47.1855869Z 
+2026-11-20T02:20:47.1855941Z P:tzdata
+2026-11-20T02:20:47.1856112Z V:2026f-r0
+2026-11-20T02:20:47.1856285Z A:noarch
+2026-11-20T02:20:47.1856460Z L:Public-Domain
+2026-11-20T02:20:47.1856580Z 
+2026-11-20T02:20:47.1856652Z P:xz-libs
+2026-11-20T02:20:47.1856840Z V:5.8.4-r0
+2026-11-20T02:20:47.1857012Z A:x86_64
+2026-11-20T02:20:47.1857286Z L:GPL-2.0-or-later AND 0BSD AND Public-Domain AND LGPL-2.1-or-later
+2026-11-20T02:20:47.1857640Z D:so:libc.musl-x86_64.so.1
+2026-11-20T02:20:47.1857783Z 
+2026-11-20T02:20:47.1857858Z P:zlib
+2026-11-20T02:20:47.1858031Z V:1.4-r0
+2026-11-20T02:20:47.1858202Z A:x86_64
+2026-11-20T02:20:47.1858369Z L:Zlib
+2026-11-20T02:20:47.1858550Z D:so:libc.musl-x86_64.so.1
+2026-11-20T02:20:47.1858696Z 
+2026-11-20T02:20:47.1858773Z P:zstd-libs
+2026-11-20T02:20:47.1858953Z V:1.5.7-r0
+2026-11-20T02:20:47.1859127Z A:x86_64
+2026-11-20T02:20:47.1859331Z L:BSD-3-Clause OR GPL-2.0-or-later
+2026-11-20T02:20:47.1859880Z D:so:libc.musl-x86_64.so.1
+2026-11-20T02:20:47.1860045Z 
+2026-11-20T02:20:47.2078119Z Cleaning up orphan processes
