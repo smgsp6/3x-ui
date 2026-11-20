@@ -49,9 +49,10 @@ jobs:
                   printf "https://dl-cdn.alpinelinux.org/alpine/v%s/%s\n" "$branch" "$section"
                 done >"$apk_root/etc/apk/repositories"
                 apk --root "$apk_root" update
-                apk --root "$apk_root" fetch --recursive --url "$@" > /evidence/urls
-                apk --root "$apk_root" fetch --recursive --output /evidence "$@"
                 cd /evidence
+                # apk-tools 2.x can write packages even when reporting URLs.
+                apk --root "$apk_root" fetch --recursive --simulate --url "$@" > urls
+                apk --root "$apk_root" fetch --recursive "$@"
                 for package in ./*.apk; do apk verify "$package"; done
                 sha256sum ./*.apk > SHA256SUMS
                 sha256sum /etc/apk/keys/* > key-SHA256SUMS
