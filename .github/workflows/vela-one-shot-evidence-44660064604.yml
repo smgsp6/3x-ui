@@ -1,0 +1,217 @@
+name: Vela official input evidence (one shot)
+
+on:
+  push:
+    branches: [vela-apk-evidence-44660064604]
+    paths: [.github/workflows/vela-one-shot-evidence-44660064604.yml]
+
+permissions:
+  contents: read
+
+jobs:
+  official-evidence:
+    if: github.repository == 'smgsp6/3x-ui' && github.ref == 'refs/heads/vela-apk-evidence-44660064604' && github.event.repository.private == false
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Resolve Runtime r13 official APKs and offline installation
+        id: runtime
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(uname -m)" = x86_64
+          test "$(docker context show)" = default
+          test "$(docker context inspect default --format '{{.Endpoints.docker.Host}}')" = unix:///var/run/docker.sock
+          test -z "$(docker ps -aq)"
+          root=$(mktemp -d "$RUNNER_TEMP/vela-official.XXXXXXXX")
+          chmod 0700 "$root"
+          printf 'EVIDENCE_ROOT=%s\n' "$root" >> "$GITHUB_ENV"
+          evidence="$root/runtime"
+          mkdir -m 0700 "$evidence"
+          base=docker.io/library/alpine@sha256:2039be0c5ec6ce8566809626a252c930216a92109c043f282504accb5ee3c0c6
+          echo "RUNTIME_BASE=$base"
+          docker pull --platform linux/amd64 "$base"
+          docker run --rm --platform linux/amd64 --cap-drop ALL \
+            --user "$(id -u):$(id -g)" --security-opt no-new-privileges \
+            --entrypoint /bin/sh -v "$evidence:/evidence" "$base" -eu -c '
+              test "$(apk --print-arch)" = x86_64
+              umask 077
+              apk_root=$(mktemp -d)
+              mkdir -p "$apk_root/lib/apk/db" "$apk_root/etc/apk" \
+                "$apk_root/var/cache/apk" "$apk_root/var/log"
+              cp /lib/apk/db/installed "$apk_root/lib/apk/db/"
+              cp /etc/apk/world "$apk_root/etc/apk/"
+              cp -R /etc/apk/keys "$apk_root/etc/apk/"
+              branch=$(cut -d. -f1,2 /etc/alpine-release)
+              test "$branch" = 3.22
+              for section in main community; do
+                printf "https://dl-cdn.alpinelinux.org/alpine/v%s/%s\n" "$branch" "$section"
+              done > "$apk_root/etc/apk/repositories"
+              apk --root "$apk_root" update
+              cd /evidence
+              apk --root "$apk_root" fetch --recursive --simulate --url "$@" > urls
+              apk --root "$apk_root" fetch --recursive "$@"
+              for package in ./*.apk; do apk verify "$package"; done
+              sha256sum ./*.apk > SHA256SUMS
+              sha256sum /etc/apk/keys/* > key-SHA256SUMS
+            ' sh ca-certificates tzdata fail2ban bash curl openssl musl-utils=1.2.5-r13
+          echo RUNTIME_KEY_FILE_HASHES_BEGIN
+          cat "$evidence/key-SHA256SUMS"
+          echo RUNTIME_APK_SHA256_BEGIN
+          python3 - "$evidence" <<'PY'
+          import pathlib, sys
+          d = pathlib.Path(sys.argv[1])
+          paths = {p.name: h for line in (d / 'SHA256SUMS').read_text().splitlines()
+                   for h, p in [line.split(maxsplit=1)]}
+          urls = [v.strip() for v in (d / 'urls').read_text().splitlines() if v.strip()]
+          assert len(urls) == len(paths), (len(urls), len(paths))
+          assert len({u.rsplit('/', 1)[-1] for u in urls}) == len(urls)
+          for url in urls:
+              assert url.startswith('https://dl-cdn.alpinelinux.org/alpine/v3.22/')
+              assert url.endswith('.apk')
+              name = url.rsplit('/', 1)[-1]
+              print(paths[name], url)
+          assert 'musl-utils-1.2.5-r13.apk' in paths
+          print('RUNTIME_DOWNLOADED_COUNT', len(urls))
+          PY
+          echo RUNTIME_APK_SHA256_END
+          echo RUNTIME_OFFLINE_BEGIN
+          docker run --rm --platform linux/amd64 --network none \
+            --security-opt no-new-privileges --entrypoint /bin/sh \
+            -v "$evidence:/evidence:ro" "$base" -eu -c '
+              cd /evidence
+              sha256sum -c SHA256SUMS
+              apk --repositories-file /dev/null add --no-network --no-cache ./*.apk
+              apk info -v | grep -Fx musl-utils-1.2.5-r13
+              echo LOADER_REAL_PATH
+              readlink -f /lib/ld-musl-x86_64.so.1
+              echo LOADER_SHA256
+              sha256sum "$(readlink -f /lib/ld-musl-x86_64.so.1)"
+              echo LOADER_PACKAGE_OWNER
+              apk info -W "$(readlink -f /lib/ld-musl-x86_64.so.1)"
+              echo RUNTIME_INSTALLED_METADATA_BEGIN
+              awk "/^[PVALD]:/ || /^$/" /lib/apk/db/installed
+              echo RUNTIME_INSTALLED_METADATA_END
+            '
+          echo RUNTIME_OFFLINE_END
+      - name: Verify exact unzip APK and installed Info-ZIP license
+        id: unzip
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="${EVIDENCE_ROOT:-$(mktemp -d "$RUNNER_TEMP/vela-builder.XXXXXXXX")}"
+          chmod 0700 "$root"
+          evidence="$root/builder"
+          mkdir -m 0700 "$evidence"
+          base=docker.io/library/golang@sha256:ea30e25680a5470bac02b08bb0e0a735fb75bd0ab7d431b9b95ee0abef362586
+          echo "BUILDER_BASE=$base"
+          docker pull --platform linux/amd64 "$base"
+          docker run --rm --platform linux/amd64 --cap-drop ALL \
+            --user "$(id -u):$(id -g)" --security-opt no-new-privileges \
+            --entrypoint /bin/sh -v "$evidence:/evidence" "$base" -eu -c '
+              test "$(apk --print-arch)" = x86_64
+              umask 077
+              apk_root=$(mktemp -d)
+              mkdir -p "$apk_root/lib/apk/db" "$apk_root/etc/apk" \
+                "$apk_root/var/cache/apk" "$apk_root/var/log"
+              cp /lib/apk/db/installed "$apk_root/lib/apk/db/"
+              cp /etc/apk/world "$apk_root/etc/apk/"
+              cp -R /etc/apk/keys "$apk_root/etc/apk/"
+              branch=$(cut -d. -f1,2 /etc/alpine-release)
+              test "$branch" = 3.24
+              printf "https://dl-cdn.alpinelinux.org/alpine/v%s/main\n" "$branch" > "$apk_root/etc/apk/repositories"
+              apk --root "$apk_root" update
+              cd /evidence
+              apk --root "$apk_root" fetch --recursive --simulate --url unzip=6.0-r16 > urls
+              apk --root "$apk_root" fetch --recursive unzip=6.0-r16
+              test -f unzip-6.0-r16.apk
+              for package in ./*.apk; do apk verify "$package"; done
+              sha256sum ./*.apk > SHA256SUMS
+              sha256sum /etc/apk/keys/* > key-SHA256SUMS
+            '
+          echo BUILDER_KEY_FILE_HASHES_BEGIN
+          cat "$evidence/key-SHA256SUMS"
+          echo BUILDER_APK_SHA256_BEGIN
+          cat "$evidence/SHA256SUMS"
+          echo BUILDER_APK_SHA256_END
+          expected=e05e00290af872b3c8a313d6490ef53697f8b9921ef9eea999ff7d93643caf28
+          actual=$(sha256sum "$evidence/unzip-6.0-r16.apk" | cut -d' ' -f1)
+          test "$actual" = "$expected"
+          echo BUILDER_UNZIP_SHA256_MATCHED
+          echo BUILDER_UNZIP_LICENSE_BEGIN
+          docker run --rm --platform linux/amd64 --network none --cap-drop ALL \
+            --security-opt no-new-privileges --entrypoint /bin/sh \
+            -v "$evidence:/evidence:ro" "$base" -eu -c '
+              cd /evidence
+              sha256sum -c SHA256SUMS
+              apk --repositories-file /dev/null add --no-network --no-cache ./unzip-6.0-r16.apk
+              test -f /usr/share/licenses/unzip/LICENSE
+              sha256sum /usr/share/licenses/unzip/LICENSE
+              cat /usr/share/licenses/unzip/LICENSE
+            '
+          echo BUILDER_UNZIP_LICENSE_END
+      - name: Retrieve four Alpine official security databases and license pages
+        id: external
+        continue-on-error: true
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import datetime, hashlib, json, urllib.parse, urllib.request
+          stamp = datetime.datetime.now(datetime.timezone.utc).isoformat()
+          print('OFFICIAL_EVIDENCE_CHECKED_AT_UTC', stamp)
+          items = [(f'alpine-{branch}-{section}', f'https://secdb.alpinelinux.org/v{branch}/{section}.json', 5_000_000)
+                   for branch in ('3.22','3.24') for section in ('main','community')]
+          items += [
+              ('maxmind-geolite-support', 'https://support.maxmind.com/knowledge-base/articles/commercial-license-for-geolite', 2_000_000),
+              ('maxmind-geolite-dev', 'https://dev.maxmind.com/geoip/geolite2-free-geolocation-data/', 2_000_000),
+              ('ip2location-lite-license', 'https://lite.ip2location.com/terms-of-use', 2_000_000),
+              ('ip2location-lite-attribution', 'https://lite.ip2location.com/data-license', 2_000_000),
+          ]
+          allowed = {'secdb.alpinelinux.org','support.maxmind.com','dev.maxmind.com','lite.ip2location.com'}
+          class OnlyOfficialHTTPS(urllib.request.HTTPRedirectHandler):
+              def redirect_request(self, req, fp, code, msg, headers, newurl):
+                  url = urllib.parse.urlsplit(newurl)
+                  if url.scheme != 'https' or url.hostname not in allowed:
+                      raise ValueError('unexpected redirect target')
+                  return super().redirect_request(req, fp, code, msg, headers, newurl)
+          opener = urllib.request.build_opener(OnlyOfficialHTTPS())
+          successes = 0
+          for name, url, limit in items:
+              try:
+                  req = urllib.request.Request(url, headers={'User-Agent':'Vela-public-evidence/1.0','Accept':'application/json,text/html,text/plain'})
+                  with opener.open(req, timeout=20) as response:
+                      raw = response.read(limit+1)
+                      assert 0 < len(raw) <= limit, 'size out of bounds'
+                      content_type = response.headers.get('Content-Type','')
+                  if name.startswith('alpine-'):
+                      obj = json.loads(raw)
+                      assert isinstance(obj.get('packages'), list), 'unexpected security-db schema'
+                      print('OFFICIAL_SECDB', name, 'url', url, 'sha256',hashlib.sha256(raw).hexdigest(),
+                            'bytes',len(raw),'packages',len(obj['packages']),'distro',obj.get('distroversion'))
+                  else:
+                      print('OFFICIAL_LICENSE_PAGE',name,'url',url,'sha256',hashlib.sha256(raw).hexdigest(),
+                            'bytes',len(raw),'content_type',content_type)
+                  successes += 1
+              except Exception as exc:
+                  print('OFFICIAL_FETCH_FAILED',name,'url',url,'error_type',type(exc).__name__)
+          print('OFFICIAL_FETCH_SUMMARY', successes,'/',len(items))
+          assert successes == len(items), 'at least one official source inaccessible'
+          PY
+      - name: Summarize independent evidence results and wipe temporary files
+        if: always()
+        shell: bash
+        env:
+          RUNTIME_OUTCOME: ${{ steps.runtime.outcome }}
+          UNZIP_OUTCOME: ${{ steps.unzip.outcome }}
+          EXTERNAL_OUTCOME: ${{ steps.external.outcome }}
+        run: |
+          set -euo pipefail
+          printf 'ONE_SHOT_OUTCOMES runtime=%s unzip=%s external=%s\n' \
+            "$RUNTIME_OUTCOME" "$UNZIP_OUTCOME" "$EXTERNAL_OUTCOME"
+          if test -n "${EVIDENCE_ROOT:-}"; then
+            rm -rf -- "$EVIDENCE_ROOT"
+          fi
+          test "$RUNTIME_OUTCOME" = success && test "$UNZIP_OUTCOME" = success && test "$EXTERNAL_OUTCOME" = success
