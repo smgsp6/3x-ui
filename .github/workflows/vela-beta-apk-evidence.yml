@@ -29,19 +29,28 @@ jobs:
             local stage=$1 base=$2
             shift 2
             local evidence="$root/$stage"
-            mkdir "$evidence"
+            mkdir -m 0700 "$evidence"
             docker pull --platform linux/amd64 "$base"
             docker run --rm --platform linux/amd64 --cap-drop ALL \
+              --user "$(id -u):$(id -g)" \
               --security-opt no-new-privileges --entrypoint /bin/sh \
               -v "$evidence:/evidence" "$base" -eu -c '
                 test "$(apk --print-arch)" = x86_64
+                umask 077
+                # apk update needs a writable database lock, log and index cache.
+                apk_root=$(mktemp -d)
+                mkdir -p "$apk_root/lib/apk/db" "$apk_root/etc/apk" \
+                  "$apk_root/var/cache/apk" "$apk_root/var/log"
+                cp /lib/apk/db/installed "$apk_root/lib/apk/db/"
+                cp /etc/apk/world "$apk_root/etc/apk/"
+                cp -R /etc/apk/keys "$apk_root/etc/apk/"
                 branch=$(cut -d. -f1,2 /etc/alpine-release)
                 for section in main community; do
                   printf "https://dl-cdn.alpinelinux.org/alpine/v%s/%s\n" "$branch" "$section"
-                done >/tmp/vela-repositories
-                apk --repositories-file /tmp/vela-repositories update
-                apk --repositories-file /tmp/vela-repositories fetch --recursive --url "$@" > /evidence/urls
-                apk --repositories-file /tmp/vela-repositories fetch --recursive --output /evidence "$@"
+                done >"$apk_root/etc/apk/repositories"
+                apk --root "$apk_root" update
+                apk --root "$apk_root" fetch --recursive --url "$@" > /evidence/urls
+                apk --root "$apk_root" fetch --recursive --output /evidence "$@"
                 cd /evidence
                 for package in ./*.apk; do apk verify "$package"; done
                 sha256sum ./*.apk > SHA256SUMS
